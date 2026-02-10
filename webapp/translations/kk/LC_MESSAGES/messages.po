@@ -1,0 +1,135 @@
+# Kazakh translations for PROJECT.
+# Copyright (C) 2026 ORGANIZATION
+# This file is distributed under the same license as the PROJECT project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-02-02 12:00+0000\n"
+"PO-Revision-Date: 2026-02-02 12:00+0000\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: kk\n"
+"Language-Team: kk <LL@li.org>\n"
+"Plural-Forms: nplurals=1; plural=0\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.14.0\n"
+
+# Common
+msgid "login"
+msgstr "Кіру"
+
+msgid "logout"
+msgstr "Шығу"
+
+msgid "username"
+msgstr "Логин"
+
+msgid "password"
+msgstr "Құпия сөз"
+
+msgid "dashboard"
+msgstr "Басқару панелі"
+
+msgid "settings"
+msgstr "Баптаулар"
+
+# Teacher Dashboard
+msgid "teacher_dashboard"
+msgstr "Мұғалім кабинеті"
+
+msgid "scraper"
+msgstr "Скрапер"
+
+msgid "mektep_login"
+msgstr "Логин/ЖСН (mektep.edu.kz)"
+
+msgid "mektep_password"
+msgstr "Құпия сөз (mektep.edu.kz)"
+
+msgid "language"
+msgstr "Тіл"
+
+msgid "quarter"
+msgstr "Тоқсан"
+
+msgid "quarter_1"
+msgstr "1 тоқсан"
+
+msgid "quarter_2"
+msgstr "2 тоқсан (1 жартыжылдық)"
+
+msgid "quarter_3"
+msgstr "3 тоқсан"
+
+msgid "quarter_4"
+msgstr "4 тоқсан (2 жартыжылдық)"
+
+msgid "start_button"
+msgstr "Іске қосу"
+
+msgid "progress"
+msgstr "Прогресс"
+
+msgid "status"
+msgstr "Күй"
+
+msgid "jobs"
+msgstr "Тапсырмалар"
+
+msgid "reports"
+msgstr "Есептер"
+
+msgid "quota"
+msgstr "Квота"
+
+msgid "admin_panel"
+msgstr "Әкімші панелі"
+
+msgid "school_admin_dashboard"
+msgstr "Мектеп әкімшісінің панелі"
+
+msgid "teachers"
+msgstr "Мұғалімдер"
+
+msgid "schools"
+msgstr "Мектептер"
+
+msgid "users"
+msgstr "Пайдаланушылар"
+
+msgid "change_password"
+msgstr "Құпия сөзді өзгерту"
+
+msgid "save"
+msgstr "Сақтау"
+
+msgid "cancel"
+msgstr "Болдырмау"
+
+msgid "delete"
+msgstr "Жою"
+
+msgid "edit"
+msgstr "Өңдеу"
+
+msgid "add"
+msgstr "Қосу"
+
+msgid "back"
+msgstr "Артқа"
+
+msgid "close"
+msgstr "Жабу"
+
+msgid "error"
+msgstr "Қате"
+
+msgid "success"
+msgstr "Сәтті"
+
+msgid "warning"
+msgstr "Ескерту"

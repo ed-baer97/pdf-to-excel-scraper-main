@@ -1,0 +1,222 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="container-fluid py-3">
+  <nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="{{ url_for('admin.grades_overview', period_type=period_type, period_number=period_number) }}">{{ _('grades_overview') }}</a></li>
+      <li class="breadcrumb-item active">{{ class_name }}</li>
+    </ol>
+  </nav>
+  
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h3 class="mb-0">{{ _('summary_table_grades') }}: {{ class_name }}</h3>
+    {% if students %}
+    <a href="{{ url_for('admin.download_grades_class_excel', class_name=class_name, period_type=period_type, period_number=period_number) }}" 
+       class="btn btn-success">
+      <i class="bi bi-file-earmark-excel"></i> {{ _('download_excel') }}
+    </a>
+    {% endif %}
+  </div>
+  
+  <!-- Статистика -->
+  <div class="row mb-4">
+    <div class="col-md-3">
+      <div class="card text-white bg-primary shadow-sm">
+        <div class="card-body">
+          <h5 class="card-title">{{ _('total_students') }}</h5>
+          <h2>{{ summary.total_students }}</h2>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-white bg-success shadow-sm">
+        <div class="card-body">
+          <h5 class="card-title">{{ _('quality_label') }}</h5>
+          <h2>{{ summary.quality_percent }}%</h2>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-white bg-info shadow-sm">
+        <div class="card-body">
+          <h5 class="card-title">{{ _('success_label') }}</h5>
+          <h2>{{ summary.success_percent }}%</h2>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h5 class="card-title">{{ _('distribution') }}</h5>
+          <div class="d-flex justify-content-between small">
+            <span class="text-success">5: {{ summary.grades_count['5'] }}</span>
+            <span class="text-primary">4: {{ summary.grades_count['4'] }}</span>
+            <span class="text-warning">3: {{ summary.grades_count['3'] }}</span>
+            <span class="text-danger">2: {{ summary.grades_count['2'] }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Таблица оценок -->
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <h5 class="card-title mb-3">{{ _('grades_by_subjects') }}</h5>
+      
+      {% if students %}
+        <div class="table-responsive">
+          <table class="table table-bordered table-hover table-sm" id="gradesTable">
+            <thead class="table-light sticky-top">
+              <tr>
+                <th class="sticky-col">№</th>
+                <th class="sticky-col" style="left: 30px;">{{ _('student_fio') }}</th>
+                {% for subject in subjects %}
+                  <th class="text-center subject-col">{{ subject }}</th>
+                {% endfor %}
+                <th class="text-center col-count bg-count-5">5</th>
+                <th class="text-center col-count bg-count-4">4</th>
+                <th class="text-center col-count bg-count-3">3</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for student in students %}
+                <tr>
+                  <td class="sticky-col">{{ loop.index }}</td>
+                  <td class="sticky-col" style="left: 30px;">{{ student.name }}</td>
+                  {% for subject in subjects %}
+                    {% set grade_info = student.grades.get(subject, {}) %}
+                    {% set pct = grade_info.get('percent') %}
+                    {% set grd = grade_info.get('grade') %}
+                    {# Подсветка только пограничных процентов: 37-39, 61-64, 82-84 #}
+                    {% set is_border = pct is not none and ((pct >= 37 and pct <= 39) or (pct >= 61 and pct <= 64) or (pct >= 82 and pct <= 84)) %}
+                    <td class="text-center {% if is_border %}border-highlight{% endif %}">
+                      {% if grd %}
+                        <strong>{{ grd }}</strong>
+                        {% if pct %}
+                          <br><small class="{% if is_border %}text-danger fw-bold{% else %}text-muted{% endif %}">{{ pct }}%</small>
+                        {% endif %}
+                      {% else %}
+                        —
+                      {% endif %}
+                    </td>
+                  {% endfor %}
+                  {# Количество 5, 4, 3 по строке #}
+                  <td class="text-center fw-bold bg-count-5">{{ student.count_5 }}</td>
+                  <td class="text-center fw-bold bg-count-4">{{ student.count_4 }}</td>
+                  <td class="text-center fw-bold bg-count-3">{{ student.count_3 }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+            <tfoot>
+              {# Строка: Кол-во 5 по столбцам #}
+              <tr class="fw-bold bg-count-5">
+                <td class="sticky-col"></td>
+                <td class="sticky-col" style="left: 30px;">{{ _('count_5') }}</td>
+                {% for subject in subjects %}
+                  <td class="text-center">{{ subject_stats[subject].count_5 }}</td>
+                {% endfor %}
+                <td class="text-center">{{ students|selectattr('count_5', 'greaterthan', 0)|list|length }}</td>
+                <td class="text-center"></td>
+                <td class="text-center"></td>
+              </tr>
+              {# Строка: Кол-во 4 по столбцам #}
+              <tr class="fw-bold bg-count-4">
+                <td class="sticky-col"></td>
+                <td class="sticky-col" style="left: 30px;">{{ _('count_4') }}</td>
+                {% for subject in subjects %}
+                  <td class="text-center">{{ subject_stats[subject].count_4 }}</td>
+                {% endfor %}
+                <td class="text-center"></td>
+                <td class="text-center">{{ students|selectattr('count_4', 'greaterthan', 0)|list|length }}</td>
+                <td class="text-center"></td>
+              </tr>
+              {# Строка: Кол-во 3 по столбцам #}
+              <tr class="fw-bold bg-count-3">
+                <td class="sticky-col"></td>
+                <td class="sticky-col" style="left: 30px;">{{ _('count_3') }}</td>
+                {% for subject in subjects %}
+                  <td class="text-center">{{ subject_stats[subject].count_3 }}</td>
+                {% endfor %}
+                <td class="text-center"></td>
+                <td class="text-center"></td>
+                <td class="text-center">{{ students|selectattr('count_3', 'greaterthan', 0)|list|length }}</td>
+              </tr>
+              {# Строка: Качество по предмету #}
+              <tr class="fw-bold table-success">
+                <td class="sticky-col"></td>
+                <td class="sticky-col" style="left: 30px;">{{ _('quality_pct_label') }}</td>
+                {% for subject in subjects %}
+                  <td class="text-center">{{ subject_stats[subject].quality_percent }}%</td>
+                {% endfor %}
+                <td class="text-center" colspan="3"></td>
+              </tr>
+              {# Строка: Успеваемость по предмету #}
+              <tr class="fw-bold table-info">
+                <td class="sticky-col"></td>
+                <td class="sticky-col" style="left: 30px;">{{ _('success_pct_label') }}</td>
+                {% for subject in subjects %}
+                  <td class="text-center">{{ subject_stats[subject].success_percent }}%</td>
+                {% endfor %}
+                <td class="text-center" colspan="3"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      {% else %}
+        <div class="alert alert-info">
+          {{ _('no_data_class_grades') }}
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<style>
+  .sticky-col {
+    position: sticky;
+    background: white;
+    z-index: 1;
+  }
+  .sticky-col:first-child {
+    left: 0;
+    width: 30px;
+  }
+  #gradesTable td {
+    white-space: nowrap;
+  }
+  /* Заголовки предметов — перенос слов */
+  #gradesTable th.subject-col {
+    white-space: normal;
+    word-break: break-word;
+    min-width: 70px;
+  }
+  
+  /* Пограничные оценки — яркая подсветка */
+  .border-highlight {
+    background-color: #fff3cd !important;
+    border: 2px solid #f59e0b !important;
+  }
+  
+  /* Столбцы и строки подсчёта */
+  .bg-count-5 {
+    background-color: #d1fae5 !important;
+  }
+  .bg-count-4 {
+    background-color: #dbeafe !important;
+  }
+  .bg-count-3 {
+    background-color: #fef3c7 !important;
+  }
+  .col-count {
+    min-width: 35px !important;
+    max-width: 50px !important;
+    width: 40px !important;
+  }
+  
+  /* Фиксированные строки tfoot */
+  tfoot tr td.sticky-col {
+    background: inherit;
+  }
+</style>
+{% endblock %}

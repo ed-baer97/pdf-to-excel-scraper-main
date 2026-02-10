@@ -1,0 +1,825 @@
+{% extends "layout.html" %}
+{% block content %}
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h3 class="mb-0">{{ _('teacher_dashboard') }}</h3>
+    {% if current_user.role == 'superadmin' %}
+      <a href="{{ url_for('superadmin.dashboard') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> К панели супер-админа
+      </a>
+    {% endif %}
+  </div>
+  <div class="row g-3">
+    <div class="col-lg-6">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h5>{{ _('scraper') }}</h5>
+          <form method="post" action="{{ url_for('teacher.start_scrape') }}">
+            <div class="mb-2">
+              <label class="form-label">{{ _('mektep_login') }}</label>
+              <input class="form-control" name="mektep_login" required>
+            </div>
+            <div class="mb-2">
+              <label class="form-label">{{ _('mektep_password') }}</label>
+              <input class="form-control" name="mektep_password" type="password" required>
+            </div>
+            <div class="row g-2 mb-3">
+              <div class="col-6">
+                <label class="form-label">{{ _('language') }}</label>
+                <select class="form-select" name="lang">
+                  <option value="ru" selected>Русский</option>
+                  <option value="kk">Қазақша</option>
+                  <option value="en">English</option>
+                </select>
+              </div>
+              <div class="col-6">
+                <label class="form-label">{{ _('quarter') }}</label>
+                <select class="form-select" name="period_code">
+                  <option value="1">{{ _('quarter_1') }}</option>
+                  <option value="2" selected>{{ _('quarter_2') }}</option>
+                  <option value="3">{{ _('quarter_3') }}</option>
+                  <option value="4">{{ _('quarter_4') }}</option>
+                </select>
+              </div>
+            </div>
+            <button class="btn btn-primary w-100" id="startBtn">{{ _('start_button') }}</button>
+          </form>
+
+          <!-- Progress Bar -->
+          <div id="progressContainer" style="display: none;" class="mt-3">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <span id="progressText">Запуск скрапера...</span>
+              <span id="progressCancel" style="display: none;">
+                <form method="post" id="cancelForm" style="display: inline;" onsubmit="return confirm('Отменить задачу?');"{% if latest_job and latest_job.id %} action="/teacher/jobs/{{ latest_job.id }}/cancel"{% endif %}>
+                  <button class="btn btn-sm btn-outline-danger" type="submit">Отменить</button>
+                </form>
+              </span>
+            </div>
+            <div class="progress" style="height: 25px;">
+              <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%">0%</div>
+            </div>
+            <div id="progressError" class="alert alert-danger mt-2" style="display: none;"></div>
+          </div>
+          
+          <!-- School Selection Container (динамический) -->
+          <div id="schoolSelectionContainer" style="display: none;" class="mt-3">
+            <div class="alert alert-warning">
+              <p class="mb-2"><strong>⚠️ Обнаружено несколько школ. Выберите нужную:</strong></p>
+              <div id="schoolButtons"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">{{ _('my_files') }} {% if total_files > 0 %}<span class="badge bg-secondary">{{ total_files }}</span>{% endif %}</h5>
+            <div class="d-flex gap-2">
+              {% if total_files > 0 %}
+                <button class="btn btn-sm btn-outline-primary" type="button" onclick="showGoalsModal()">{{ _('goals') }}</button>
+                <button class="btn btn-sm btn-outline-success" type="button" onclick="downloadAllReports()">{{ _('download_all') }}</button>
+                <form method="post" action="{{ url_for('teacher.delete_all_files') }}" style="display: inline;" onsubmit="return confirm('{{ _('delete_all') }}?');">
+                  <button class="btn btn-sm btn-outline-danger" type="submit">{{ _('delete_all') }}</button>
+                </form>
+              {% endif %}
+            </div>
+          </div>
+          
+          {% if sorted_periods|length == 0 %}
+            <div class="alert alert-info">{{ _('no_files') }}</div>
+          {% else %}
+            <!-- Tabs for periods -->
+            <ul class="nav nav-tabs mb-3" id="periodTabs" role="tablist">
+              {% for period_code in sorted_periods %}
+                <li class="nav-item" role="presentation">
+                  <button 
+                    class="nav-link {% if loop.first %}active{% endif %}" 
+                    id="period-{{ period_code }}-tab" 
+                    data-bs-toggle="tab" 
+                    data-bs-target="#period-{{ period_code }}" 
+                    type="button" 
+                    role="tab"
+                    aria-controls="period-{{ period_code }}"
+                    aria-selected="{% if loop.first %}true{% else %}false{% endif %}">
+                    {{ period_map.get(period_code, period_code) }}
+                    <span class="badge bg-secondary">{{ files_by_period[period_code]|length }}</span>
+                  </button>
+                </li>
+              {% endfor %}
+            </ul>
+            
+            <!-- Tab content -->
+            <div class="tab-content" id="periodTabContent">
+              {% for period_code in sorted_periods %}
+                <div 
+                  class="tab-pane fade {% if loop.first %}show active{% endif %}" 
+                  id="period-{{ period_code }}" 
+                  role="tabpanel" 
+                  aria-labelledby="period-{{ period_code }}-tab">
+                  <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                      <thead>
+                        <tr>
+                          <th>{{ _('number') }}</th>
+                          <th>{{ _('class') }}</th>
+                          <th>{{ _('subject') }}</th>
+                          <th>{{ _('excel') }}</th>
+                          <th>{{ _('word') }}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {% for f in files_by_period[period_code] %}
+                          <tr>
+                            <td>{{ loop.index }}</td>
+                            <td>{{ f.class_name }}</td>
+                            <td>{{ f.subject }}</td>
+                            <td>
+                              {% if f.excel_path %}
+                                <a class="btn btn-sm btn-outline-success" href="{{ url_for('teacher.download_excel', file_id=f.id) }}">{{ _('download') }}</a>
+                              {% else %}
+                                —
+                              {% endif %}
+                            </td>
+                            <td>
+                              {% if f.word_path %}
+                                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('teacher.download_word', file_id=f.id) }}">{{ _('download') }}</a>
+                              {% else %}
+                                —
+                              {% endif %}
+                            </td>
+                          </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let progressInterval = null;
+    let currentJobId = null;
+    let pollingStartTime = null;
+    const MAX_POLLING_TIME = 5 * 60 * 1000; // 5 минут максимум polling
+    const STUCK_JOB_THRESHOLD = 3 * 60 * 1000; // 3 минуты без прогресса = зависла
+
+    function updateProgress() {
+      // Проверяем таймаут polling
+      if (pollingStartTime && (Date.now() - pollingStartTime > MAX_POLLING_TIME)) {
+        console.log('Polling timeout reached, stopping...');
+        stopPolling();
+        showStuckJobWarning();
+        return;
+      }
+
+      fetch('/teacher/jobs/latest/status')
+        .then(r => r.json())
+        .then(data => {
+          const container = document.getElementById('progressContainer');
+          const bar = document.getElementById('progressBar');
+          const text = document.getElementById('progressText');
+          const error = document.getElementById('progressError');
+          const cancelBtn = document.getElementById('progressCancel');
+          const cancelForm = document.getElementById('cancelForm');
+
+          if (data.status === 'none') {
+            container.style.display = 'none';
+            stopPolling();
+            return;
+          }
+
+          container.style.display = 'block';
+          currentJobId = data.job_id;
+          if (cancelForm) {
+            cancelForm.action = `/teacher/jobs/${data.job_id}/cancel`;
+          }
+
+          if (data.status === 'queued' || data.status === 'running') {
+            cancelBtn.style.display = 'block';
+            error.style.display = 'none';
+            
+            // Проверяем на запрос выбора школы
+            if (data.progress_message && data.progress_message.startsWith('schools_selection_needed|')) {
+              const schoolsJson = data.progress_message.split('|')[1];
+              try {
+                const schools = JSON.parse(schoolsJson);
+                showSchoolSelection(schools, data.job_id);
+                return;
+              } catch (e) {
+                console.error('Failed to parse schools data:', e);
+              }
+            }
+            
+            // Проверяем, не зависла ли задача (старше 3 минут без прогресса)
+            if (data.created_at) {
+              const createdAt = new Date(data.created_at);
+              const elapsed = Date.now() - createdAt.getTime();
+              
+              if (elapsed > STUCK_JOB_THRESHOLD && (!data.progress_percent || data.progress_percent < 10)) {
+                // Задача зависла - показываем предупреждение
+                bar.className = 'progress-bar progress-bar-striped bg-danger';
+                bar.style.width = '100%';
+                bar.textContent = '⚠️';
+                text.innerHTML = `Задача возможно зависла (${Math.round(elapsed/60000)} мин). <strong>Нажмите "Отменить"</strong> и попробуйте снова.`;
+                return;
+              }
+            }
+            
+            let percent = 0;
+            let message = '';
+            
+            if (data.status === 'queued') {
+              percent = 5;
+              message = 'Задача в очереди...';
+            } else {
+              // Используем данные прогресса, если они есть
+              if (data.progress_percent !== null && data.progress_percent !== undefined) {
+                percent = data.progress_percent;
+                message = data.progress_message || 'Выполняется...';
+              } else {
+                // Стандартная логика прогресса
+                percent = 50; // При запуске сразу показывает 50%
+                message = 'Скрапер выполняется, пожалуйста подождите...';
+                
+                // Если есть информация о количестве отчетов
+                if (data.total_reports && data.processed_reports !== null && data.processed_reports !== undefined) {
+                  // Прогресс от 10% (авторизация) до 90% (обработка отчетов)
+                  const reportProgress = Math.min(90, 10 + (data.processed_reports / data.total_reports) * 80);
+                  percent = Math.max(50, reportProgress);
+                  message = `Обработано отчетов: ${data.processed_reports} из ${data.total_reports}`;
+                }
+              }
+            }
+            
+            bar.className = 'progress-bar progress-bar-striped progress-bar-animated bg-warning';
+            bar.style.width = percent + '%';
+            bar.textContent = Math.round(percent) + '%';
+            text.textContent = message;
+          } else if (data.status === 'succeeded') {
+            bar.className = 'progress-bar bg-success';
+            bar.style.width = '100%';
+            bar.textContent = '100%';
+            text.textContent = 'Готово! Файлы зарегистрированы.';
+            cancelBtn.style.display = 'none';
+            error.style.display = 'none';
+            setTimeout(() => {
+              container.style.display = 'none';
+              location.reload(); // Reload to show new files
+            }, 2000);
+            stopPolling();
+          } else if (data.status === 'failed' || data.status === 'cancelled') {
+            bar.className = 'progress-bar bg-danger';
+            bar.style.width = '100%';
+            bar.textContent = 'Ошибка';
+            text.textContent = data.status === 'cancelled' ? 'Задача отменена' : 'Ошибка выполнения';
+            cancelBtn.style.display = 'none';
+            if (data.error) {
+              error.textContent = data.error;
+              error.style.display = 'block';
+            }
+            setTimeout(() => {
+              container.style.display = 'none';
+            }, 5000);
+            stopPolling();
+          }
+        })
+        .catch(e => {
+          console.error('Progress update error:', e);
+        });
+    }
+
+    function stopPolling() {
+      if (progressInterval) {
+        clearInterval(progressInterval);
+        progressInterval = null;
+      }
+      pollingStartTime = null;
+    }
+
+    function showStuckJobWarning() {
+      const container = document.getElementById('progressContainer');
+      const bar = document.getElementById('progressBar');
+      const text = document.getElementById('progressText');
+      const error = document.getElementById('progressError');
+      
+      container.style.display = 'block';
+      bar.className = 'progress-bar bg-danger';
+      bar.style.width = '100%';
+      bar.textContent = '⚠️';
+      text.innerHTML = 'Polling остановлен (таймаут 5 мин). <strong>Нажмите "Отменить"</strong> или обновите страницу.';
+      error.textContent = 'Если задача зависла, отмените её и попробуйте снова.';
+      error.style.display = 'block';
+    }
+
+    function showSchoolSelection(schools, jobId) {
+      const container = document.getElementById('schoolSelectionContainer');
+      const buttonsDiv = document.getElementById('schoolButtons');
+      const progressText = document.getElementById('progressText');
+      
+      // Обновляем текст прогресса
+      progressText.innerHTML = '<strong style="color: #ff9800;">Ожидание выбора школы...</strong>';
+      
+      // Очищаем предыдущие кнопки
+      buttonsDiv.innerHTML = '';
+      
+      // Создаем кнопку для каждой школы
+      schools.forEach((schoolName, index) => {
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-primary w-100 mb-2';
+        btn.innerHTML = `🏫 ${schoolName}`;
+        btn.onclick = () => selectSchool(index, schoolName, jobId);
+        buttonsDiv.appendChild(btn);
+      });
+      
+      // Показываем контейнер
+      container.style.display = 'block';
+    }
+    
+    function selectSchool(index, schoolName, jobId) {
+      const container = document.getElementById('schoolSelectionContainer');
+      const progressText = document.getElementById('progressText');
+      
+      // Скрываем кнопки
+      container.style.display = 'none';
+      
+      // Обновляем текст
+      progressText.innerHTML = `✓ Выбрана школа: <strong>${schoolName}</strong><br><em style="color: #6c757d;">Продолжаем работу...</em>`;
+      
+      // Записываем выбор в файл через запрос к серверу
+      fetch(`/teacher/jobs/${jobId}/select-school`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ school_index: index })
+      })
+      .then(r => r.json())
+      .then(data => {
+        console.log('School selection sent:', data);
+      })
+      .catch(e => {
+        console.error('Failed to send school selection:', e);
+      });
+    }
+
+    function startPolling() {
+      pollingStartTime = Date.now();
+      updateProgress();
+      progressInterval = setInterval(updateProgress, 1000);  // Каждую секунду для быстрого обновления
+    }
+
+    // Start progress monitoring if there's an active job
+    {% if latest_job and latest_job.status in ['queued', 'running'] %}
+      // Set initial form action if job exists
+      const cancelForm = document.getElementById('cancelForm');
+      if (cancelForm && {{ latest_job.id }}) {
+        cancelForm.action = `/teacher/jobs/{{ latest_job.id }}/cancel`;
+      }
+      startPolling();
+    {% endif %}
+
+    // Monitor for new jobs after form submission
+    document.getElementById('startBtn')?.addEventListener('click', function() {
+      setTimeout(() => {
+        startPolling();
+      }, 1000);
+    });
+
+    // Goals modal functions
+    function showGoalsModal() {
+      const modal = new bootstrap.Modal(document.getElementById('goalsModal'));
+      modal.show();
+    }
+
+    // Generate analysis based on achieved goals and difficulties using Qwen AI
+    function generateAnalysis(sorType) {
+      const achieved = document.getElementById(`${sorType}_achieved`).value.trim();
+      const difficulties = document.getElementById(`${sorType}_difficulties`).value.trim();
+      
+      if (!difficulties) {
+        alert('Заполните поле "Цели, вызвавшие затруднения" для генерации анализа');
+        return;
+      }
+      
+      const btn = event.target.closest('button');
+      const originalText = btn.innerHTML;
+      
+      // Show loading state
+      btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Генерация...';
+      btn.classList.remove('btn-outline-secondary');
+      btn.classList.add('btn-warning');
+      btn.disabled = true;
+      
+      // Call AI API
+      fetch('{{ url_for("teacher.generate_goals_analysis") }}', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          achieved: achieved,
+          difficulties: difficulties
+        })
+      })
+      .then(response => {
+        // Проверяем rate limit (HTTP 429)
+        if (response.status === 429) {
+          return response.json().then(data => {
+            throw { rateLimited: true, resetIn: data.reset_in || 60, message: data.error };
+          });
+        }
+        return response.json();
+      })
+      .then(data => {
+        if (data.success) {
+          // Fill the fields with AI-generated text
+          document.getElementById(`difficulties_${sorType}`).value = data.difficulties_list || '';
+          document.getElementById(`reasons_${sorType}`).value = data.reasons || '';
+          document.getElementById(`correction_${sorType}`).value = data.correction || '';
+          
+          // Success feedback
+          let successMsg = '<i class="bi bi-check-lg"></i> Готово!';
+          if (data.remaining_requests !== undefined) {
+            successMsg += ` (осталось: ${data.remaining_requests})`;
+          }
+          btn.innerHTML = successMsg;
+          btn.classList.remove('btn-warning');
+          btn.classList.add('btn-success');
+          
+          // Show if fallback was used
+          if (data.fallback) {
+            console.log('Used template-based generation (API not configured)');
+          }
+        } else {
+          alert('Ошибка: ' + (data.error || 'Неизвестная ошибка'));
+          btn.innerHTML = originalText;
+          btn.classList.remove('btn-warning');
+          btn.classList.add('btn-outline-secondary');
+        }
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        
+        if (error.rateLimited) {
+          // Rate limit - показываем таймер
+          btn.classList.remove('btn-warning');
+          btn.classList.add('btn-danger');
+          
+          let countdown = error.resetIn;
+          const countdownInterval = setInterval(() => {
+            btn.innerHTML = `<i class="bi bi-hourglass"></i> Подождите ${countdown}с`;
+            countdown--;
+            
+            if (countdown < 0) {
+              clearInterval(countdownInterval);
+              btn.innerHTML = originalText;
+              btn.classList.remove('btn-danger');
+              btn.classList.add('btn-outline-secondary');
+              btn.disabled = false;
+            }
+          }, 1000);
+          
+          return; // Не сбрасываем кнопку в finally
+        }
+        
+        alert('Ошибка при генерации текста');
+        btn.innerHTML = originalText;
+        btn.classList.remove('btn-warning');
+        btn.classList.add('btn-outline-secondary');
+      })
+      .finally(() => {
+        // Не сбрасываем если rate limited (там свой таймер)
+        if (!btn.classList.contains('btn-danger')) {
+          btn.disabled = false;
+          // Reset button after delay
+          setTimeout(() => {
+            if (!btn.classList.contains('btn-danger')) {
+              btn.innerHTML = originalText;
+              btn.classList.remove('btn-success', 'btn-warning');
+              btn.classList.add('btn-outline-secondary');
+            }
+          }, 2000);
+        }
+      });
+    }
+
+    function applyGoals() {
+      const form = document.getElementById('goalsForm');
+      const formData = new FormData(form);
+      
+      // Get selected reports
+      const selectedReports = [];
+      document.querySelectorAll('#reportsList input[type="checkbox"]:checked').forEach(cb => {
+        selectedReports.push(cb.value);
+      });
+      
+      if (selectedReports.length === 0) {
+        alert('Выберите хотя бы один отчет');
+        return;
+      }
+      
+      // Collect goals data from all tabs
+      const goals = {
+        sor1: {
+          achieved: document.getElementById('sor1_achieved').value,
+          difficulties: document.getElementById('sor1_difficulties').value,
+          difficulties_list: document.getElementById('difficulties_sor1').value,
+          reasons: document.getElementById('reasons_sor1').value,
+          correction: document.getElementById('correction_sor1').value
+        },
+        sor2: {
+          achieved: document.getElementById('sor2_achieved').value,
+          difficulties: document.getElementById('sor2_difficulties').value,
+          difficulties_list: document.getElementById('difficulties_sor2').value,
+          reasons: document.getElementById('reasons_sor2').value,
+          correction: document.getElementById('correction_sor2').value
+        },
+        sor3: {
+          achieved: document.getElementById('sor3_achieved').value,
+          difficulties: document.getElementById('sor3_difficulties').value,
+          difficulties_list: document.getElementById('difficulties_sor3').value,
+          reasons: document.getElementById('reasons_sor3').value,
+          correction: document.getElementById('correction_sor3').value
+        },
+        soch: {
+          achieved: document.getElementById('soch_achieved').value,
+          difficulties: document.getElementById('soch_difficulties').value,
+          difficulties_list: document.getElementById('difficulties_soch').value,
+          reasons: document.getElementById('reasons_soch').value,
+          correction: document.getElementById('correction_soch').value
+        },
+        report_ids: selectedReports
+      };
+      
+      // Send to server
+      fetch('{{ url_for("teacher.apply_goals") }}', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(goals)
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          alert('Цели успешно применены');
+          bootstrap.Modal.getInstance(document.getElementById('goalsModal')).hide();
+        } else {
+          alert('Ошибка: ' + (data.error || 'Неизвестная ошибка'));
+        }
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        alert('Ошибка при сохранении целей');
+      });
+    }
+
+    function downloadAllReports() {
+      // Find active period tab
+      const activeTab = document.querySelector('#periodTabs .nav-link.active');
+      if (!activeTab) {
+        alert('Не выбрана четверть. Выберите вкладку с периодом.');
+        return;
+      }
+      
+      // Extract period_code from tab id (format: period-{code}-tab)
+      const tabId = activeTab.id;
+      const periodMatch = tabId.match(/period-(\d+)-tab/);
+      if (!periodMatch) {
+        alert('Не удалось определить выбранную четверть.');
+        return;
+      }
+      
+      const periodCode = periodMatch[1];
+      
+      // Download all reports for this period
+      window.location.href = `/teacher/files/download-all?period_code=${periodCode}`;
+    }
+  </script>
+
+<!-- Goals Modal -->
+<div class="modal fade" id="goalsModal" tabindex="-1" aria-labelledby="goalsModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="goalsModalLabel">{{ _('goals_modal_title') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <!-- Goals tabs -->
+        <ul class="nav nav-tabs mb-3" id="goalsTabs" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="sor1-tab" data-bs-toggle="tab" data-bs-target="#sor1" type="button" role="tab">СОР1</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="sor2-tab" data-bs-toggle="tab" data-bs-target="#sor2" type="button" role="tab">СОР2</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="sor3-tab" data-bs-toggle="tab" data-bs-target="#sor3" type="button" role="tab">СОР3</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="soch-tab" data-bs-toggle="tab" data-bs-target="#soch" type="button" role="tab">СОЧ</button>
+          </li>
+        </ul>
+        
+        <form id="goalsForm">
+          <div class="tab-content" id="goalsTabContent">
+            <!-- СОР1 -->
+            <div class="tab-pane fade show active" id="sor1" role="tabpanel">
+              <table class="table table-bordered">
+                <thead>
+                  <tr>
+                    <th style="width: 50%;">{{ _('achieved_goals') }}</th>
+                    <th style="width: 50%;">{{ _('goals_difficulties') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><textarea class="form-control" id="sor1_achieved" rows="8" style="resize: vertical;"></textarea></td>
+                    <td><textarea class="form-control" id="sor1_difficulties" rows="8" style="resize: vertical;"></textarea></td>
+                  </tr>
+                </tbody>
+              </table>
+              <div class="text-end mt-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="generateAnalysis('sor1')">
+                  <i class="bi bi-magic"></i> Генерировать анализ
+                </button>
+              </div>
+            </div>
+            
+            <!-- СОР2 -->
+            <div class="tab-pane fade" id="sor2" role="tabpanel">
+              <table class="table table-bordered">
+                <thead>
+                  <tr>
+                    <th style="width: 50%;">{{ _('achieved_goals') }}</th>
+                    <th style="width: 50%;">{{ _('goals_difficulties') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><textarea class="form-control" id="sor2_achieved" rows="8" style="resize: vertical;"></textarea></td>
+                    <td><textarea class="form-control" id="sor2_difficulties" rows="8" style="resize: vertical;"></textarea></td>
+                  </tr>
+                </tbody>
+              </table>
+              <div class="text-end mt-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="generateAnalysis('sor2')">
+                  <i class="bi bi-magic"></i> Генерировать анализ
+                </button>
+              </div>
+            </div>
+            
+            <!-- СОР3 -->
+            <div class="tab-pane fade" id="sor3" role="tabpanel">
+              <table class="table table-bordered">
+                <thead>
+                  <tr>
+                    <th style="width: 50%;">{{ _('achieved_goals') }}</th>
+                    <th style="width: 50%;">{{ _('goals_difficulties') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><textarea class="form-control" id="sor3_achieved" rows="8" style="resize: vertical;"></textarea></td>
+                    <td><textarea class="form-control" id="sor3_difficulties" rows="8" style="resize: vertical;"></textarea></td>
+                  </tr>
+                </tbody>
+              </table>
+              <div class="text-end mt-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="generateAnalysis('sor3')">
+                  <i class="bi bi-magic"></i> Генерировать анализ
+                </button>
+              </div>
+            </div>
+            
+            <!-- СОЧ -->
+            <div class="tab-pane fade" id="soch" role="tabpanel">
+              <table class="table table-bordered">
+                <thead>
+                  <tr>
+                    <th style="width: 50%;">{{ _('achieved_goals') }}</th>
+                    <th style="width: 50%;">{{ _('goals_difficulties') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><textarea class="form-control" id="soch_achieved" rows="8" style="resize: vertical;"></textarea></td>
+                    <td><textarea class="form-control" id="soch_difficulties" rows="8" style="resize: vertical;"></textarea></td>
+                  </tr>
+                </tbody>
+              </table>
+              <div class="text-end mt-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="generateAnalysis('soch')">
+                  <i class="bi bi-magic"></i> Генерировать анализ
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Additional difficulties table -->
+          <div class="mt-4">
+            <h6>{{ _('difficulties_correction_title') }}:</h6>
+            <table class="table table-bordered table-sm">
+              <thead>
+                <tr>
+                  <th style="width: 30%;"></th>
+                  <th style="width: 17.5%;">СОР1</th>
+                  <th style="width: 17.5%;">СОР2</th>
+                  <th style="width: 17.5%;">СОР3</th>
+                  <th style="width: 17.5%;">СОЧ</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><small>{{ _('difficulties_list') }}</small></td>
+                  <td><textarea class="form-control form-control-sm" id="difficulties_sor1" rows="4" style="resize: vertical; font-size: 0.875rem;"></textarea></td>
+                  <td><textarea class="form-control form-control-sm" id="difficulties_sor2" rows="4" style="resize: vertical; font-size: 0.875rem;"></textarea></td>
+                  <td><textarea class="form-control form-control-sm" id="difficulties_sor3" rows="4" style="resize: vertical; font-size: 0.875rem;"></textarea></td>
+                  <td><textarea class="form-control form-control-sm" id="difficulties_soch" rows="4" style="resize: vertical; font-size: 0.875rem;"></textarea></td>
+                </tr>
+                <tr>
+                  <td><small>{{ _('reasons') }}</small></td>
+                  <td><textarea class="form-control form-control-sm" id="reasons_sor1" rows="4" style="resize: vertical; font-size: 0.875rem;"></textarea></td>
+                  <td><textarea class="form-control form-control-sm" id="reasons_sor2" rows="4" style="resize: vertical; font-size: 0.875rem;"></textarea></td>
+                  <td><textarea class="form-control form-control-sm" id="reasons_sor3" rows="4" style="resize: vertical; font-size: 0.875rem;"></textarea></td>
+                  <td><textarea class="form-control form-control-sm" id="reasons_soch" rows="4" style="resize: vertical; font-size: 0.875rem;"></textarea></td>
+                </tr>
+                <tr>
+                  <td><small>{{ _('correction') }}:</small></td>
+                  <td><textarea class="form-control form-control-sm" id="correction_sor1" rows="4" style="resize: vertical; font-size: 0.875rem;"></textarea></td>
+                  <td><textarea class="form-control form-control-sm" id="correction_sor2" rows="4" style="resize: vertical; font-size: 0.875rem;"></textarea></td>
+                  <td><textarea class="form-control form-control-sm" id="correction_sor3" rows="4" style="resize: vertical; font-size: 0.875rem;"></textarea></td>
+                  <td><textarea class="form-control form-control-sm" id="correction_soch" rows="4" style="resize: vertical; font-size: 0.875rem;"></textarea></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          
+          <!-- Reports selection -->
+          <div class="mt-4">
+            <h6>{{ _('select_reports') }}</h6>
+            
+            {% if sorted_periods|length > 0 %}
+              <!-- Period tabs for reports -->
+              <ul class="nav nav-tabs mb-2" id="reportsPeriodTabs" role="tablist">
+                {% for period_code in sorted_periods %}
+                  <li class="nav-item" role="presentation">
+                    <button 
+                      class="nav-link {% if loop.first %}active{% endif %}" 
+                      id="reports-period-{{ period_code }}-tab" 
+                      data-bs-toggle="tab" 
+                      data-bs-target="#reports-period-{{ period_code }}" 
+                      type="button" 
+                      role="tab"
+                      aria-controls="reports-period-{{ period_code }}"
+                      aria-selected="{% if loop.first %}true{% else %}false{% endif %}">
+                      {{ period_map.get(period_code, period_code) }}
+                      <span class="badge bg-secondary">{{ files_by_period[period_code]|length }}</span>
+                    </button>
+                  </li>
+                {% endfor %}
+              </ul>
+              
+              <!-- Reports tab content -->
+              <div class="tab-content" id="reportsPeriodTabContent">
+                {% for period_code in sorted_periods %}
+                  <div 
+                    class="tab-pane fade {% if loop.first %}show active{% endif %}" 
+                    id="reports-period-{{ period_code }}" 
+                    role="tabpanel" 
+                    aria-labelledby="reports-period-{{ period_code }}-tab">
+                    <div id="reportsList" style="max-height: 200px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 0.25rem; padding: 0.5rem;">
+                      {% for f in files_by_period[period_code] %}
+                        <div class="form-check">
+                          <input class="form-check-input" type="checkbox" value="{{ f.id }}" id="report_{{ f.id }}">
+                          <label class="form-check-label" for="report_{{ f.id }}">
+                            {{ f.class_name }} - {{ f.subject }}
+                          </label>
+                        </div>
+                      {% endfor %}
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            {% else %}
+              <div class="alert alert-info">{{ _('no_reports_available') }}</div>
+            {% endif %}
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('cancel') }}</button>
+        <button type="button" class="btn btn-primary" onclick="applyGoals()">{{ _('apply') }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+

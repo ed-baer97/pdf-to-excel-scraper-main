@@ -1,0 +1,146 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="container-fluid py-3">
+  <nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="{{ url_for('admin.dashboard') }}">{{ _('admin_panel') }}</a></li>
+      <li class="breadcrumb-item"><a href="{{ url_for('admin.dashboard') }}#subjects-tab">{{ _('subjects') }}</a></li>
+      <li class="breadcrumb-item active">{{ subject.name }}</li>
+    </ol>
+  </nav>
+
+  <div class="row">
+    {# ===== Боковая панель: список предметов ===== #}
+    <div class="col-md-3">
+      <div class="card shadow-sm mb-3">
+        <div class="card-header"><strong>{{ _('all_subjects_sidebar') }}</strong></div>
+        <div class="list-group list-group-flush" style="max-height: 500px; overflow-y: auto;">
+          {% for s in all_subjects %}
+            <a href="{{ url_for('admin.subject_detail', subject_id=s.id) }}"
+               class="list-group-item list-group-item-action {% if s.id == subject.id %}active{% endif %}">
+              {{ s.name }}
+              <span class="badge {% if s.id == subject.id %}bg-light text-dark{% else %}bg-secondary{% endif %} float-end">
+                {{ s.teacher_subjects|length }}
+              </span>
+            </a>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    {# ===== Основное содержание ===== #}
+    <div class="col-md-9">
+      <h3 class="mb-4"><i class="bi bi-book"></i> {{ subject.name }}</h3>
+
+      {# --- Добавление учителя --- #}
+      <div class="card shadow-sm mb-4">
+        <div class="card-header"><strong>{{ _('subject_teachers') }}</strong></div>
+        <div class="card-body">
+          <form method="post" action="{{ url_for('admin.add_teacher_to_subject', subject_id=subject.id) }}" class="row g-2 mb-3">
+            <div class="col-8">
+              <select class="form-select" name="teacher_id" required>
+                <option value="">{{ _('select_teacher') }}</option>
+                {% for t in teachers %}
+                  {% if t.id not in assigned_teacher_ids %}
+                    <option value="{{ t.id }}">{{ t.full_name or t.username }}</option>
+                  {% endif %}
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-4">
+              <button class="btn btn-primary w-100"><i class="bi bi-plus-circle"></i> {{ _('add_teacher') }}</button>
+            </div>
+          </form>
+
+          {# --- Список учителей с классами --- #}
+          {% if teacher_subjects %}
+            {% for ts in teacher_subjects %}
+              <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                  <span>
+                    <i class="bi bi-person"></i>
+                    <strong>{{ ts.teacher.full_name or ts.teacher.username }}</strong>
+                  </span>
+                  <form method="post"
+                        action="{{ url_for('admin.remove_teacher_from_subject', subject_id=subject.id, teacher_id=ts.teacher_id) }}"
+                        class="d-inline"
+                        onsubmit="return confirm('{{ _('confirm_remove_teacher').format(ts.teacher.full_name or ts.teacher.username) }}')">
+                    <button class="btn btn-sm btn-outline-danger"><i class="bi bi-x-circle"></i> {{ _('remove_btn') }}</button>
+                  </form>
+                </div>
+                <div class="card-body">
+                  <h6>{{ _('assigned_classes') }}</h6>
+                  {% set tc_list = teacher_classes_data.get(ts.teacher_id, []) %}
+                  {% if tc_list %}
+                    <table class="table table-sm table-bordered mb-3">
+                      <thead class="table-light">
+                        <tr>
+                          <th>{{ _('class_col') }}</th>
+                          <th>{{ _('subgroup_label') }}</th>
+                          <th style="width: 100px;">{{ _('actions') }}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {% for tc in tc_list %}
+                          <tr>
+                            <td>{{ tc.class_name }}</td>
+                            <td>
+                              {% if tc.subgroup %}
+                                <span class="badge bg-info">{{ _('subgroup') }} {{ tc.subgroup }}</span>
+                              {% else %}
+                                <span class="badge bg-secondary">{{ _('whole_class') }}</span>
+                              {% endif %}
+                            </td>
+                            <td>
+                              <form method="post"
+                                    action="{{ url_for('admin.remove_class_from_teacher_subject', subject_id=subject.id, teacher_class_id=tc.id) }}"
+                                    class="d-inline"
+                                    onsubmit="return confirm('{{ _('confirm_unassign_class').format(tc.class_name) }}')">
+                                <button class="btn btn-sm btn-outline-danger"><i class="bi bi-x"></i></button>
+                              </form>
+                            </td>
+                          </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  {% else %}
+                    <p class="text-muted small mb-2">{{ _('no_assigned_classes') }}</p>
+                  {% endif %}
+
+                  {# Форма добавления класса #}
+                  <form method="post" action="{{ url_for('admin.add_class_to_teacher_subject', subject_id=subject.id) }}" class="row g-2">
+                    <input type="hidden" name="teacher_id" value="{{ ts.teacher_id }}">
+                    <div class="col-8">
+                      <select class="form-select form-select-sm" name="class_id" required>
+                        <option value="">{{ _('select_class') }}</option>
+                        {% for c in classes %}
+                          {% set already_assigned = false %}
+                          {% for tc in tc_list %}
+                            {% if tc.class_id == c.id %}
+                              {% set already_assigned = true %}
+                            {% endif %}
+                          {% endfor %}
+                          {% if not already_assigned %}
+                            <option value="{{ c.id }}">{{ c.name }}</option>
+                          {% endif %}
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div class="col-4">
+                      <button class="btn btn-sm btn-outline-primary w-100"><i class="bi bi-plus"></i> {{ _('assign_class') }}</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <div class="alert alert-info">
+              {{ _('no_subject_teachers') }}
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

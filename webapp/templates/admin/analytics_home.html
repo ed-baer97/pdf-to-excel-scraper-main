@@ -1,0 +1,320 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h2 class="mb-0">{{ _('analytics') }}</h2>
+      <p class="text-muted mb-0">{{ _('analytics_desc') }}</p>
+    </div>
+  </div>
+
+  <!-- Панель фильтров -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <div class="row g-3 align-items-end">
+        <div class="col-md-3">
+          <label for="filterSubject" class="form-label">{{ _('subject_col') }}</label>
+          <select id="filterSubject" class="form-select">
+            <option value="">{{ _('all_subjects') }}</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label for="filterClass" class="form-label">{{ _('class_col') }}</label>
+          <select id="filterClass" class="form-select">
+            <option value="">{{ _('all_classes') }}</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label for="filterTeacher" class="form-label">{{ _('teacher_col') }}</label>
+          <select id="filterTeacher" class="form-select">
+            <option value="">{{ _('all_teachers') }}</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <button type="button" id="resetFilters" class="btn btn-outline-secondary w-100">{{ _('reset_filters') }}</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Вкладки -->
+  <ul class="nav nav-tabs mb-4" id="analyticsTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#sor-tab" type="button">{{ _('sor') }}</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#soch-tab" type="button">{{ _('soch') }}</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#grades-tab" type="button">{{ _('grades') }}</button>
+    </li>
+  </ul>
+
+  <div class="tab-content" id="analyticsTabsContent">
+
+    {# ===== Вкладка: СОР ===== #}
+    <div class="tab-pane fade show active" id="sor-tab" role="tabpanel">
+      {% if subjects_data_sor %}
+        {% for subject_name, analytics_data in subjects_data_sor.items() %}
+        <div class="card shadow-sm mb-4 analytics-card" data-subject="{{ subject_name }}">
+          <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">{{ subject_name }}</h5>
+          </div>
+          <div class="card-body">
+            <div class="table-responsive">
+              <table class="table table-bordered table-hover align-middle table-sm">
+                <thead class="table-light">
+                  <tr>
+                    <th>{{ _('class_col') }}</th>
+                    <th>{{ _('sor') }}</th>
+                    <th class="text-center">5</th>
+                    <th class="text-center">4</th>
+                    <th class="text-center">3</th>
+                    <th class="text-center">2</th>
+                    <th class="text-center">{{ _('total') }}</th>
+                    <th class="text-center">{{ _('quality_pct') }}</th>
+                    <th class="text-center">{{ _('success_pct') }}</th>
+                    <th>{{ _('teacher_col') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for data in analytics_data %}
+                    {% if data.sor_list %}
+                      {% for sor in data.sor_list %}
+                      <tr class="analytics-row" data-subject="{{ subject_name }}" data-class="{{ data.class_name }}" data-teacher="{{ data.teacher }}">
+                        {% if loop.first %}<td rowspan="{{ data.sor_list|length }}" class="align-middle"><strong>{{ data.class_name }}</strong></td>{% endif %}
+                        <td><strong>{{ sor.name }}</strong></td>
+                        <td class="text-center">{{ sor.count_5 }}</td>
+                        <td class="text-center">{{ sor.count_4 }}</td>
+                        <td class="text-center">{{ sor.count_3 }}</td>
+                        <td class="text-center">{{ sor.count_2 }}</td>
+                        <td class="text-center">{{ sor.total }}</td>
+                        <td class="text-center">{% if sor.quality is not none %}{{ sor.quality }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+                        <td class="text-center">{% if sor.success_rate is not none %}{{ sor.success_rate }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+                        {% if loop.first %}<td rowspan="{{ data.sor_list|length }}" class="align-middle">{{ data.teacher or '-' }}</td>{% endif %}
+                      </tr>
+                      {% endfor %}
+                    {% else %}
+                      <tr class="table-secondary analytics-row" data-subject="{{ subject_name }}" data-class="{{ data.class_name }}" data-teacher="{{ data.teacher }}">
+                        <td><strong>{{ data.class_name }}</strong></td>
+                        <td class="text-muted">-</td>
+                        <td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td>
+                        <td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td>
+                        <td>{{ data.teacher or '-' }}</td>
+                      </tr>
+                    {% endif %}
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="alert alert-info">{{ _('no_data_sor') }}</div>
+      {% endif %}
+    </div>
+
+    {# ===== Вкладка: СОЧ ===== #}
+    <div class="tab-pane fade" id="soch-tab" role="tabpanel">
+      {% if subjects_data_soch %}
+        {% for subject_name, analytics_data in subjects_data_soch.items() %}
+        <div class="card shadow-sm mb-4 analytics-card" data-subject="{{ subject_name }}">
+          <div class="card-header bg-success text-white">
+            <h5 class="mb-0">{{ subject_name }}</h5>
+          </div>
+          <div class="card-body">
+            <div class="table-responsive">
+              <table class="table table-bordered table-hover align-middle table-sm">
+                <thead class="table-light">
+                  <tr>
+                    <th>{{ _('class_col') }}</th>
+                    <th class="text-center">5</th>
+                    <th class="text-center">4</th>
+                    <th class="text-center">3</th>
+                    <th class="text-center">2</th>
+                    <th class="text-center">{{ _('total') }}</th>
+                    <th class="text-center">{{ _('quality_pct') }}</th>
+                    <th class="text-center">{{ _('success_pct') }}</th>
+                    <th>{{ _('teacher_col') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for data in analytics_data %}
+                  <tr class="{% if not data.has_data %}table-secondary{% endif %} analytics-row" data-subject="{{ subject_name }}" data-class="{{ data.class_name }}" data-teacher="{{ data.teacher }}">
+                    <td><strong>{{ data.class_name }}</strong></td>
+                    <td class="text-center">{{ data.count_5 }}</td>
+                    <td class="text-center">{{ data.count_4 }}</td>
+                    <td class="text-center">{{ data.count_3 }}</td>
+                    <td class="text-center">{{ data.count_2 }}</td>
+                    <td class="text-center">{{ data.total }}</td>
+                    <td class="text-center">{% if data.quality is not none %}{{ data.quality }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+                    <td class="text-center">{% if data.success_rate is not none %}{{ data.success_rate }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+                    <td>{{ data.teacher or '-' }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="alert alert-info">{{ _('no_data_soch') }}</div>
+      {% endif %}
+    </div>
+
+    {# ===== Вкладка: Оценки ===== #}
+    <div class="tab-pane fade" id="grades-tab" role="tabpanel">
+      {% if subjects_data_grades %}
+        {% for subject_name, analytics_data in subjects_data_grades.items() %}
+        <div class="card shadow-sm mb-4 analytics-card" data-subject="{{ subject_name }}">
+          <div class="card-header bg-warning text-dark">
+            <h5 class="mb-0">{{ subject_name }}</h5>
+          </div>
+          <div class="card-body">
+            <div class="table-responsive">
+              <table class="table table-bordered table-hover align-middle table-sm">
+                <thead class="table-light">
+                  <tr>
+                    <th>{{ _('class_col') }}</th>
+                    <th class="text-center">5</th>
+                    <th class="text-center">4</th>
+                    <th class="text-center">3</th>
+                    <th class="text-center">2</th>
+                    <th class="text-center">{{ _('total') }}</th>
+                    <th class="text-center">{{ _('quality_pct') }}</th>
+                    <th class="text-center">{{ _('success_pct') }}</th>
+                    <th>{{ _('teacher_col') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for data in analytics_data %}
+                  <tr class="{% if not data.has_data %}table-secondary{% endif %} analytics-row" data-subject="{{ subject_name }}" data-class="{{ data.class_name }}" data-teacher="{{ data.teacher }}">
+                    <td><strong>{{ data.class_name }}</strong></td>
+                    <td class="text-center">{{ data.count_5 }}</td>
+                    <td class="text-center">{{ data.count_4 }}</td>
+                    <td class="text-center">{{ data.count_3 }}</td>
+                    <td class="text-center">{{ data.count_2 }}</td>
+                    <td class="text-center">{{ data.total }}</td>
+                    <td class="text-center">{% if data.quality is not none %}{{ data.quality }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+                    <td class="text-center">{% if data.success_rate is not none %}{{ data.success_rate }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+                    <td>{{ data.teacher or '-' }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="alert alert-info">{{ _('no_data_grades') }}</div>
+      {% endif %}
+    </div>
+
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Собираем связи для каскадных фильтров
+    let filterData = {
+        subjectToClasses: {}, subjectToTeachers: {},
+        classToSubjects: {}, classToTeachers: {},
+        teacherToClasses: {}, teacherToSubjects: {}
+    };
+
+    document.querySelectorAll('.analytics-row').forEach(row => {
+        const s = row.dataset.subject, c = row.dataset.class, t = (row.dataset.teacher || '').trim();
+        if (s) {
+            if (!filterData.subjectToClasses[s]) filterData.subjectToClasses[s] = new Set();
+            if (!filterData.subjectToTeachers[s]) filterData.subjectToTeachers[s] = new Set();
+            if (c) { filterData.subjectToClasses[s].add(c); if (!filterData.classToSubjects[c]) filterData.classToSubjects[c] = new Set(); filterData.classToSubjects[c].add(s); }
+            if (t) { filterData.subjectToTeachers[s].add(t); if (!filterData.teacherToSubjects[t]) filterData.teacherToSubjects[t] = new Set(); filterData.teacherToSubjects[t].add(s); }
+        }
+        if (c && t) {
+            if (!filterData.classToTeachers[c]) filterData.classToTeachers[c] = new Set();
+            filterData.classToTeachers[c].add(t);
+            if (!filterData.teacherToClasses[t]) filterData.teacherToClasses[t] = new Set();
+            filterData.teacherToClasses[t].add(c);
+        }
+    });
+
+    const subjectSel = document.getElementById('filterSubject');
+    const classSel = document.getElementById('filterClass');
+    const teacherSel = document.getElementById('filterTeacher');
+
+    function populateSelect(sel, items, allLabel) {
+        const cur = sel.value;
+        sel.innerHTML = `<option value="">${allLabel}</option>`;
+        Array.from(items).sort((a, b) => a.localeCompare(b, 'ru')).forEach(v => {
+            const opt = document.createElement('option'); opt.value = v; opt.textContent = v; sel.appendChild(opt);
+        });
+        if (cur && items.has(cur)) sel.value = cur;
+    }
+
+    function refreshFilters() {
+        const ss = subjectSel.value, sc = classSel.value, st = teacherSel.value;
+        let subjects = new Set(Object.keys(filterData.subjectToClasses));
+        let classes = new Set(Object.keys(filterData.classToSubjects));
+        let teachers = new Set(Object.keys(filterData.teacherToSubjects));
+
+        if (sc) { subjects = filterData.classToSubjects[sc] || new Set(); teachers = filterData.classToTeachers[sc] || new Set(); }
+        if (st) {
+            const ts = filterData.teacherToSubjects[st] || new Set();
+            const tc = filterData.teacherToClasses[st] || new Set();
+            subjects = sc ? new Set([...subjects].filter(x => ts.has(x))) : ts;
+            classes = sc ? classes : tc;
+        }
+        if (ss) {
+            classes = new Set([...(filterData.subjectToClasses[ss] || new Set())].filter(x => classes.has(x)));
+            teachers = new Set([...(filterData.subjectToTeachers[ss] || new Set())].filter(x => teachers.has(x)));
+        }
+
+        populateSelect(subjectSel, subjects, '{{ _("all_subjects") }}');
+        populateSelect(classSel, classes, '{{ _("all_classes") }}');
+        populateSelect(teacherSel, teachers, '{{ _("all_teachers") }}');
+    }
+
+    function applyFilters() {
+        const ss = subjectSel.value, sc = classSel.value, st = teacherSel.value;
+        const activeTab = document.querySelector('.tab-pane.active');
+        if (!activeTab) return;
+
+        activeTab.querySelectorAll('.analytics-card').forEach(card => {
+            const subj = card.dataset.subject;
+            let showCard = !ss || subj === ss;
+            let hasVisible = false;
+
+            if (showCard) {
+                card.querySelectorAll('.analytics-row').forEach(row => {
+                    const rc = row.dataset.class, rt = (row.dataset.teacher || '').trim();
+                    let show = true;
+                    if (sc && rc !== sc) show = false;
+                    if (st && rt !== st) show = false;
+                    row.style.display = show ? '' : 'none';
+                    if (show) hasVisible = true;
+                });
+                if (!hasVisible) showCard = false;
+            }
+            card.style.display = showCard ? '' : 'none';
+        });
+    }
+
+    // Инициализация
+    refreshFilters();
+    subjectSel.addEventListener('change', () => { refreshFilters(); applyFilters(); });
+    classSel.addEventListener('change', () => { refreshFilters(); applyFilters(); });
+    teacherSel.addEventListener('change', () => { refreshFilters(); applyFilters(); });
+    document.getElementById('resetFilters').addEventListener('click', () => {
+        subjectSel.value = ''; classSel.value = ''; teacherSel.value = '';
+        refreshFilters(); applyFilters();
+    });
+    document.querySelectorAll('[data-bs-toggle="tab"]').forEach(btn => {
+        btn.addEventListener('shown.bs.tab', () => setTimeout(applyFilters, 50));
+    });
+    applyFilters();
+});
+</script>
+{% endblock %}

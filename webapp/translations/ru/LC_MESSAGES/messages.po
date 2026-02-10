@@ -1,0 +1,135 @@
+# Russian translations for PROJECT.
+# Copyright (C) 2026 ORGANIZATION
+# This file is distributed under the same license as the PROJECT project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-02-02 12:00+0000\n"
+"PO-Revision-Date: 2026-02-02 12:00+0000\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: ru\n"
+"Language-Team: ru <LL@li.org>\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2)\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.14.0\n"
+
+# Common
+msgid "login"
+msgstr "Вход"
+
+msgid "logout"
+msgstr "Выйти"
+
+msgid "username"
+msgstr "Логин"
+
+msgid "password"
+msgstr "Пароль"
+
+msgid "dashboard"
+msgstr "Панель управления"
+
+msgid "settings"
+msgstr "Настройки"
+
+# Teacher Dashboard
+msgid "teacher_dashboard"
+msgstr "Кабинет учителя"
+
+msgid "scraper"
+msgstr "Скрапер"
+
+msgid "mektep_login"
+msgstr "Логин/IIN (mektep.edu.kz)"
+
+msgid "mektep_password"
+msgstr "Пароль (mektep.edu.kz)"
+
+msgid "language"
+msgstr "Язык"
+
+msgid "quarter"
+msgstr "Четверть"
+
+msgid "quarter_1"
+msgstr "1 четверть"
+
+msgid "quarter_2"
+msgstr "2 четверть (1 полугодие)"
+
+msgid "quarter_3"
+msgstr "3 четверть"
+
+msgid "quarter_4"
+msgstr "4 четверть (2 полугодие)"
+
+msgid "start_button"
+msgstr "Запустить"
+
+msgid "progress"
+msgstr "Прогресс"
+
+msgid "status"
+msgstr "Статус"
+
+msgid "jobs"
+msgstr "Задачи"
+
+msgid "reports"
+msgstr "Отчеты"
+
+msgid "quota"
+msgstr "Квота"
+
+msgid "admin_panel"
+msgstr "Панель администратора"
+
+msgid "school_admin_dashboard"
+msgstr "Панель администратора школы"
+
+msgid "teachers"
+msgstr "Учителя"
+
+msgid "schools"
+msgstr "Школы"
+
+msgid "users"
+msgstr "Пользователи"
+
+msgid "change_password"
+msgstr "Изменить пароль"
+
+msgid "save"
+msgstr "Сохранить"
+
+msgid "cancel"
+msgstr "Отмена"
+
+msgid "delete"
+msgstr "Удалить"
+
+msgid "edit"
+msgstr "Редактировать"
+
+msgid "add"
+msgstr "Добавить"
+
+msgid "back"
+msgstr "Назад"
+
+msgid "close"
+msgstr "Закрыть"
+
+msgid "error"
+msgstr "Ошибка"
+
+msgid "success"
+msgstr "Успех"
+
+msgid "warning"
+msgstr "Предупреждение"

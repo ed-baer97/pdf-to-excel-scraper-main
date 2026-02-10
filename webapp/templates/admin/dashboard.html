@@ -1,0 +1,325 @@
+{% extends "layout.html" %}
+{% block content %}
+  <h3>{{ current_user.school.name if current_user.school else _('admin_panel') }}</h3>
+  
+  <!-- Навигация по разделам -->
+  <div class="row mb-4">
+    <div class="col-md-3">
+      <a href="{{ url_for('admin.grades_overview') }}" class="card shadow-sm text-decoration-none">
+        <div class="card-body text-center">
+          <h4 class="text-primary"><i class="bi bi-bar-chart-line"></i></h4>
+          <h6>{{ _('grades_overview') }}</h6>
+          <small class="text-muted">{{ _('grades_overview_desc') }}</small>
+        </div>
+      </a>
+    </div>
+    <div class="col-md-3">
+      <a href="{{ url_for('admin.analytics_home') }}" class="card shadow-sm text-decoration-none">
+        <div class="card-body text-center">
+          <h4 class="text-success"><i class="bi bi-graph-up-arrow"></i></h4>
+          <h6>{{ _('analytics_sor_soch') }}</h6>
+          <small class="text-muted">{{ _('analytics_sor_soch_desc') }}</small>
+        </div>
+      </a>
+    </div>
+    <div class="col-md-3">
+      <a href="{{ url_for('admin.class_teacher_report') }}" class="card shadow-sm text-decoration-none">
+        <div class="card-body text-center">
+          <h4 class="text-info"><i class="bi bi-people"></i></h4>
+          <h6>{{ _('class_teacher_report') }}</h6>
+          <small class="text-muted">{{ _('student_categories') }}</small>
+        </div>
+      </a>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm bg-light">
+        <div class="card-body text-center">
+          <h4 class="text-secondary"><i class="bi bi-gear"></i></h4>
+          <h6>{{ _('management') }}</h6>
+          <small class="text-muted">{{ _('management_desc') }}</small>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Вкладки управления -->
+  <ul class="nav nav-tabs" id="managementTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active" id="teachers-tab-btn" data-bs-toggle="tab" data-bs-target="#teachers-tab" type="button">
+        <i class="bi bi-person-badge"></i> {{ _('teachers') }} <span class="badge bg-secondary ms-1">{{ teachers|length }}</span>
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="classes-tab-btn" data-bs-toggle="tab" data-bs-target="#classes-tab" type="button">
+        <i class="bi bi-building"></i> {{ _('classes') }} <span class="badge bg-secondary ms-1">{{ classes|length }}</span>
+      </button>
+    </li>
+  </ul>
+
+  <div class="tab-content mt-3" id="managementTabContent">
+
+    {# ===== Вкладка: Учителя ===== #}
+    <div class="tab-pane fade show active" id="teachers-tab" role="tabpanel">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h5>{{ _('teachers') }}</h5>
+          <form class="row g-2 mb-3" method="post" action="{{ url_for('admin.create_teacher') }}">
+            <div class="col-4">
+              <input class="form-control" name="full_name" placeholder="{{ _('teacher_fio') }}" required>
+            </div>
+            <div class="col-4">
+              <input class="form-control" name="username" placeholder="{{ _('teacher_login') }}" required>
+            </div>
+            <div class="col-2">
+              <button class="btn btn-primary w-100">{{ _('add_btn') }}</button>
+            </div>
+          </form>
+
+          <table class="table table-sm table-hover">
+            <thead class="table-light"><tr><th>{{ _('fio') }}</th><th>{{ _('login_col') }}</th><th class="text-end">{{ _('actions') }}</th></tr></thead>
+            <tbody>
+              {% for t in teachers %}
+                <tr>
+                  <td>{{ t.full_name or t.username }}</td>
+                  <td class="text-muted">{{ t.username }}</td>
+                  <td class="text-end">
+                    <button class="btn btn-sm btn-outline-secondary me-1" onclick="editTeacherModal({{ t.id }}, '{{ t.full_name or t.username }}')">
+                      <i class="bi bi-pencil"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-dark me-1" onclick="showPasswordModal({{ t.id }}, '{{ t.username }}')">
+                      <i class="bi bi-key"></i> {{ _('password_btn') }}
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="confirmDeleteTeacher({{ t.id }}, '{{ t.full_name or t.username }}')">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    {# ===== Вкладка: Классы ===== #}
+    <div class="tab-pane fade" id="classes-tab" role="tabpanel">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h5>{{ _('classes') }}</h5>
+          <form class="row g-2 mb-3" method="post" action="{{ url_for('admin.create_class') }}">
+            <div class="col-5">
+              <input class="form-control" name="name" placeholder="{{ _('class_name_placeholder') }}" required>
+            </div>
+            <div class="col-5">
+              <select class="form-select" name="class_teacher_id">
+                <option value="">— {{ _('class_teacher') }} —</option>
+                {% for t in teachers %}
+                  <option value="{{ t.id }}">{{ t.full_name or t.username }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-2">
+              <button class="btn btn-primary w-100">{{ _('add_btn') }}</button>
+            </div>
+          </form>
+
+          {% if classes %}
+            <table class="table table-sm table-hover">
+              <thead class="table-light">
+                <tr>
+                  <th>{{ _('classes') }}</th>
+                  <th>{{ _('class_teacher') }}</th>
+                  <th style="width: 200px;">{{ _('actions') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for cls in classes %}
+                  <tr>
+                    <td><strong>{{ cls.name }}</strong></td>
+                    <td>
+                      {% if cls.class_teacher %}
+                        {{ cls.class_teacher.full_name or cls.class_teacher.username }}
+                      {% else %}
+                        <span class="text-muted">{{ _('not_assigned') }}</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      <button class="btn btn-sm btn-outline-primary" onclick="editClassModal({{ cls.id }}, '{{ cls.name }}', {{ cls.class_teacher_id or 'null' }})">
+                        <i class="bi bi-pencil"></i>
+                      </button>
+                      <form method="post" action="{{ url_for('admin.delete_class', class_id=cls.id) }}" class="d-inline"
+                            onsubmit="return confirm('{{ _('confirm_delete_class').format(cls.name) }}')">
+                        <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                      </form>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <div class="alert alert-info">{{ _('no_classes') }}</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Password Modal -->
+  <div class="modal fade" id="passwordModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">{{ _('password_label') }} <span id="modalUsername"></span></h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">{{ _('current_password') }}</label>
+            <div class="input-group">
+              <input type="text" class="form-control" id="currentPassword" readonly>
+              <button class="btn btn-outline-secondary" type="button" onclick="copyPassword()">{{ _('copy_btn') }}</button>
+            </div>
+          </div>
+          <hr>
+          <form id="changePasswordForm" method="post">
+            <div class="mb-3">
+              <label class="form-label">{{ _('new_password') }}</label>
+              <input type="password" class="form-control" name="new_password" id="newPassword" minlength="4" required autocomplete="new-password">
+              <small class="text-muted">{{ _('min_4_chars') }}</small>
+            </div>
+            <button type="submit" class="btn btn-primary">{{ _('change_password') }}</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Class Modal -->
+  <div class="modal fade" id="editClassModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">{{ _('edit_class') }}</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <form id="editClassForm" method="post">
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label">{{ _('class_name_label') }}</label>
+              <input type="text" class="form-control" name="name" id="editClassName" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">{{ _('class_teacher_label') }}</label>
+              <select class="form-select" name="class_teacher_id" id="editClassTeacher">
+                <option value="">{{ _('not_assigned') }}</option>
+                {% for t in teachers %}
+                  <option value="{{ t.id }}">{{ t.full_name or t.username }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('cancel_btn') }}</button>
+            <button type="submit" class="btn btn-primary">{{ _('save_btn') }}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Teacher Modal -->
+  <div class="modal fade" id="editTeacherModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">{{ _('edit_teacher_fio') }}</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <form id="editTeacherForm" method="post">
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label">{{ _('fio_label') }}</label>
+              <input type="text" class="form-control" name="full_name" id="editTeacherFullName" required>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('cancel_btn') }}</button>
+            <button type="submit" class="btn btn-primary">{{ _('save_btn') }}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Activate tab from URL hash
+    document.addEventListener('DOMContentLoaded', function() {
+      const hash = window.location.hash;
+      if (hash) {
+        const tabBtn = document.querySelector(`[data-bs-target="${hash}"]`);
+        if (tabBtn) {
+          const tab = new bootstrap.Tab(tabBtn);
+          tab.show();
+        }
+      }
+    });
+
+    // Password modal
+    let currentUserId = null;
+    function showPasswordModal(userId, username) {
+      currentUserId = userId;
+      document.getElementById('modalUsername').textContent = username;
+      document.getElementById('currentPassword').value = {{ _("loading_text")|tojson }};
+      document.getElementById('changePasswordForm').action = `/admin/teachers/${userId}/password`;
+      const modal = new bootstrap.Modal(document.getElementById('passwordModal'));
+      modal.show();
+      fetch(`/admin/teachers/${userId}/password`)
+        .then(r => r.json())
+        .then(data => {
+          document.getElementById('currentPassword').value = data.password || {{ _("not_available")|tojson }};
+        })
+        .catch(e => {
+          document.getElementById('currentPassword').value = {{ _("load_error")|tojson }};
+        });
+    }
+    function copyPassword() {
+      const input = document.getElementById('currentPassword');
+      input.select();
+      document.execCommand('copy');
+      const btn = event.target;
+      const orig = btn.textContent;
+      btn.textContent = {{ _("copied")|tojson }};
+      setTimeout(() => { btn.textContent = orig; }, 2000);
+    }
+
+    // Edit Teacher modal
+    function editTeacherModal(teacherId, fullName) {
+      document.getElementById('editTeacherForm').action = `/admin/teachers/${teacherId}/edit`;
+      document.getElementById('editTeacherFullName').value = fullName;
+      const modal = new bootstrap.Modal(document.getElementById('editTeacherModal'));
+      modal.show();
+    }
+
+    // Edit Class modal
+    function editClassModal(classId, className, classTeacherId) {
+      document.getElementById('editClassForm').action = `/admin/classes/${classId}/edit`;
+      document.getElementById('editClassName').value = className;
+      const sel = document.getElementById('editClassTeacher');
+      sel.value = classTeacherId || '';
+      const modal = new bootstrap.Modal(document.getElementById('editClassModal'));
+      modal.show();
+    }
+
+    // Delete teacher confirmation
+    function confirmDeleteTeacher(teacherId, teacherName) {
+      if (confirm({{ _("confirm_delete_teacher")|tojson }}.replace('{}', teacherName))) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = `/admin/teachers/${teacherId}/delete`;
+        document.body.appendChild(form);
+        form.submit();
+      }
+    }
+  </script>
+{% endblock %}

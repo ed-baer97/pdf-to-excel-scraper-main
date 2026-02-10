@@ -1,0 +1,33 @@
+{% extends "layout.html" %}
+{% block content %}
+  <div class="row justify-content-center">
+    <div class="col-md-5">
+      <!-- Language selector for login page -->
+      <div class="text-end mb-2">
+        <div class="btn-group btn-group-sm">
+          <a href="{{ url_for('main.set_language', lang='ru') }}" 
+             class="btn btn-sm {{ 'btn-primary' if get_locale() == 'ru' else 'btn-outline-primary' }}">РУ</a>
+          <a href="{{ url_for('main.set_language', lang='kk') }}" 
+             class="btn btn-sm {{ 'btn-primary' if get_locale() == 'kk' else 'btn-outline-primary' }}">ҚЗ</a>
+        </div>
+      </div>
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h4 class="mb-3">{{ _('login') }}</h4>
+          <form method="post" action="{{ url_for('auth.login_post') }}">
+            <div class="mb-3">
+              <label class="form-label">{{ _('username') }}</label>
+              <input class="form-control" name="username" autocomplete="username" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">{{ _('password') }}</label>
+              <input class="form-control" name="password" type="password" autocomplete="current-password" required>
+            </div>
+            <button class="btn btn-primary w-100">{{ _('login') }}</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+

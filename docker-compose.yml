@@ -1,0 +1,94 @@
+version: '3.8'
+
+# =============================================================================
+# Mektep Platform - Simplified Architecture
+# =============================================================================
+# - Nginx: Reverse proxy, SSL termination, rate limiting
+# - Web: Flask app (auth, API, admin panel)
+# - PostgreSQL: Main database
+# 
+# Scraping, Word/Excel generation, AI text - handled by desktop app
+# =============================================================================
+
+services:
+  # =============================================================================
+  # Nginx Reverse Proxy
+  # =============================================================================
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # Uncomment for SSL:
+      # - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - web
+    restart: unless-stopped
+    networks:
+      - mektep-network
+
+  # =============================================================================
+  # Main Web Application
+  # =============================================================================
+  web:
+    build: .
+    # Port exposed only internally (nginx proxy)
+    expose:
+      - "5000"
+    environment:
+      - FLASK_ENV=production
+      - SECRET_KEY=${SECRET_KEY}
+      - DATABASE_URL=postgresql://mektep:${POSTGRES_PASSWORD:-mektep123}@db:5432/mektep_db
+      # Disable Celery/Redis (not needed in simplified architecture)
+      - USE_CELERY=0
+      - UPLOAD_ROOT=/app/data/uploads
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+    volumes:
+      - ./data:/app/data
+      - ./instance:/app/instance
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - mektep-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+
+  # =============================================================================
+  # PostgreSQL Database
+  # =============================================================================
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=mektep
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-mektep123}
+      - POSTGRES_DB=mektep_db
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    # Port not exposed externally for security.
+    # Accessible only within Docker network (mektep-network).
+    # For local debugging, uncomment:
+    # ports:
+    #   - "5432:5432"
+    restart: unless-stopped
+    networks:
+      - mektep-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mektep -d mektep_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres-data:
+
+networks:
+  mektep-network:
+    driver: bridge

@@ -1,0 +1,103 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="row">
+  <div class="col-lg-8">
+    <div class="card shadow-sm mb-4">
+      <div class="card-body">
+        <h2 class="mb-4"><i class="bi bi-book"></i> Инструкция по использованию десктопного приложения</h2>
+        
+        <h5>Для учителей</h5>
+        <p class="text-muted">Учителя работают только через десктопное приложение Mektep Desktop. Вход в кабинет через сайт недоступен.</p>
+        
+        <hr>
+        
+        <h5>Шаг 1: Скачайте и запустите</h5>
+        <p>Скачайте десктопное приложение по ссылке справа, распакуйте в любую папку и запустите <strong>Mektep Desktop.exe</strong>.</p>
+        
+        <h5>Шаг 2: Вход в приложение</h5>
+        <p>При запуске появится окно авторизации. Введите <strong>логин и пароль</strong>, которые выдал администратор школы. Приложение само свяжется с платформой для проверки доступа — запускать сервер вручную не нужно.</p>
+        
+        <h5>Шаг 3: Создание отчётов</h5>
+        <p>После входа:</p>
+        <ol>
+          <li>Откройте вкладку «Создание отчётов»</li>
+          <li>Введите логин и пароль <strong>от mektep.edu.kz</strong> (государственный портал)</li>
+          <li>Выберите четверть и папку для сохранения</li>
+          <li>Нажмите «Запустить»</li>
+        </ol>
+        
+        <h5>Шаг 4: Цели обучения и генерация анализа</h5>
+        <p>После создания отчётов можно заполнить цели и получить анализ затруднений:</p>
+        <ol>
+          <li>Откройте вкладку <strong>«Цели»</strong></li>
+          <li>Для каждого типа (СОР1, СОР2, СОР3, СОЧ) заполните:
+            <ul>
+              <li><strong>Достигнутые цели</strong> — что учащиеся усвоили</li>
+              <li><strong>Цели, вызвавшие затруднения</strong> — что не получилось (обязательно для генерации)</li>
+            </ul>
+          </li>
+          <li>Нажмите <strong>«Генерировать анализ (AI)»</strong> — система заполнит перечень затруднений, причины и план коррекционной работы</li>
+          <li>Отметьте отчёты, к которым применить цели, и нажмите <strong>«Применить к выбранным отчетам»</strong></li>
+        </ol>
+        <p class="text-muted small mb-0">Анализ будет записан в Word-документы отчётов.</p>
+        
+        <div class="alert alert-info">
+          <strong>Важно:</strong> Два разных логина — логин от веб-платформы (для доступа и квоты) и логин от mektep.edu.kz (для скрапинга данных учеников).
+        </div>
+        
+        <h5>Частые проблемы</h5>
+        <ul>
+          <li><strong>Не удаётся войти / нет подключения</strong> — проверьте интернет. Если проблема сохраняется, обратитесь к администратору — возможно, сервер платформы временно недоступен.</li>
+          <li><strong>Квота исчерпана</strong> — обратитесь к администратору школы для увеличения лимита.</li>
+          <li><strong>Неверный логин</strong> — при входе используйте логин и пароль, выданные администратором. При создании отчётов — отдельный логин и пароль от mektep.edu.kz.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <!-- Вход для админов и супер админов -->
+    <div class="card shadow-sm mb-4">
+      <div class="card-body">
+        <h5 class="mb-3"><i class="bi bi-box-arrow-in-right"></i> Вход для администраторов</h5>
+        <p class="text-muted small">Только для админов школ и супер-админов. Учителя входят через десктопное приложение.</p>
+        <form method="post" action="{{ url_for('auth.login_post') }}">
+          <div class="mb-3">
+            <label class="form-label">Логин</label>
+            <input class="form-control" name="username" autocomplete="username" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Пароль</label>
+            <input class="form-control" name="password" type="password" autocomplete="current-password" required>
+          </div>
+          <button class="btn btn-primary w-100">Войти</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Скачивание десктопной версии -->
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="mb-3"><i class="bi bi-download"></i> Скачать Mektep Desktop</h5>
+        {% if download_url %}
+          <a href="{{ download_url }}" class="btn btn-success w-100 mb-2" target="_blank" rel="noopener">
+            <i class="bi bi-download"></i> Скачать приложение
+          </a>
+        {% elif download_available %}
+          <a href="{{ url_for('main.download_desktop') }}" class="btn btn-success w-100 mb-2">
+            <i class="bi bi-download"></i> Скачать приложение
+          </a>
+        {% else %}
+          <div class="alert alert-warning small mb-2">
+            Файл сборки пока не загружен. Обратитесь к администратору или соберите приложение самостоятельно:
+          </div>
+          <code class="d-block small">cd mektep-desktop && pyinstaller mektep_desktop.spec</code>
+        {% endif %}
+        <p class="text-muted small mt-2 mb-0">
+          Требуется: Windows. После скачивания распакуйте архив и запустите Mektep Desktop.exe
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

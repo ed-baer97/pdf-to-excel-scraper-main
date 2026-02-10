@@ -1,0 +1,280 @@
+{% extends "layout.html" %}
+{% block content %}
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h3 class="mb-0">{{ _('super_admin') }}</h3>
+    <a href="{{ url_for('teacher.dashboard') }}" class="btn btn-primary">
+      <i class="bi bi-file-earmark-plus"></i> {{ _('teacher_cabinet_reports') }}
+    </a>
+  </div>
+
+  {# ─── Школы ─── #}
+  <div class="card shadow-sm mb-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+      <h5 class="mb-0"><i class="bi bi-building me-2"></i>{{ _('schools') }}</h5>
+    </div>
+    <div class="card-body">
+      <form class="row g-2 mb-4" method="post" action="{{ url_for('superadmin.create_school') }}">
+        <div class="col-sm-6">
+          <input class="form-control" name="name" placeholder="{{ _('new_school_placeholder') }}" required>
+        </div>
+        <div class="col-sm-3">
+          <input class="form-control" name="quota" type="number" min="0" value="2" title="{{ _('scrape_limit_label') }}">
+        </div>
+        <div class="col-sm-3">
+          <button class="btn btn-primary w-100"><i class="bi bi-plus-lg me-1"></i>{{ _('add_short') }}</button>
+        </div>
+      </form>
+
+      {% for s in schools %}
+        <div class="border rounded mb-3">
+          {# --- Основная строка школы --- #}
+          <div class="d-flex flex-wrap align-items-center justify-content-between px-3 py-2 bg-light rounded-top">
+            <div class="d-flex align-items-center gap-3">
+              <a href="{{ url_for('superadmin.school_detail', school_id=s.id) }}" class="fw-semibold text-decoration-none">
+                {{ s.name }}
+              </a>
+              {% if s.is_active %}
+                <span class="badge bg-success-subtle text-success-emphasis">{{ _('open_status') }}</span>
+              {% else %}
+                <span class="badge bg-danger-subtle text-danger-emphasis">{{ _('closed_status') }}</span>
+              {% endif %}
+            </div>
+            <div class="d-flex gap-2 mt-1 mt-sm-0">
+              <button class="btn btn-sm btn-outline-secondary" type="button"
+                      data-bs-toggle="collapse" data-bs-target="#settings-{{ s.id }}">
+                <i class="bi bi-gear me-1"></i>{{ _('settings_btn') }}
+              </button>
+              <form method="post" action="{{ url_for('superadmin.toggle_school', school_id=s.id) }}">
+                {% if s.is_active %}
+                  <button class="btn btn-sm btn-outline-danger"><i class="bi bi-lock me-1"></i>{{ _('close_school') }}</button>
+                {% else %}
+                  <button class="btn btn-sm btn-outline-success"><i class="bi bi-unlock me-1"></i>{{ _('open_school') }}</button>
+                {% endif %}
+              </form>
+              <button class="btn btn-sm btn-outline-danger" onclick="confirmDeleteSchool({{ s.id }}, '{{ s.name }}')">
+                <i class="bi bi-trash me-1"></i>{{ _('delete_btn') }}
+              </button>
+            </div>
+          </div>
+
+          {# --- Раскрывающийся блок настроек --- #}
+          <div class="collapse" id="settings-{{ s.id }}">
+            <div class="px-3 py-3">
+              <div class="row g-3">
+                {# Лимит скрапов #}
+                <div class="col-md-4">
+                  <label class="form-label text-muted small mb-1">{{ _('scrape_limit_label') }}</label>
+                  <form class="input-group input-group-sm" method="post" action="{{ url_for('superadmin.update_quota', school_id=s.id) }}">
+                    <input class="form-control" name="quota" type="number" min="0" value="{{ s.reports_quota_per_period }}">
+                    <button class="btn btn-outline-primary">{{ _('save_btn') }}</button>
+                  </form>
+                  <form class="mt-2" method="post" action="{{ url_for('superadmin.reset_school_quota', school_id=s.id) }}"
+                        onsubmit="return confirm('{{ _('confirm_reset_counter').format(s.name) }}');">
+                    <button type="submit" class="btn btn-sm btn-outline-warning w-100">
+                      <i class="bi bi-arrow-counterclockwise me-1"></i>{{ _('reset_counter') }}
+                    </button>
+                  </form>
+                </div>
+
+                {# API ключ #}
+                <div class="col-md-4">
+                  <label class="form-label text-muted small mb-1">{{ _('ai_api_key_label') }}</label>
+                  <form class="input-group input-group-sm" method="post" action="{{ url_for('superadmin.update_ai_api_key', school_id=s.id) }}">
+                    <input class="form-control" name="ai_api_key" type="text" value="{{ s.ai_api_key or '' }}" placeholder="sk-...">
+                    <button class="btn btn-outline-success">{{ _('save_btn') }}</button>
+                  </form>
+                </div>
+
+                {# Модель AI #}
+                <div class="col-md-4">
+                  <label class="form-label text-muted small mb-1">{{ _('ai_model_label') }}</label>
+                  <form class="input-group input-group-sm" method="post" action="{{ url_for('superadmin.update_ai_model', school_id=s.id) }}">
+                    <select class="form-select" name="ai_model" title="{{ _('ai_model_label') }}">
+                      {% for value, label in ai_model_choices %}
+                        <option value="{{ value }}" {% if (s.ai_model or 'qwen-flash-character') == value %}selected{% endif %}>{{ label }}</option>
+                      {% endfor %}
+                    </select>
+                    <button class="btn btn-outline-secondary">{{ _('save_btn') }}</button>
+                  </form>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      {% else %}
+        <p class="text-muted mb-0">{{ _('no_schools') }}</p>
+      {% endfor %}
+    </div>
+  </div>
+
+  {# ─── Админы школ ─── #}
+  <div class="card shadow-sm mb-4">
+    <div class="card-header bg-white py-3">
+      <h5 class="mb-0"><i class="bi bi-people me-2"></i>{{ _('school_admins') }}</h5>
+    </div>
+    <div class="card-body">
+      <form class="row g-2 mb-4" method="post" action="{{ url_for('superadmin.create_admin') }}">
+        <div class="col-sm-3">
+          <select class="form-select" name="school_id" required>
+            <option value="">{{ _('select_school') }}</option>
+            {% for s in schools %}
+              <option value="{{ s.id }}">{{ s.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-sm-3">
+          <input class="form-control" name="full_name" placeholder="{{ _('admin_fio_placeholder') }}" required>
+        </div>
+        <div class="col-sm-3">
+          <input class="form-control" name="username" placeholder="{{ _('admin_login_placeholder') }}" required>
+        </div>
+        <div class="col-sm-3">
+          <button class="btn btn-primary w-100"><i class="bi bi-plus-lg me-1"></i>{{ _('add_short') }}</button>
+        </div>
+      </form>
+
+      {% if admins %}
+        <div class="table-responsive">
+          <table class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr><th>{{ _('fio') }}</th><th>{{ _('login_col') }}</th><th>{{ _('school_col') }}</th><th class="text-end">{{ _('actions') }}</th></tr>
+            </thead>
+            <tbody>
+              {% for a in admins %}
+                <tr>
+                  <td class="fw-medium">{{ a.full_name or a.username }}</td>
+                  <td class="text-muted">{{ a.username }}</td>
+                  <td>{{ a.school.name if a.school else "—" }}</td>
+                  <td class="text-end">
+                    <button class="btn btn-sm btn-outline-secondary me-1" onclick="editAdminModal({{ a.id }}, '{{ a.full_name or a.username }}')">
+                      <i class="bi bi-pencil"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-dark me-1" onclick="showPasswordModal({{ a.id }}, '{{ a.username }}')">
+                      <i class="bi bi-key me-1"></i>{{ _('password_btn') }}
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="confirmDeleteAdmin({{ a.id }}, '{{ a.full_name or a.username }}')">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="text-muted mb-0">{{ _('no_school_admins') }}</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Password Modal -->
+  <div class="modal fade" id="passwordModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">{{ _('password_label') }} <span id="modalUsername"></span></h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">{{ _('current_password') }}</label>
+            <div class="input-group">
+              <input type="text" class="form-control" id="currentPassword" readonly>
+              <button class="btn btn-outline-secondary" type="button" onclick="copyPassword()">{{ _('copy_btn') }}</button>
+            </div>
+          </div>
+          <hr>
+          <form id="changePasswordForm" method="post">
+            <div class="mb-3">
+              <label class="form-label">{{ _('new_password') }}</label>
+              <input type="password" class="form-control" name="new_password" id="newPassword" minlength="4" required autocomplete="new-password">
+              <small class="text-muted">{{ _('min_4_chars') }}</small>
+            </div>
+            <button type="submit" class="btn btn-primary">{{ _('change_password') }}</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Admin Modal -->
+  <div class="modal fade" id="editAdminModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">{{ _('edit_admin_fio') }}</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <form id="editAdminForm" method="post">
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label">{{ _('fio_label') }}</label>
+              <input type="text" class="form-control" name="full_name" id="editAdminFullName" required>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('cancel_btn') }}</button>
+            <button type="submit" class="btn btn-primary">{{ _('save_btn') }}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentUserId = null;
+
+    function editAdminModal(adminId, fullName) {
+      document.getElementById('editAdminForm').action = `/superadmin/admins/${adminId}/edit`;
+      document.getElementById('editAdminFullName').value = fullName;
+      const modal = new bootstrap.Modal(document.getElementById('editAdminModal'));
+      modal.show();
+    }
+
+    function showPasswordModal(userId, username) {
+      currentUserId = userId;
+      document.getElementById('modalUsername').textContent = username;
+      document.getElementById('currentPassword').value = {{ _("loading_text")|tojson }};
+      document.getElementById('changePasswordForm').action = `/superadmin/admins/${userId}/password`;
+      const modal = new bootstrap.Modal(document.getElementById('passwordModal'));
+      modal.show();
+      fetch(`/superadmin/admins/${userId}/password`)
+        .then(r => r.json())
+        .then(data => {
+          document.getElementById('currentPassword').value = data.password || {{ _("not_available")|tojson }};
+        })
+        .catch(e => {
+          document.getElementById('currentPassword').value = {{ _("load_error")|tojson }};
+        });
+    }
+    function copyPassword() {
+      const input = document.getElementById('currentPassword');
+      input.select();
+      document.execCommand('copy');
+      const btn = event.target;
+      const orig = btn.textContent;
+      btn.textContent = {{ _("copied")|tojson }};
+      setTimeout(() => { btn.textContent = orig; }, 2000);
+    }
+
+    function confirmDeleteAdmin(adminId, adminName) {
+      if (confirm({{ _("confirm_delete_admin")|tojson }}.replace('{}', adminName))) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = `/superadmin/admins/${adminId}/delete`;
+        document.body.appendChild(form);
+        form.submit();
+      }
+    }
+
+    function confirmDeleteSchool(schoolId, schoolName) {
+      if (confirm({{ _("confirm_delete_school")|tojson }}.replace('{}', schoolName))) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = `/superadmin/schools/${schoolId}/delete`;
+        document.body.appendChild(form);
+        form.submit();
+      }
+    }
+  </script>
+{% endblock %}

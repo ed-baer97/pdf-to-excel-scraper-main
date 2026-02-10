@@ -1,0 +1,292 @@
+{% extends "layout.html" %}
+{% block content %}
+<style>
+    .nav-tabs { border-bottom: 2px solid #dee2e6; }
+    .nav-tabs .nav-link {
+        font-weight: 600; color: #495057; border: none;
+        border-bottom: 3px solid transparent; transition: all 0.2s ease;
+        padding: 0.75rem 1.25rem;
+    }
+    .nav-tabs .nav-link:hover { border-bottom-color: #dee2e6; color: #212529; }
+    .nav-tabs .nav-link.active { color: #212529; background-color: transparent; border-bottom-color: #0d6efd; font-weight: 700; }
+    .tab-content { padding: 1.5rem 0; }
+    .table { font-size: 0.9rem; }
+    .table thead th { font-weight: 600; background-color: #f8f9fa; border-bottom: 2px solid #dee2e6; }
+</style>
+
+<div class="container-fluid py-3">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h2 class="mb-1" style="font-weight: 600;">{{ _('class_teacher_full_report') }}</h2>
+      <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-0">
+          <li class="breadcrumb-item"><a href="{{ url_for('admin.dashboard') }}">{{ _('admin_panel') }}</a></li>
+          <li class="breadcrumb-item active">{{ _('class_teacher_full_report') }}</li>
+        </ol>
+      </nav>
+    </div>
+    <a href="{{ url_for('admin.download_class_teacher_report_excel', period_type=period_type, period_number=period_number) }}"
+       class="btn btn-success">
+      {{ _('download_excel') }}
+    </a>
+  </div>
+
+  <!-- Фильтр по периоду -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <form method="GET" class="row g-3">
+        <div class="col-md-4">
+          <label for="period_type" class="form-label">{{ _('period_type') }}</label>
+          <select class="form-select" id="period_type" name="period_type" onchange="this.form.submit()">
+            <option value="quarter" {% if period_type == 'quarter' %}selected{% endif %}>{{ _('quarter_label') }}</option>
+            <option value="semester" {% if period_type == 'semester' %}selected{% endif %}>{{ _('semester_label') }}</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label for="period_number" class="form-label">{{ _('period_number') }}</label>
+          <select class="form-select" id="period_number" name="period_number" onchange="this.form.submit()">
+            {% for p in periods %}
+              {% if p.type == period_type %}
+                <option value="{{ p.number }}" {% if period_number == p.number %}selected{% endif %}>{{ p.name }}</option>
+              {% endif %}
+            {% endfor %}
+          </select>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Вкладки с категориями -->
+  <ul class="nav nav-tabs" id="categoriesTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#content-excellent" type="button">
+        {{ _('on_5') }} <span class="badge bg-success ms-2">{% set t=[] %}{% for c in categories_data.excellent %}{% set _=t.append(c.students|length) %}{% endfor %}{{ t|sum }}</span>
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#content-good" type="button">
+        {{ _('on_4') }} <span class="badge bg-info ms-2">{% set t=[] %}{% for c in categories_data.good %}{% set _=t.append(c.students|length) %}{% endfor %}{{ t|sum }}</span>
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#content-one4" type="button">
+        {{ _('with_one_4') }} <span class="badge bg-info ms-2">{% set t=[] %}{% for c in categories_data.one_4 %}{% set _=t.append(c.students|length) %}{% endfor %}{{ t|sum }}</span>
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#content-satisfactory" type="button">
+        {{ _('on_3') }} <span class="badge bg-warning ms-2">{% set t=[] %}{% for c in categories_data.satisfactory %}{% set _=t.append(c.students|length) %}{% endfor %}{{ t|sum }}</span>
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#content-one3" type="button">
+        {{ _('with_one_3') }} <span class="badge bg-warning ms-2">{% set t=[] %}{% for c in categories_data.one_3 %}{% set _=t.append(c.students|length) %}{% endfor %}{{ t|sum }}</span>
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#content-poor" type="button">
+        {{ _('underachievers') }} <span class="badge bg-danger ms-2">{% set t=[] %}{% for c in categories_data.poor %}{% set _=t.append(c.students|length) %}{% endfor %}{{ t|sum }}</span>
+      </button>
+    </li>
+  </ul>
+
+  <div class="tab-content" id="categoriesTabContent">
+
+    {# ===== на 5 (отличники) ===== #}
+    <div class="tab-pane fade show active" id="content-excellent" role="tabpanel">
+      {% if categories_data.excellent %}
+        <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
+          <input type="text" class="form-control" placeholder="{{ _('search_placeholder') }}" onkeyup="filterTable('excellent', this.value)" style="max-width: 300px;">
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover" id="tableExcellent">
+            <thead class="table-light"><tr>
+              <th style="width:80px;">{{ _('class_col') }}</th><th style="width:50px;">№</th><th>{{ _('fio') }}</th><th style="width:200px;">{{ _('class_teacher') }}</th>
+            </tr></thead>
+            <tbody>
+              {% for class_data in categories_data.excellent %}
+                {% for student in class_data.students %}
+                <tr data-class-name="{{ class_data.class_name|lower }}" data-student-name="{{ student|lower }}">
+                  {% if loop.first %}<td rowspan="{{ class_data.students|length }}" class="align-middle text-center fw-bold">{{ class_data.class_name }}</td>{% endif %}
+                  <td class="text-center">{{ loop.index }}</td>
+                  <td><strong>{{ student }}</strong></td>
+                  {% if loop.first %}<td rowspan="{{ class_data.students|length }}" class="align-middle">{{ class_data.class_teacher }}</td>{% endif %}
+                </tr>
+                {% endfor %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}<p class="text-muted mt-3">{{ _('no_data') }}</p>{% endif %}
+    </div>
+
+    {# ===== на 4 (хорошисты) ===== #}
+    <div class="tab-pane fade" id="content-good" role="tabpanel">
+      {% if categories_data.good %}
+        <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
+          <input type="text" class="form-control" placeholder="{{ _('search_placeholder') }}" onkeyup="filterTable('good', this.value)" style="max-width: 300px;">
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover" id="tableGood">
+            <thead class="table-light"><tr>
+              <th style="width:80px;">{{ _('class_col') }}</th><th style="width:50px;">№</th><th>{{ _('fio') }}</th><th style="width:200px;">{{ _('class_teacher') }}</th>
+            </tr></thead>
+            <tbody>
+              {% for class_data in categories_data.good %}
+                {% for student in class_data.students %}
+                <tr data-class-name="{{ class_data.class_name|lower }}" data-student-name="{{ student|lower }}">
+                  {% if loop.first %}<td rowspan="{{ class_data.students|length }}" class="align-middle text-center fw-bold">{{ class_data.class_name }}</td>{% endif %}
+                  <td class="text-center">{{ loop.index }}</td>
+                  <td><strong>{{ student }}</strong></td>
+                  {% if loop.first %}<td rowspan="{{ class_data.students|length }}" class="align-middle">{{ class_data.class_teacher }}</td>{% endif %}
+                </tr>
+                {% endfor %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}<p class="text-muted mt-3">{{ _('no_data') }}</p>{% endif %}
+    </div>
+
+    {# ===== С одной 4 ===== #}
+    <div class="tab-pane fade" id="content-one4" role="tabpanel">
+      {% if categories_data.one_4 %}
+        <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
+          <input type="text" class="form-control" placeholder="{{ _('search_placeholder') }}" onkeyup="filterTable('one4', this.value)" style="max-width: 300px;">
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover" id="tableOne4">
+            <thead class="table-light"><tr>
+              <th style="width:80px;">{{ _('class_col') }}</th><th style="width:50px;">№</th><th>{{ _('fio') }}</th><th>{{ _('subject_col') }}</th><th>{{ _('teacher_col') }}</th><th style="width:200px;">{{ _('class_teacher') }}</th>
+            </tr></thead>
+            <tbody>
+              {% for class_data in categories_data.one_4 %}
+                {% for item in class_data.students %}
+                <tr data-class-name="{{ class_data.class_name|lower }}" data-student-name="{{ item.student|lower }}">
+                  {% if loop.first %}<td rowspan="{{ class_data.students|length }}" class="align-middle text-center fw-bold">{{ class_data.class_name }}</td>{% endif %}
+                  <td class="text-center">{{ loop.index }}</td>
+                  <td><strong>{{ item.student }}</strong></td>
+                  <td>{{ item.subject }}</td>
+                  <td>{{ item.teacher }}</td>
+                  {% if loop.first %}<td rowspan="{{ class_data.students|length }}" class="align-middle">{{ class_data.class_teacher }}</td>{% endif %}
+                </tr>
+                {% endfor %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}<p class="text-muted mt-3">{{ _('no_data') }}</p>{% endif %}
+    </div>
+
+    {# ===== на 3 (троечники) — с предметами ===== #}
+    <div class="tab-pane fade" id="content-satisfactory" role="tabpanel">
+      {% if categories_data.satisfactory %}
+        <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
+          <input type="text" class="form-control" placeholder="{{ _('search_placeholder') }}" onkeyup="filterTable('satisfactory', this.value)" style="max-width: 300px;">
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover" id="tableSatisfactory">
+            <thead class="table-light"><tr>
+              <th style="width:80px;">{{ _('class_col') }}</th><th>{{ _('fio') }}</th><th>{{ _('subject_1') }}</th><th>{{ _('subject_2') }}</th><th>{{ _('subject_3') }}</th><th>{{ _('subject_4') }}</th><th>{{ _('subject_5plus') }}</th><th style="width:200px;">{{ _('class_teacher') }}</th>
+            </tr></thead>
+            <tbody>
+              {% for class_data in categories_data.satisfactory %}
+                {% for item in class_data.troechniki_detailed %}
+                <tr data-class-name="{{ class_data.class_name|lower }}" data-student-name="{{ item.student|lower }}">
+                  {% if loop.first %}<td rowspan="{{ class_data.troechniki_detailed|length }}" class="align-middle text-center fw-bold">{{ class_data.class_name }}</td>{% endif %}
+                  <td><strong>{{ item.student }}</strong></td>
+                  <td>{% if item.subjects_1_4|length > 0 %}{{ item.subjects_1_4[0].subject_name }} ({{ item.subjects_1_4[0].grade }}){% else %}<span class="text-muted">—</span>{% endif %}</td>
+                  <td>{% if item.subjects_1_4|length > 1 %}{{ item.subjects_1_4[1].subject_name }} ({{ item.subjects_1_4[1].grade }}){% else %}<span class="text-muted">—</span>{% endif %}</td>
+                  <td>{% if item.subjects_1_4|length > 2 %}{{ item.subjects_1_4[2].subject_name }} ({{ item.subjects_1_4[2].grade }}){% else %}<span class="text-muted">—</span>{% endif %}</td>
+                  <td>{% if item.subjects_1_4|length > 3 %}{{ item.subjects_1_4[3].subject_name }} ({{ item.subjects_1_4[3].grade }}){% else %}<span class="text-muted">—</span>{% endif %}</td>
+                  <td>{% if item.subjects_5 %}{% for subj in item.subjects_5 %}{{ subj.subject_name }} ({{ subj.grade }}){% if not loop.last %}, {% endif %}{% endfor %}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                  {% if loop.first %}<td rowspan="{{ class_data.troechniki_detailed|length }}" class="align-middle">{{ class_data.class_teacher }}</td>{% endif %}
+                </tr>
+                {% endfor %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}<p class="text-muted mt-3">{{ _('no_data') }}</p>{% endif %}
+    </div>
+
+    {# ===== С одной 3 ===== #}
+    <div class="tab-pane fade" id="content-one3" role="tabpanel">
+      {% if categories_data.one_3 %}
+        <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
+          <input type="text" class="form-control" placeholder="{{ _('search_placeholder') }}" onkeyup="filterTable('one3', this.value)" style="max-width: 300px;">
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover" id="tableOne3">
+            <thead class="table-light"><tr>
+              <th style="width:80px;">{{ _('class_col') }}</th><th style="width:50px;">№</th><th>{{ _('fio') }}</th><th>{{ _('subject_col') }}</th><th>{{ _('teacher_col') }}</th><th style="width:200px;">{{ _('class_teacher') }}</th>
+            </tr></thead>
+            <tbody>
+              {% for class_data in categories_data.one_3 %}
+                {% for item in class_data.students %}
+                <tr data-class-name="{{ class_data.class_name|lower }}" data-student-name="{{ item.student|lower }}">
+                  {% if loop.first %}<td rowspan="{{ class_data.students|length }}" class="align-middle text-center fw-bold">{{ class_data.class_name }}</td>{% endif %}
+                  <td class="text-center">{{ loop.index }}</td>
+                  <td><strong>{{ item.student }}</strong></td>
+                  <td>{{ item.subject }}</td>
+                  <td>{{ item.teacher }}</td>
+                  {% if loop.first %}<td rowspan="{{ class_data.students|length }}" class="align-middle">{{ class_data.class_teacher }}</td>{% endif %}
+                </tr>
+                {% endfor %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}<p class="text-muted mt-3">{{ _('no_data') }}</p>{% endif %}
+    </div>
+
+    {# ===== Неуспевающие ===== #}
+    <div class="tab-pane fade" id="content-poor" role="tabpanel">
+      {% if categories_data.poor %}
+        <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
+          <input type="text" class="form-control" placeholder="{{ _('search_placeholder') }}" onkeyup="filterTable('poor', this.value)" style="max-width: 300px;">
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover" id="tablePoor">
+            <thead class="table-light"><tr>
+              <th style="width:80px;">{{ _('class_col') }}</th><th style="width:50px;">№</th><th>{{ _('fio') }}</th><th>{{ _('subject_col') }}</th><th>{{ _('teacher_col') }}</th><th style="width:200px;">{{ _('class_teacher') }}</th>
+            </tr></thead>
+            <tbody>
+              {% for class_data in categories_data.poor %}
+                {% for item in class_data.students %}
+                <tr data-class-name="{{ class_data.class_name|lower }}" data-student-name="{{ item.student|lower }}">
+                  {% if loop.first %}<td rowspan="{{ class_data.students|length }}" class="align-middle text-center fw-bold">{{ class_data.class_name }}</td>{% endif %}
+                  <td class="text-center">{{ loop.index }}</td>
+                  <td><strong>{{ item.student }}</strong></td>
+                  <td>{{ item.subject }}</td>
+                  <td>{{ item.teacher }}</td>
+                  {% if loop.first %}<td rowspan="{{ class_data.students|length }}" class="align-middle">{{ class_data.class_teacher }}</td>{% endif %}
+                </tr>
+                {% endfor %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}<p class="text-muted mt-3">{{ _('no_data') }}</p>{% endif %}
+    </div>
+
+  </div>
+</div>
+
+<script>
+function filterTable(category, searchValue) {
+    const tabMap = {
+        'excellent': 'tableExcellent', 'good': 'tableGood', 'one4': 'tableOne4',
+        'satisfactory': 'tableSatisfactory', 'one3': 'tableOne3', 'poor': 'tablePoor'
+    };
+    const table = document.getElementById(tabMap[category]);
+    if (!table) return;
+    const searchLower = searchValue.toLowerCase().trim();
+    table.querySelectorAll('tbody tr').forEach(row => {
+        const cn = row.getAttribute('data-class-name') || '';
+        const sn = row.getAttribute('data-student-name') || '';
+        row.style.display = (cn.includes(searchLower) || sn.includes(searchLower) || searchLower === '') ? '' : 'none';
+    });
+}
+</script>
+{% endblock %}

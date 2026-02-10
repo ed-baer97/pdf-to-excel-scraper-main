@@ -1,0 +1,158 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="container-fluid py-3">
+  <nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="{{ url_for('superadmin.dashboard') }}">{{ _('superadmin') }}</a></li>
+      <li class="breadcrumb-item active">{{ school.name }}</li>
+    </ol>
+  </nav>
+
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h3 class="mb-0">
+      <i class="bi bi-building"></i> {{ school.name }}
+      {% if school.is_active %}
+        <span class="badge bg-success">{{ _('active_status') }}</span>
+      {% else %}
+        <span class="badge bg-secondary">{{ _('inactive_status') }}</span>
+      {% endif %}
+    </h3>
+  </div>
+
+  <!-- Статистика -->
+  <div class="row mb-4">
+    <div class="col-md-3">
+      <div class="card shadow-sm text-center">
+        <div class="card-body">
+          <h2 class="text-primary mb-0">{{ admins|length }}</h2>
+          <small class="text-muted">{{ _('admins_count_label') }}</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm text-center">
+        <div class="card-body">
+          <h2 class="text-success mb-0">{{ teachers|length }}</h2>
+          <small class="text-muted">{{ _('teachers_count_label') }}</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm text-center">
+        <div class="card-body">
+          <h2 class="text-info mb-0">{{ classes|length }}</h2>
+          <small class="text-muted">{{ _('classes_count_label') }}</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm text-center">
+        <div class="card-body">
+          <h2 class="text-warning mb-0">{{ subjects|length }}</h2>
+          <small class="text-muted">{{ _('subjects_count_label') }}</small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row">
+    <!-- Левая колонка: Админы и Учителя -->
+    <div class="col-md-6">
+      <!-- Админы -->
+      <div class="card shadow-sm mb-4">
+        <div class="card-header"><strong><i class="bi bi-person-badge"></i> {{ _('administrators') }}</strong></div>
+        <div class="card-body">
+          {% if admins %}
+            <ul class="list-group list-group-flush">
+              {% for a in admins %}
+                <li class="list-group-item d-flex justify-content-between">
+                  <span>{{ a.full_name or a.username }}</span>
+                  <span class="text-muted">{{ a.username }}</span>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="text-muted mb-0">{{ _('no_admins') }}</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Учителя -->
+      <div class="card shadow-sm mb-4">
+        <div class="card-header"><strong><i class="bi bi-people"></i> {{ _('teachers') }}</strong></div>
+        <div class="card-body">
+          {% if teachers %}
+            <table class="table table-sm table-hover mb-0">
+              <thead class="table-light">
+                <tr><th>{{ _('login_col') }}</th><th>{{ _('name_col') }}</th></tr>
+              </thead>
+              <tbody>
+                {% for t in teachers %}
+                  <tr>
+                    <td>{{ t.username }}</td>
+                    <td>{{ t.full_name or '—' }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <p class="text-muted mb-0">{{ _('no_teachers') }}</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Правая колонка: Классы и Предметы -->
+    <div class="col-md-6">
+      <!-- Классы -->
+      <div class="card shadow-sm mb-4">
+        <div class="card-header"><strong><i class="bi bi-building"></i> {{ _('classes') }}</strong></div>
+        <div class="card-body">
+          {% if classes %}
+            <table class="table table-sm table-hover mb-0">
+              <thead class="table-light">
+                <tr><th>{{ _('class_col') }}</th><th>{{ _('class_teacher') }}</th></tr>
+              </thead>
+              <tbody>
+                {% for c in classes %}
+                  <tr>
+                    <td><strong>{{ c.name }}</strong></td>
+                    <td>
+                      {% if c.class_teacher %}
+                        {{ c.class_teacher.full_name or c.class_teacher.username }}
+                      {% else %}
+                        <span class="text-muted">—</span>
+                      {% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <p class="text-muted mb-0">{{ _('no_classes_short') }}</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Предметы -->
+      <div class="card shadow-sm mb-4">
+        <div class="card-header"><strong><i class="bi bi-book"></i> {{ _('subjects') }}</strong></div>
+        <div class="card-body">
+          {% if subjects %}
+            <ul class="list-group list-group-flush">
+              {% for s in subjects %}
+                <li class="list-group-item d-flex justify-content-between">
+                  <span>{{ s.name }}</span>
+                  <span class="badge bg-secondary">{{ s.teacher_count }} {{ _('teachers_badge') }}</span>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="text-muted mb-0">{{ _('no_subjects') }}</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
