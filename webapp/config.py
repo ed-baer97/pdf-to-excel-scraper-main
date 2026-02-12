@@ -93,30 +93,15 @@ class ProductionConfig(Config):
     DEBUG = False
     TESTING = False
     
-    # In production, SECRET_KEY MUST be set
-    @property
-    def SECRET_KEY(self):
-        key = os.getenv("SECRET_KEY")
-        if not key or key == "dev-secret-key-change-me-in-production":
-            raise ValueError(
-                "SECRET_KEY must be set in production! "
-                "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
-            )
-        return key
+    # In production, SECRET_KEY MUST be set via environment variable
+    SECRET_KEY = os.getenv("SECRET_KEY", "")
     
-    # Production should use PostgreSQL
-    @property
-    def SQLALCHEMY_DATABASE_URI(self):
-        uri = os.getenv("DATABASE_URL")
-        if not uri:
-            raise ValueError(
-                "DATABASE_URL must be set in production! "
-                "Example: postgresql://user:password@localhost:5432/mektep_db"
-            )
-        # Handle Heroku-style postgres:// URLs
-        if uri.startswith("postgres://"):
-            uri = uri.replace("postgres://", "postgresql://", 1)
-        return uri
+    # Production should use PostgreSQL (set DATABASE_URL in .env)
+    # Handle Heroku-style postgres:// URLs
+    _db_url = os.getenv("DATABASE_URL", "")
+    if _db_url.startswith("postgres://"):
+        _db_url = _db_url.replace("postgres://", "postgresql://", 1)
+    SQLALCHEMY_DATABASE_URI = _db_url or None
     
     # Stricter pool settings for production
     SQLALCHEMY_ENGINE_OPTIONS = {
