@@ -12,8 +12,8 @@ WTForms>=3.1,<4
 
 # Database
 # SQLite: built-in (for development)
-# PostgreSQL: psycopg (for production)
-psycopg[binary]>=3.1,<4
+# PostgreSQL: psycopg2 driver for SQLAlchemy
+psycopg2-binary>=2.9,<3
 
 # Redis & Celery (async task queue)
 redis>=5.0,<6
