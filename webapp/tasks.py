@@ -19,7 +19,7 @@ from celery import shared_task
 from celery.utils.log import get_task_logger
 
 from .extensions import db
-from .models import ReportFile, ScrapeJob, ScrapeJobStatus, TeacherQuotaUsage
+from .models import ReportFile, ScrapeJob, ScrapeJobStatus
 
 logger = get_task_logger(__name__)
 
@@ -219,21 +219,6 @@ def run_scrape_task(
                 )
                 db.session.add(rf)
                 created_count += 1
-        
-        # Update quota: one successful scrape = +1 (при любом успешном завершении)
-        usage = (
-            TeacherQuotaUsage.query.filter_by(
-                teacher_id=job.teacher_id,
-                period_code=job.period_code
-            ).first()
-            or TeacherQuotaUsage(
-                teacher_id=job.teacher_id,
-                period_code=job.period_code,
-                used_reports=0
-            )
-        )
-        usage.used_reports += 1
-        db.session.add(usage)
         
         # Mark success
         job.status = ScrapeJobStatus.SUCCEEDED.value

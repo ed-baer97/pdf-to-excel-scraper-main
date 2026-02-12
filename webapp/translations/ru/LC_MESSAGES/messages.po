@@ -83,8 +83,6 @@ msgstr "Задачи"
 msgid "reports"
 msgstr "Отчеты"
 
-msgid "quota"
-msgstr "Квота"
 
 msgid "admin_panel"
 msgstr "Панель администратора"

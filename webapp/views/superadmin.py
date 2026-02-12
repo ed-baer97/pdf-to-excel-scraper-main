@@ -5,7 +5,7 @@ from flask_login import login_required, current_user
 from sqlalchemy import func
 
 from ..extensions import db
-from ..models import Role, School, User, TeacherQuotaUsage, Class, GradeReport, ReportFile, TeacherSubject, TeacherClass, Subject
+from ..models import Role, School, User, Class, GradeReport, ReportFile, TeacherSubject, TeacherClass, Subject
 from ..security import decrypt_password, encrypt_password
 
 bp = Blueprint("superadmin", __name__, url_prefix="/superadmin")
@@ -38,11 +38,10 @@ def create_school():
     if not _require_superadmin():
         return redirect(url_for("teacher.dashboard"))
     name = request.form.get("name", "").strip()
-    quota = int(request.form.get("quota", "2") or "2")
     if not name:
         flash("Название школы обязательно.", "danger")
         return redirect(url_for("superadmin.dashboard"))
-    s = School(name=name, reports_quota_per_period=quota, is_active=True)
+    s = School(name=name, is_active=True)
     db.session.add(s)
     db.session.commit()
     flash("Школа создана.", "success")
@@ -81,7 +80,6 @@ def delete_school(school_id: int):
     for u in users:
         GradeReport.query.filter_by(teacher_id=u.id).delete()
         ReportFile.query.filter_by(teacher_id=u.id).delete()
-        TeacherQuotaUsage.query.filter_by(teacher_id=u.id).delete()
         teacher_subjects = TeacherSubject.query.filter_by(teacher_id=u.id).all()
         for ts in teacher_subjects:
             TeacherClass.query.filter_by(teacher_subject_id=ts.id).delete()
@@ -103,37 +101,6 @@ def delete_school(school_id: int):
     db.session.delete(s)
     db.session.commit()
     flash(f'Школа "{school_name}" и все связанные данные удалены.', "success")
-    return redirect(url_for("superadmin.dashboard"))
-
-
-@bp.post("/schools/<int:school_id>/quota")
-@login_required
-def update_quota(school_id: int):
-    if not _require_superadmin():
-        return redirect(url_for("teacher.dashboard"))
-    s = db.session.get(School, school_id)
-    if not s:
-        return redirect(url_for("superadmin.dashboard"))
-    quota = int(request.form.get("quota", str(s.reports_quota_per_period or 2)) or (s.reports_quota_per_period or 2))
-    s.reports_quota_per_period = max(0, quota)
-    db.session.commit()
-    flash("Лимит скрапов обновлён.", "success")
-    return redirect(url_for("superadmin.dashboard"))
-
-
-@bp.post("/schools/<int:school_id>/reset_quota")
-@login_required
-def reset_school_quota(school_id: int):
-    """Сбросить счётчик использованных скрапов для всех учителей школы."""
-    if not _require_superadmin():
-        return redirect(url_for("teacher.dashboard"))
-    s = db.session.get(School, school_id)
-    if not s:
-        return redirect(url_for("superadmin.dashboard"))
-    teacher_ids = [u.id for u in User.query.filter_by(school_id=school_id, role=Role.TEACHER.value).all()]
-    deleted = TeacherQuotaUsage.query.filter(TeacherQuotaUsage.teacher_id.in_(teacher_ids)).delete(synchronize_session=False)
-    db.session.commit()
-    flash(f"Счётчик скрапов сброшен для школы «{s.name}» (удалено записей: {deleted}).", "success")
     return redirect(url_for("superadmin.dashboard"))
 
 
@@ -175,6 +142,22 @@ def update_ai_model(school_id: int):
     s.ai_model = ai_model if ai_model in allowed else (AI_MODEL_CHOICES[0][0])
     db.session.commit()
     flash("Модель AI обновлена.", "success")
+    return redirect(url_for("superadmin.dashboard"))
+
+
+@bp.post("/schools/<int:school_id>/toggle_cross_school")
+@login_required
+def toggle_cross_school(school_id: int):
+    """Переключить разрешение на создание отчётов для других школ."""
+    if not _require_superadmin():
+        return redirect(url_for("teacher.dashboard"))
+    s = db.session.get(School, school_id)
+    if not s:
+        return redirect(url_for("superadmin.dashboard"))
+    s.allow_cross_school_reports = not s.allow_cross_school_reports
+    db.session.commit()
+    status = "включено" if s.allow_cross_school_reports else "выключено"
+    flash(f"Разрешение на другие школы для «{s.name}»: {status}.", "success")
     return redirect(url_for("superadmin.dashboard"))
 
 

@@ -114,17 +114,6 @@ class MektepMainWindow(QMainWindow):
         user_label.setStyleSheet("font-weight: bold; color: #198754;")
         info_layout.addWidget(user_label)
         
-        # Квота
-        quota_result = self.api_client.check_quota()
-        if quota_result.get("success"):
-            remaining = quota_result.get("remaining", 0)
-            total = quota_result.get("total", 0)
-            
-            quota_text = "Квота" if self.translator.get_language() == 'ru' else "Квота"
-            quota_label = QLabel(f"{quota_text}: {remaining}/{total}")
-            quota_label.setStyleSheet("color: #6c757d;")
-            info_layout.addWidget(quota_label)
-        
         info_layout.addStretch()
         
         # Кнопка скрытия/показа панели создания отчетов

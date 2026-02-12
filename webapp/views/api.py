@@ -3,7 +3,6 @@ API endpoints for Mektep Desktop integration
 
 Минимальный REST API для десктопного приложения:
 - Authentication (JWT tokens)
-- Quota checking
 - Reports logging
 """
 from datetime import datetime, timedelta
@@ -15,7 +14,7 @@ from werkzeug.security import check_password_hash
 
 from ..extensions import db
 from ..models import (
-    User, Role, TeacherQuotaUsage, ReportFile, GradeReport,
+    User, Role, ReportFile, GradeReport,
     Class, Subject, TeacherSubject, TeacherClass, School,
 )
 import json
@@ -274,66 +273,6 @@ def api_refresh_token():
 
 
 # ==============================================================================
-# Quota Endpoints
-# ==============================================================================
-
-@bp.get("/quota/check")
-@require_jwt
-def api_check_quota():
-    """
-    Проверка квоты пользователя
-    
-    Response:
-        {
-            "success": true,
-            "allowed": true,
-            "remaining": 15,
-            "used": 5,
-            "total": 20
-        }
-    """
-    user = request.current_user
-    
-    # Только учителя имеют квоту
-    if user.role != Role.TEACHER.value:
-        return jsonify({
-            "success": True,
-            "allowed": True,
-            "remaining": 999,
-            "used": 0,
-            "total": 999,
-            "unlimited": True
-        }), 200
-    
-    # Получаем квоту школы
-    school = user.school
-    if not school or not school.is_active:
-        return jsonify({"error": "Школа не найдена или неактивна"}), 403
-    
-    quota_per_period = int(school.reports_quota_per_period or 0)
-    
-    # Получаем текущий период (можно передать как параметр)
-    period_code = request.args.get("period", "2")
-    
-    # Получаем использование квоты
-    usage = TeacherQuotaUsage.query.filter_by(
-        teacher_id=user.id,
-        period_code=period_code
-    ).first()
-    
-    used = int(usage.used_reports) if usage else 0
-    remaining = max(0, quota_per_period - used)
-    
-    return jsonify({
-        "success": True,
-        "allowed": remaining > 0,
-        "remaining": remaining,
-        "used": used,
-        "total": quota_per_period
-    }), 200
-
-
-# ==============================================================================
 # Reports Logging Endpoints
 # ==============================================================================
 
@@ -401,29 +340,60 @@ def api_log_reports():
             current_app.logger.error(f"Error logging report: {e}")
             continue
     
-    # Обновляем квоту: один успешный скрап = +1 (не зависит от числа отчётов)
-    if created_count > 0 and user.role == Role.TEACHER.value:
-        period_code = reports[0].get("period", "2")
-        usage = TeacherQuotaUsage.query.filter_by(
-            teacher_id=user.id,
-            period_code=period_code
-        ).first()
-        
-        if not usage:
-            usage = TeacherQuotaUsage(
-                teacher_id=user.id,
-                period_code=period_code,
-                used_reports=0
-            )
-            db.session.add(usage)
-        
-        usage.used_reports += 1
-    
     db.session.commit()
     
     return jsonify({
         "success": True,
         "count": created_count
+    }), 200
+
+
+# ==============================================================================
+# School Info API (школа текущего пользователя)
+# ==============================================================================
+
+@bp.get("/schools/my")
+@require_jwt
+def api_my_school():
+    """
+    Информация о школе текущего пользователя.
+    
+    Возвращает название школы и флаг allow_cross_school_reports.
+    Используется десктопным приложением для проверки организации
+    перед запуском скрапинга.
+    
+    Response:
+        {
+            "success": true,
+            "school_id": 1,
+            "school_name": "Специализированный IT лицей",
+            "allow_cross_school_reports": false
+        }
+    """
+    user = request.current_user
+    
+    if not user.school_id:
+        return jsonify({
+            "success": True,
+            "school_id": None,
+            "school_name": None,
+            "allow_cross_school_reports": True  # Без школы — не ограничиваем
+        }), 200
+    
+    school = db.session.get(School, user.school_id)
+    if not school:
+        return jsonify({
+            "success": True,
+            "school_id": None,
+            "school_name": None,
+            "allow_cross_school_reports": True
+        }), 200
+    
+    return jsonify({
+        "success": True,
+        "school_id": school.id,
+        "school_name": school.name,
+        "allow_cross_school_reports": school.allow_cross_school_reports
     }), 200
 
 
@@ -559,6 +529,17 @@ def api_upload_report():
             }), 404
         
         school_id = school.id
+        
+        # ===== Проверка: org_name совпадает со школой учителя? =====
+        # Если разрешение выключено и организация отличается — отклоняем.
+        if user.school_id and school_id != user.school_id:
+            user_school = db.session.get(School, user.school_id)
+            if user_school and not user_school.allow_cross_school_reports:
+                return jsonify({
+                    "error": f"Организация «{org_name}» не совпадает с вашей школой «{user_school.name}». "
+                             "Создание отчётов для других школ запрещено.",
+                    "org_mismatch": True
+                }), 403
     else:
         # Fallback: используем school_id пользователя (обратная совместимость)
         school_id = user.school_id
@@ -632,14 +613,12 @@ def api_delete_all_reports():
     Удаляет:
     - Все GradeReport записи учителя
     - Все ReportFile записи учителя
-    - Сбрасывает TeacherQuotaUsage учителя
     
     Response:
         {
             "success": true,
             "deleted_grade_reports": 10,
-            "deleted_report_files": 5,
-            "quota_reset": true
+            "deleted_report_files": 5
         }
     """
     user = request.current_user
@@ -650,16 +629,12 @@ def api_delete_all_reports():
     # Удаляем все ReportFile
     report_files_count = ReportFile.query.filter_by(teacher_id=user.id).delete()
     
-    # Сбрасываем квоту
-    TeacherQuotaUsage.query.filter_by(teacher_id=user.id).delete()
-    
     db.session.commit()
     
     return jsonify({
         "success": True,
         "deleted_grade_reports": grade_reports_count,
         "deleted_report_files": report_files_count,
-        "quota_reset": True
     }), 200
 
 

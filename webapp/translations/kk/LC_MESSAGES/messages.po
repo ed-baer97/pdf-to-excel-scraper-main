@@ -83,8 +83,6 @@ msgstr "Тапсырмалар"
 msgid "reports"
 msgstr "Есептер"
 
-msgid "quota"
-msgstr "Квота"
 
 msgid "admin_panel"
 msgstr "Әкімші панелі"

@@ -281,9 +281,21 @@ class LoginDialog(QDialog):
             # Успешная авторизация
             self.user_data = result.get("user", {})
             
-            # Проверяем квоту
-            self.status_label.setText("🔄 " + self.translator.tr('status'))
-            QTimer.singleShot(100, self.check_quota)
+            # Успешная авторизация — принимаем диалог
+            self.authenticated = True
+            
+            # Сохраняем учетные данные если "Запомнить меня"
+            if self.remember_checkbox.isChecked():
+                self.settings.setValue("auth/username", self.username_input.text())
+                self.settings.setValue("auth/remember", True)
+            else:
+                self.settings.remove("auth/username")
+                self.settings.setValue("auth/remember", False)
+            
+            self.status_label.setText("✅ " + self.translator.tr('login_button'))
+            self.status_label.setStyleSheet("color: #198754; font-size: 12px;")
+            
+            QTimer.singleShot(500, self.accept)
             
         elif result.get("offline"):
             # Сервер недоступен
@@ -308,71 +320,6 @@ class LoginDialog(QDialog):
             # Фокус на пароль для повторного ввода
             self.password_input.clear()
             self.password_input.setFocus()
-    
-    def check_quota(self):
-        """Проверка квоты пользователя"""
-        quota_result = self.api_client.check_quota()
-        
-        if quota_result.get("success"):
-            remaining = quota_result.get("remaining", 0)
-            total = quota_result.get("total", 0)
-            
-            if not quota_result.get("allowed"):
-                # Квота исчерпана
-                self.login_btn.setEnabled(True)
-                self.login_btn.setText(self.translator.tr('login_button'))
-                
-                used = quota_result.get('used', 0)
-                if self.translator.get_language() == 'kk':
-                    msg = f"Сіздің сәтті скрап квотаңыз таусылды.\n\n" \
-                          f"Пайдаланылды: {used} / {total}\n\n" \
-                          f"Лимитті арттыру үшін әкімшіге жүгініңіз."
-                else:
-                    msg = f"Ваша квота на успешные скрапы исчерпана.\n\n" \
-                          f"Использовано: {used} из {total}\n\n" \
-                          f"Обратитесь к администратору для увеличения лимита."
-                
-                QMessageBox.warning(self, self.translator.tr('warning'), msg)
-                return
-            
-            # Успешная авторизация
-            self.authenticated = True
-            
-            # Сохраняем учетные данные если "Запомнить меня"
-            if self.remember_checkbox.isChecked():
-                self.settings.setValue("auth/username", self.username_input.text())
-                self.settings.setValue("auth/remember", True)
-            else:
-                self.settings.remove("auth/username")
-                self.settings.setValue("auth/remember", False)
-            
-            # Показываем информацию
-            if self.translator.get_language() == 'kk':
-                msg = f"✅ Кіру орындалды! Квота: {remaining}/{total}"
-            else:
-                msg = f"✅ Вход выполнен! Квота: {remaining}/{total}"
-            
-            self.status_label.setText(msg)
-            self.status_label.setStyleSheet("color: #198754; font-size: 12px;")
-            
-            # Закрываем диалог через 1 секунду
-            QTimer.singleShot(1000, self.accept)
-        
-        else:
-            # Ошибка проверки квоты
-            self.login_btn.setEnabled(True)
-            self.login_btn.setText(self.translator.tr('login_button'))
-            
-            error_msg = quota_result.get("error", self.translator.tr('unknown_error'))
-            
-            QMessageBox.warning(
-                self,
-                self.translator.tr('error'),
-                f"{error_msg}\n\n" + (
-                    "Қайталап көріңіз." if self.translator.get_language() == 'kk'
-                    else "Попробуйте еще раз."
-                )
-            )
     
     def is_authenticated(self) -> bool:
         """Проверка успешной авторизации"""

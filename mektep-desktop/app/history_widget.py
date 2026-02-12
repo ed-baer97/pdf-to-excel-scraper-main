@@ -476,8 +476,6 @@ class HistoryWidget(QWidget):
                     gr = result.get("deleted_grade_reports", 0)
                     rf = result.get("deleted_report_files", 0)
                     server_message = f"\nУдалено с сервера: {gr + rf} записей"
-                    if result.get("quota_reset"):
-                        server_message += "\nКвота сброшена"
                     print(f"[DEBUG] Серверные данные очищены: GradeReport={gr}, ReportFile={rf}")
                 else:
                     error = result.get("error", "Неизвестная ошибка")

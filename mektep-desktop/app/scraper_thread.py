@@ -172,6 +172,27 @@ class ScraperThread(QThread):
             elif "MEKTEP_SCHOOL_INDEX" in os.environ:
                 del os.environ["MEKTEP_SCHOOL_INDEX"]
             
+            # ===== Защита от передачи аккаунта: получаем школу пользователя =====
+            if "MEKTEP_EXPECTED_SCHOOL" in os.environ:
+                del os.environ["MEKTEP_EXPECTED_SCHOOL"]
+            
+            if self.api_client and self.api_client.is_authenticated():
+                try:
+                    school_info = self.api_client.get_my_school()
+                    if school_info.get("success"):
+                        school_name = school_info.get("school_name")
+                        allow_cross = school_info.get("allow_cross_school_reports", True)
+                        if school_name and not allow_cross:
+                            os.environ["MEKTEP_EXPECTED_SCHOOL"] = school_name
+                            print(f"[DEBUG] Защита: ожидаемая школа = '{school_name}'")
+                        else:
+                            print(f"[DEBUG] Защита: cross-school разрешено или школа не назначена")
+                    else:
+                        print(f"[DEBUG] Не удалось получить информацию о школе: "
+                              f"{school_info.get('error', '?')}")
+                except Exception as e:
+                    print(f"[DEBUG] Ошибка при получении информации о школе: {e}")
+            
             # Определяем базовые директории (поддержка PyInstaller)
             if getattr(sys, 'frozen', False):
                 # Скомпилированное приложение (PyInstaller)
@@ -303,6 +324,13 @@ class ScraperThread(QThread):
                         pass
                 self.progress.emit(100, f"Готово! Создано отчетов: {len(reports)}")
                 self.finished.emit(True, reports)
+            elif self._scraper_result == 5:
+                # Организация не совпадает — защита от передачи аккаунта
+                self.error.emit(
+                    "Организация на mektep.edu.kz не совпадает с вашей школой. "
+                    "Создание отчётов для других школ запрещено администратором."
+                )
+                self.finished.emit(False, [])
             else:
                 self.error.emit(f"Скрапинг завершился с ошибкой (код: {self._scraper_result})")
                 self.finished.emit(False, [])
@@ -356,13 +384,30 @@ class ScraperThread(QThread):
         # Получаем название четверти
         period_name = PERIOD_MAP.get(self.period_code, f"Четверть {self.period_code}")
         
-        # Создаем финальную папку для отчетов текущей четверти
-        final_reports_dir = self.output_dir / period_name
-        final_reports_dir.mkdir(parents=True, exist_ok=True)
-        
         # Ищем отчеты во временной папке
         if not self.temp_dir or not self.temp_dir.exists():
             return reports
+        
+        # ===== Читаем ФИО учителя из profile_name.txt =====
+        teacher_name = None
+        profile_file = self.temp_dir / "profile_name.txt"
+        if profile_file.exists():
+            try:
+                teacher_name = profile_file.read_text(encoding="utf-8").strip()
+                print(f"[DEBUG] ФИО учителя из скрапера: '{teacher_name}'")
+            except Exception as e:
+                print(f"[DEBUG] Ошибка чтения profile_name.txt: {e}")
+        
+        # Санитизация имени для файловой системы
+        if teacher_name:
+            import re
+            safe_teacher_name = re.sub(r'[\\/*?:"<>|]', '_', teacher_name).strip()
+        else:
+            safe_teacher_name = "Неизвестный учитель"
+        
+        # Создаем финальную папку: output_dir / ФИО учителя / четверть
+        final_reports_dir = self.output_dir / safe_teacher_name / period_name
+        final_reports_dir.mkdir(parents=True, exist_ok=True)
         
         # ===== Читаем имя организации из org_name.txt =====
         self._scraped_org_name = None

@@ -97,64 +97,6 @@ class MektepAPIClient:
                 "error": f"Ошибка: {str(e)}"
             }
     
-    def check_quota(self) -> Dict:
-        """
-        Проверка квоты пользователя
-        
-        Returns:
-            dict: {"success": bool, "allowed": bool, "remaining": int, "used": int, "total": int}
-        
-        Raises:
-            requests.RequestException: Ошибка сетевого запроса
-        """
-        if not self._is_token_valid():
-            return {
-                "success": False,
-                "error": "Токен недействителен. Требуется повторная авторизация."
-            }
-        
-        try:
-            self._set_auth_header()
-            response = self.session.get(
-                f"{self.base_url}/api/quota/check",
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                return {
-                    "success": True,
-                    "allowed": data.get("allowed", False),
-                    "remaining": data.get("remaining", 0),
-                    "used": data.get("used", 0),
-                    "total": data.get("total", 0)
-                }
-            elif response.status_code == 401:
-                self.token = None
-                self.token_expires = None
-                return {
-                    "success": False,
-                    "error": "Токен истек. Требуется повторная авторизация.",
-                    "needs_auth": True
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": response.json().get("error", "Ошибка проверки квоты"),
-                    "status_code": response.status_code
-                }
-        except requests.exceptions.ConnectionError:
-            return {
-                "success": False,
-                "error": "Не удалось подключиться к серверу",
-                "offline": True
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Ошибка: {str(e)}"
-            }
-    
     def log_reports(self, reports: List[Dict]) -> Dict:
         """
         Отправка метаданных созданных отчетов на сервер
@@ -279,6 +221,50 @@ class MektepAPIClient:
     def is_authenticated(self) -> bool:
         """Проверка, авторизован ли пользователь"""
         return self._is_token_valid()
+    
+    # ==========================================================================
+    # School Info API (школа текущего пользователя)
+    # ==========================================================================
+    
+    def get_my_school(self) -> Dict:
+        """
+        Получение информации о школе текущего пользователя.
+        
+        Возвращает название школы и флаг allow_cross_school_reports.
+        Используется для проверки организации перед скрапингом.
+        
+        Returns:
+            dict: {
+                "success": bool,
+                "school_name": str | None,
+                "allow_cross_school_reports": bool
+            }
+        """
+        if not self._is_token_valid():
+            return {
+                "success": False,
+                "error": "Токен недействителен."
+            }
+        
+        try:
+            self._set_auth_header()
+            response = self.session.get(
+                f"{self.base_url}/api/schools/my",
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code == 401:
+                self.token = None
+                self.token_expires = None
+                return {"success": False, "error": "Токен истек.", "needs_auth": True}
+            else:
+                return {"success": False, "error": response.json().get("error", "Ошибка")}
+        except requests.exceptions.ConnectionError:
+            return {"success": False, "error": "Нет подключения к серверу", "offline": True}
+        except Exception as e:
+            return {"success": False, "error": f"Ошибка: {str(e)}"}
     
     # ==========================================================================
     # School Lookup API
@@ -453,10 +439,10 @@ class MektepAPIClient:
         """
         Удаление ВСЕХ отчётов текущего учителя с сервера
         
-        Удаляет все GradeReport, ReportFile и сбрасывает квоту.
+        Удаляет все GradeReport и ReportFile.
         
         Returns:
-            dict: {"success": bool, "deleted_grade_reports": int, "deleted_report_files": int, "quota_reset": bool}
+            dict: {"success": bool, "deleted_grade_reports": int, "deleted_report_files": int}
         """
         if not self._is_token_valid():
             return {
@@ -477,7 +463,6 @@ class MektepAPIClient:
                     "success": True,
                     "deleted_grade_reports": data.get("deleted_grade_reports", 0),
                     "deleted_report_files": data.get("deleted_report_files", 0),
-                    "quota_reset": data.get("quota_reset", False)
                 }
             elif response.status_code == 401:
                 self.token = None

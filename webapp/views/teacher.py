@@ -12,7 +12,7 @@ from pathlib import Path
 from sqlalchemy import func
 
 from ..extensions import db
-from ..models import Role, ReportFile, ScrapeJob, ScrapeJobStatus, TeacherQuotaUsage, School, User
+from ..models import Role, ReportFile, ScrapeJob, ScrapeJobStatus, School, User
 from ..scraper_runner import run_scrape_job
 from ..constants import PERIOD_MAP
 from ..redis_utils import ai_rate_limiter
@@ -127,14 +127,6 @@ def start_scrape():
     school: School | None = current_user.school
     if not school or not school.is_active:
         flash("Доступ школы закрыт.", "danger")
-        return redirect(url_for("teacher.dashboard"))
-
-    quota = int(school.reports_quota_per_period or 0)
-    usage = TeacherQuotaUsage.query.filter_by(teacher_id=current_user.id, period_code=period_code).first()
-    used = int(usage.used_reports) if usage else 0
-    remaining = max(0, quota - used)
-    if remaining <= 0:
-        flash(f"Лимит успешных скрапов на эту четверть исчерпан (квота {quota}).", "danger")
         return redirect(url_for("teacher.dashboard"))
 
     # Ensure teacher has per-school filesystem sequence (teacher_1, teacher_2, ...)
@@ -498,17 +490,11 @@ def delete_all_files():
         db.session.delete(job)
         deleted_jobs_count += 1
     
-    # Also reset quota usage for this teacher
-    quota_usages = TeacherQuotaUsage.query.filter_by(teacher_id=current_user.id).all()
-    for quota in quota_usages:
-        db.session.delete(quota)
-    
     db.session.commit()
     
     flash(
         f"Удалено отчетов: {deleted_files_count}, "
-        f"работ: {deleted_jobs_count}, "
-        f"квот: {len(quota_usages)}.", 
+        f"работ: {deleted_jobs_count}.", 
         "success"
     )
     return redirect(url_for("teacher.dashboard"))

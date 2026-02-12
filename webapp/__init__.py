@@ -3,7 +3,7 @@ from pathlib import Path
 
 from .config import get_config
 from .extensions import db, login_manager, migrate
-from .models import ReportFile, Role, School, ScrapeJob, ScrapeJobStatus, TeacherQuotaUsage, User
+from .models import ReportFile, Role, School, ScrapeJob, ScrapeJobStatus, User
 from .translator import gettext as custom_gettext
 
 # Celery app (initialized lazily)
@@ -117,6 +117,11 @@ def create_app(config_object=None) -> Flask:
             # schools.ai_model (модель AI для школы, выбирает супер-админ)
             if not _has_column("schools", "ai_model"):
                 db.session.execute(text("ALTER TABLE schools ADD COLUMN ai_model VARCHAR(128)"))
+                db.session.commit()
+
+            # schools.allow_cross_school_reports (разрешение на создание отчётов для других школ)
+            if not _has_column("schools", "allow_cross_school_reports"):
+                db.session.execute(text("ALTER TABLE schools ADD COLUMN allow_cross_school_reports BOOLEAN NOT NULL DEFAULT 0"))
                 db.session.commit()
 
             # ---- Backfill local sequences (best-effort) ----
@@ -281,14 +286,6 @@ def _recover_interrupted_jobs(app):
                     )
                     db.session.add(rf)
                     created += 1
-            
-            # Update quota: one successful scrape = +1 (при любом успешном восстановлении)
-            usage = (
-                TeacherQuotaUsage.query.filter_by(teacher_id=job.teacher_id, period_code=job.period_code).first()
-                or TeacherQuotaUsage(teacher_id=job.teacher_id, period_code=job.period_code, used_reports=0)
-            )
-            usage.used_reports += 1
-            db.session.add(usage)
             
             # Mark job as succeeded
             from datetime import datetime

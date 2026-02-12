@@ -11,7 +11,7 @@ from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
 
 from ..extensions import db
-from ..models import Role, User, GradeReport, Class, ReportFile, TeacherQuotaUsage, TeacherSubject, TeacherClass
+from ..models import Role, User, GradeReport, Class, ReportFile, TeacherSubject, TeacherClass
 from ..security import decrypt_password, encrypt_password
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -153,7 +153,6 @@ def delete_teacher(user_id: int):
     # Удаляем связанные данные
     GradeReport.query.filter_by(teacher_id=u.id).delete()
     ReportFile.query.filter_by(teacher_id=u.id).delete()
-    TeacherQuotaUsage.query.filter_by(teacher_id=u.id).delete()
     
     # Удаляем связи учитель-класс и учитель-предмет
     teacher_subjects = TeacherSubject.query.filter_by(teacher_id=u.id).all()

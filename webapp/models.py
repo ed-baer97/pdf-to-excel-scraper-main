@@ -21,12 +21,13 @@ class School(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(255), nullable=False, unique=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
-    # Успешных скрапов на учителя за четверть (не количество отчётов)
-    reports_quota_per_period = db.Column(db.Integer, nullable=False, default=2)
     # AI API ключ для генерации анализа (Qwen/DashScope)
     ai_api_key = db.Column(db.String(512), nullable=True)
     # Модель AI для генерации (выбирает супер-админ, напр. qwen-flash-character, qwen-plus)
     ai_model = db.Column(db.String(128), nullable=True)
+    # Разрешить создание отчётов для других школ (защита от распространения аккаунта)
+    # False = только своя организация, True = любая организация
+    allow_cross_school_reports = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
     users = db.relationship("User", back_populates="school")
@@ -59,16 +60,6 @@ class User(db.Model, UserMixin):
 
     def check_password(self, password: str) -> bool:
         return check_password_hash(self.password_hash, password)
-
-
-class TeacherQuotaUsage(db.Model):
-    __tablename__ = "teacher_quota_usage"
-
-    id = db.Column(db.Integer, primary_key=True)
-    teacher_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
-    period_code = db.Column(db.String(16), nullable=False, index=True)  # "1"/"2"/"3"/"4"
-    used_reports = db.Column(db.Integer, nullable=False, default=0)  # количество успешных скрапов
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class ReportFile(db.Model):

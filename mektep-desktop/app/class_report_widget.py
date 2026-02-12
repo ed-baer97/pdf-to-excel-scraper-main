@@ -75,6 +75,23 @@ class ClassReportWidget(QWidget):
         filter_bar.addSpacing(15)
         self.export_btn = QPushButton(self.tr.tr('export_excel'))
         self.export_btn.setEnabled(False)
+        self.export_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #22c55e;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 8px 16px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background-color: #16a34a;
+            }
+            QPushButton:disabled {
+                background-color: #e5e7eb;
+                color: #9ca3af;
+            }
+        """)
         self.export_btn.clicked.connect(self._export_excel)
         filter_bar.addWidget(self.export_btn)
 

@@ -15,7 +15,7 @@ import stat
 from flask import Flask
 
 from .extensions import db
-from .models import ReportFile, Role, ScrapeJob, ScrapeJobStatus, TeacherQuotaUsage, User
+from .models import ReportFile, Role, School, ScrapeJob, ScrapeJobStatus, User
 
 # Store running processes by job_id for cancellation
 _running_processes: dict[int, subprocess.Popen] = {}
@@ -171,6 +171,85 @@ def _collect_reports(reports_dir: Path) -> list[tuple[str, str, Path | None, Pat
         class_name, subject = _parse_class_subject(stem)
         out.append((class_name, subject, d.get(".xlsx"), d.get(".docx")))
     return out
+
+
+def _org_names_match(scraped_name: str, school_name: str) -> bool:
+    """
+    Нечёткое сравнение названия организации с mektep.edu.kz
+    и названия школы в базе данных.
+    
+    Учитывает разницу в регистре, пробелах и частичное вхождение.
+    """
+    a = " ".join(scraped_name.lower().split()).strip()
+    b = " ".join(school_name.lower().split()).strip()
+    if not a or not b:
+        return False
+    # Точное совпадение
+    if a == b:
+        return True
+    # Частичное вхождение (одно содержится в другом)
+    if a in b or b in a:
+        return True
+    return False
+
+
+def _check_org_name_allowed(app: Flask, job: ScrapeJob, output_dir: Path) -> str | None:
+    """
+    Проверка совпадения организации со скрапинга и школы учителя.
+    
+    Использует файл org_name_ru.txt (название организации на русском,
+    прочитанное ДО смены языка) для сравнения с названием школы в БД.
+    
+    Returns:
+        None если всё ок, строка с ошибкой если организация не совпадает.
+    """
+    school = db.session.get(School, job.school_id)
+    if not school:
+        return None  # Школа не найдена — пропускаем проверку
+    
+    # Если разрешены отчёты для других школ — пропускаем проверку
+    if school.allow_cross_school_reports:
+        app.logger.info(
+            f"Job {job.id}: cross-school reports allowed for school '{school.name}', skipping org check"
+        )
+        return None
+    
+    # Читаем org_name на русском (всегда сравниваем по русскому)
+    org_name_ru_file = output_dir / "org_name_ru.txt"
+    if not org_name_ru_file.exists():
+        # Fallback: пробуем обычный org_name.txt
+        org_name_ru_file = output_dir / "org_name.txt"
+    
+    if not org_name_ru_file.exists():
+        app.logger.warning(
+            f"Job {job.id}: org_name file not found in {output_dir}, skipping org check"
+        )
+        return None
+    
+    scraped_org_name = org_name_ru_file.read_text(encoding="utf-8").strip()
+    if not scraped_org_name:
+        app.logger.warning(f"Job {job.id}: org_name file is empty, skipping org check")
+        return None
+    
+    if _org_names_match(scraped_org_name, school.name):
+        app.logger.info(
+            f"Job {job.id}: org name match OK — "
+            f"scraped='{scraped_org_name}', school='{school.name}'"
+        )
+        return None
+    
+    # Не совпадает!
+    error_msg = (
+        f"Организация на mektep.edu.kz «{scraped_org_name}» "
+        f"не совпадает с вашей школой «{school.name}». "
+        f"Создание отчётов для других школ запрещено администратором."
+    )
+    app.logger.warning(
+        f"Job {job.id}: org name MISMATCH — "
+        f"scraped='{scraped_org_name}', school='{school.name}'. "
+        f"Cross-school reports disabled for this school."
+    )
+    return error_msg
 
 
 def _monitor_progress(app: Flask, job_id: int, progress_file: Path):
@@ -382,6 +461,14 @@ def _run_scrape_job_internal(
         if school_index:
             env["MEKTEP_SCHOOL_INDEX"] = school_index
 
+        # Защита от передачи аккаунта: передаём название школы для проверки
+        school_obj = db.session.get(School, job.school_id)
+        if school_obj and not school_obj.allow_cross_school_reports:
+            env["MEKTEP_EXPECTED_SCHOOL"] = school_obj.name
+            app.logger.info(f"Job {job_id}: org check enabled, expected school='{school_obj.name}'")
+        else:
+            app.logger.info(f"Job {job_id}: cross-school reports allowed, org check disabled")
+
         cmd = [
             sys.executable,
             "scrape_mektep.py",
@@ -578,7 +665,26 @@ def _run_scrape_job_internal(
                 "login failed" in stdout_lower
             )
             
-            if is_auth_error:
+            # Check if this is an org mismatch error (exit code 5)
+            is_org_mismatch = (
+                e.returncode == 5 or
+                "не совпадает с вашей школой" in (e.stdout or "")
+            )
+            
+            if is_org_mismatch:
+                error_msg = "Организация на mektep.edu.kz не совпадает с вашей школой. Создание отчётов для других школ запрещено."
+                # Пытаемся извлечь детальное сообщение из вывода
+                for line in (e.stdout or "").split('\n'):
+                    if "не совпадает с вашей школой" in line:
+                        # Убираем префикс лога, оставляем только сообщение
+                        clean = line.strip()
+                        if "✗" in clean:
+                            clean = clean.split("✗", 1)[-1].strip()
+                        if clean:
+                            error_msg = clean
+                        break
+                app.logger.warning(f"Scrape job {job_id} failed: Organization mismatch")
+            elif is_auth_error:
                 # Simple error message for authorization failures
                 error_msg = "Ошибка авторизации: Неверный логин или пароль."
                 app.logger.error(f"Scrape job {job_id} failed: Authorization error")
@@ -627,6 +733,21 @@ def _run_scrape_job_internal(
         db.session.refresh(job)
         if job.status == ScrapeJobStatus.CANCELLED.value:
             app.logger.info(f"Job {job_id} was cancelled, skipping report collection")
+            return
+
+        # ===== Проверка организации (защита от передачи аккаунта) =====
+        # Сравнивает org_name с mektep.edu.kz (на русском) с названием школы в БД.
+        # Если allow_cross_school_reports=False и названия не совпадают — отклоняем.
+        org_error = _check_org_name_allowed(app, job, output_dir)
+        if org_error:
+            job.status = ScrapeJobStatus.FAILED.value
+            job.error = org_error
+            job.finished_at = datetime.utcnow()
+            job.progress_percent = 0
+            job.progress_message = org_error
+            db.session.commit()
+            # Удаляем файлы — отчёты для чужой школы не сохраняем
+            _safe_rmtree(app, output_dir, job_id=job_id, reason="org_mismatch")
             return
 
         # Collect and save reports - this is critical and must complete!
@@ -710,14 +831,6 @@ def _run_scrape_job_internal(
                         f"[{class_name} - {subject}] ✓ Создан новый отчет "
                         f"(period_code='{period_code}', Excel={'✓' if excel_abs else '✗'}, Word={'✓' if word_abs else '✗'})"
                     )
-
-            # Update quota: one successful scrape = +1
-            usage = (
-                TeacherQuotaUsage.query.filter_by(teacher_id=job.teacher_id, period_code=period_code).first()
-                or TeacherQuotaUsage(teacher_id=job.teacher_id, period_code=period_code, used_reports=0)
-            )
-            usage.used_reports += 1
-            db.session.add(usage)
 
             job.status = ScrapeJobStatus.SUCCEEDED.value
             job.finished_at = datetime.utcnow()

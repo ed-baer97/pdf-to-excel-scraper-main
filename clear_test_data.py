@@ -9,7 +9,7 @@ sys.path.insert(0, '.')
 
 from webapp import create_app
 from webapp.extensions import db
-from webapp.models import GradeReport, ReportFile, Class, TeacherQuotaUsage, User
+from webapp.models import GradeReport, ReportFile, Class, User
 
 
 def main():
@@ -42,12 +42,6 @@ def main():
         for c in classes:
             print("  ID=%d | %s | class_teacher_id=%s" % (c.id, c.name, c.class_teacher_id))
 
-        quotas = TeacherQuotaUsage.query.all()
-        print("")
-        print("=== TeacherQuotaUsage: %d ===" % len(quotas))
-        for q in quotas:
-            print("  teacher_id=%d | period=%s | used=%d" % (q.teacher_id, q.period_code, q.used_reports))
-
         if not args.delete:
             print("")
             print("--- Run with --delete to clear all data ---")
@@ -62,9 +56,6 @@ def main():
 
         rf_count = ReportFile.query.delete()
         print("  ReportFile: deleted %d" % rf_count)
-
-        q_count = TeacherQuotaUsage.query.delete()
-        print("  TeacherQuotaUsage: deleted %d" % q_count)
 
         test_classes = ["5A", "5B", "7A", "7B", "9A", "9B", "11A"]
         for c in classes:

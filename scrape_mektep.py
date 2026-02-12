@@ -1180,33 +1180,17 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
                     
                     # Wait for user selection (with timeout)
                     school_choice_file = out_dir / "school_choice.txt"
-                    # region agent log
-                    import json as _json, time as _time
-                    with open(r'c:\Users\eduar\Desktop\Проект\pdf-to-excel-scraper-main\.cursor\debug.log', 'a', encoding='utf-8') as _f: _f.write(_json.dumps({'sessionId':'debug-session','runId':'initial','hypothesisId':'A,B','location':'scrape_mektep.py:1182','message':'Script waiting for school choice','data':{'out_dir':str(out_dir),'school_choice_file':str(school_choice_file),'file_exists_before_delete':school_choice_file.exists()},'timestamp':int(_time.time()*1000)})+'\n')
-                    # endregion
                     if school_choice_file.exists():
                         school_choice_file.unlink()  # Remove old choice if exists
                     
                     timeout = 60  # 60 seconds timeout
                     start_time = time.time()
                     
-                    # region agent log
-                    _check_count = 0
-                    # endregion
                     while time.time() - start_time < timeout:
-                        # region agent log
-                        _check_count += 1
-                        _exists = school_choice_file.exists()
-                        if _check_count % 10 == 0 or _exists:
-                            with open(r'c:\Users\eduar\Desktop\Проект\pdf-to-excel-scraper-main\.cursor\debug.log', 'a', encoding='utf-8') as _f: _f.write(_json.dumps({'sessionId':'debug-session','runId':'initial','hypothesisId':'A,C','location':'scrape_mektep.py:1190','message':'Checking for school choice file','data':{'check_number':_check_count,'file_exists':_exists,'file_path':str(school_choice_file),'elapsed_seconds':int(time.time()-start_time)},'timestamp':int(_time.time()*1000)})+'\n')
-                        # endregion
                         if school_choice_file.exists():
                             try:
-                                _file_content = school_choice_file.read_text(encoding="utf-8").strip()
-                                # region agent log
-                                with open(r'c:\Users\eduar\Desktop\Проект\pdf-to-excel-scraper-main\.cursor\debug.log', 'a', encoding='utf-8') as _f: _f.write(_json.dumps({'sessionId':'debug-session','runId':'initial','hypothesisId':'A','location':'scrape_mektep.py:1194','message':'Found and read school choice file','data':{'file_content':_file_content,'file_path':str(school_choice_file)},'timestamp':int(_time.time()*1000)})+'\n')
-                                # endregion
-                                chosen_school_idx = int(_file_content)
+                                file_content = school_choice_file.read_text(encoding="utf-8").strip()
+                                chosen_school_idx = int(file_content)
                                 log_info(f"Прочитан файл выбора: индекс {chosen_school_idx}")
                                 if 0 <= chosen_school_idx < button_count:
                                     log_success(f"Получен выбор пользователя: школа #{chosen_school_idx}")
@@ -1271,42 +1255,86 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
                         logger.finish(success=False)
                     return 4
 
-        # Language selection after login
-        log_stage(ScraperLogger.STAGE_LANGUAGE, "Настройка языка интерфейса", 6)
-        current_lang = _get_current_language(page)
-        if current_lang:
-            log_info(f"Текущий язык: {current_lang}")
-        else:
-            log_warning("Не удалось определить текущий язык")
-
+        # ============================================================
+        # Определяем целевой язык отчётов
+        # ============================================================
         chosen = os.getenv("MEKTEP_LANG", "").strip().lower()
         if chosen not in LANG_MAP:
-            chosen = input("Язык данных (ru/kk/en) [ru]: ").strip().lower() or "ru"
+            if headless or all_mode:
+                chosen = "ru"
+            else:
+                chosen = input("Язык данных (ru/kk/en) [ru]: ").strip().lower() or "ru"
         if chosen not in LANG_MAP:
             log_error(f"Неизвестный язык: {chosen}")
             if logger:
                 logger.finish(success=False)
             return 2
 
-        log_info(f"Установка языка: {LANG_MAP[chosen]['label']}")
-        _ensure_language(page, chosen)
-        log_success(f"Язык установлен: {LANG_MAP[chosen]['label']}")
+        # ============================================================
+        # Читаем org_name СТРОГО НА РУССКОЙ СТРАНИЦЕ.
+        # После выбора школы язык может быть любым (казахский/русский).
+        # Принудительно переключаем на русский, читаем название,
+        # затем переключаем на целевой язык для скрапинга.
+        # ============================================================
+        log_stage(ScraperLogger.STAGE_LANGUAGE, "Настройка языка интерфейса", 6)
+        current_lang = _get_current_language(page)
+        log_info(f"Текущий язык после авторизации: {current_lang or 'не определён'}")
 
-        # Save org name right after login (top header).
-        org_name = _get_org_name(page)
-        if org_name:
-            (out_dir / "org_name.txt").write_text(org_name, encoding="utf-8")
-            log_info(f"Организация: {org_name}")
+        # Принудительно переключаем на русский для чтения org_name
+        log_info("Переключение на русский для чтения названия организации...")
+        _ensure_language(page, "ru")
+
+        org_name_ru = _get_org_name(page)
+        if org_name_ru:
+            (out_dir / "org_name_ru.txt").write_text(org_name_ru, encoding="utf-8")
+            log_info(f"Организация (рус): {org_name_ru}")
         else:
-            log_warning("Название организации не найдено")
+            log_warning("Название организации (рус) не найдено")
 
-        # Save profile (teacher) name right after login.
+        # ===== Проверка организации (защита от передачи аккаунта) =====
+        # MEKTEP_EXPECTED_SCHOOL передаётся из scraper_runner.py / десктоп-приложения
+        # и содержит название школы, к которой привязан аккаунт в БД.
+        expected_school = os.getenv("MEKTEP_EXPECTED_SCHOOL", "").strip()
+        if expected_school and org_name_ru:
+            a = " ".join(org_name_ru.lower().split())
+            b = " ".join(expected_school.lower().split())
+            if a != b and a not in b and b not in a:
+                log_error(
+                    f"Организация «{org_name_ru}» не совпадает с вашей школой «{expected_school}». "
+                    f"Создание отчётов для других школ запрещено."
+                )
+                _update_progress(0, f"Организация «{org_name_ru}» не совпадает с «{expected_school}».")
+                context.close()
+                browser.close()
+                if logger:
+                    logger.finish(success=False)
+                return 5  # Код ошибки: несовпадение организации
+        elif expected_school and not org_name_ru:
+            log_warning("Не удалось прочитать название организации — проверка пропущена")
+
+        # Save profile (teacher) name
         profile_name = _get_profile_name(page)
         if profile_name:
             (out_dir / "profile_name.txt").write_text(profile_name, encoding="utf-8")
             log_info(f"Профиль: {profile_name}")
         else:
             log_warning("Имя профиля не найдено")
+
+        # Переключаем на целевой язык отчётов
+        log_info(f"Установка языка отчётов: {LANG_MAP[chosen]['label']}")
+        _ensure_language(page, chosen)
+        log_success(f"Язык установлен: {LANG_MAP[chosen]['label']}")
+
+        # Save org name on target language (for report filenames/content)
+        org_name = _get_org_name(page)
+        if org_name:
+            (out_dir / "org_name.txt").write_text(org_name, encoding="utf-8")
+            log_info(f"Организация: {org_name}")
+        else:
+            org_name = org_name_ru
+            if org_name:
+                (out_dir / "org_name.txt").write_text(org_name, encoding="utf-8")
+            log_warning("Название организации на текущем языке не найдено, использовано русское")
 
         # Choose quarter/period for future extraction steps.
         try:
