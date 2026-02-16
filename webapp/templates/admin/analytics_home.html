@@ -8,6 +8,31 @@
     </div>
   </div>
 
+  <!-- Фильтр по периоду -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <form method="GET" class="row g-3 align-items-end">
+        <div class="col-md-3">
+          <label for="period_type" class="form-label">{{ _('period_type') }}</label>
+          <select class="form-select" id="period_type" name="period_type" onchange="this.form.submit()">
+            <option value="quarter" {% if period_type == 'quarter' %}selected{% endif %}>{{ _('quarter_label') }}</option>
+            <option value="semester" {% if period_type == 'semester' %}selected{% endif %}>{{ _('semester_label') }}</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label for="period_number" class="form-label">{{ _('period_number') }}</label>
+          <select class="form-select" id="period_number" name="period_number" onchange="this.form.submit()">
+            {% for p in periods %}
+              {% if p.type == period_type %}
+                <option value="{{ p.number }}" {% if period_number == p.number %}selected{% endif %}>{{ p.name }}</option>
+              {% endif %}
+            {% endfor %}
+          </select>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Панель фильтров -->
   <div class="card shadow-sm mb-4">
     <div class="card-body">

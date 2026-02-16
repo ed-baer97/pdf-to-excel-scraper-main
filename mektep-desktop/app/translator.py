@@ -51,7 +51,7 @@ class Translator(QObject):
                 'connection_error': 'Ошибка подключения',
                 'check_connection': 'Проверьте подключение к интернету и URL сервера',
                 'server_url': 'URL сервера',
-                'default_server': 'По умолчанию: http://localhost:5000',
+                'default_server': 'По умолчанию: https://mektep-analyzer.kz',
                 
                 # Main Window
                 'main_window_title': 'Mektep Desktop - {}',
@@ -216,7 +216,7 @@ class Translator(QObject):
                 'connection_error': 'Қосылу қатесі',
                 'check_connection': 'Интернет қосылымы мен сервер URL мекенжайын тексеріңіз',
                 'server_url': 'Сервер URL мекенжайы',
-                'default_server': 'Әдепкі: http://localhost:5000',
+                'default_server': 'Әдепкі: https://mektep-analyzer.kz',
                 
                 # Main Window
                 'main_window_title': 'Mektep Desktop - {}',

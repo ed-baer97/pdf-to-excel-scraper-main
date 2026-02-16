@@ -555,13 +555,21 @@ def analytics_home():
         for subj in subj_data:
             subj_data[subj].sort(key=lambda x: x["class_name"])
     
+    # Периоды для фильтра
+    periods = [
+        {"type": "quarter", "number": i, "name": f"{i} четверть"} for i in range(1, 5)
+    ] + [
+        {"type": "semester", "number": i, "name": f"{i} полугодие"} for i in range(1, 3)
+    ]
+
     return render_template(
         "admin/analytics_home.html",
         subjects_data_sor=dict(sorted(subjects_data_sor.items())),
         subjects_data_soch=dict(sorted(subjects_data_soch.items())),
         subjects_data_grades=dict(sorted(subjects_data_grades.items())),
         period_type=period_type,
-        period_number=period_number
+        period_number=period_number,
+        periods=periods
     )
 
 

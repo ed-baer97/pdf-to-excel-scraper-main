@@ -10,9 +10,9 @@ from PyQt6.QtWidgets import (
     QFormLayout, QScrollArea, QTabWidget
 )
 from PyQt6.QtCore import Qt, QSettings
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QIcon
 
-from .api_client import MektepAPIClient
+from .api_client import MektepAPIClient, DEFAULT_SERVER_URL
 from .scraper_thread import ScraperThread
 from .reports_manager import ReportsManager
 from .history_widget import HistoryWidget
@@ -39,7 +39,7 @@ class MektepMainWindow(QMainWindow):
         self.translator.set_language(saved_lang)
         
         # API клиент
-        self.api_client = api_client or MektepAPIClient("http://localhost:5000")
+        self.api_client = api_client or MektepAPIClient(DEFAULT_SERVER_URL)
         
         # Данные пользователя
         self.user_data = user_data or {}
@@ -61,6 +61,15 @@ class MektepMainWindow(QMainWindow):
         # Загрузка сохраненных настроек
         self.load_settings()
     
+    @staticmethod
+    def _get_icon_path() -> Path:
+        """Путь к иконке приложения"""
+        if getattr(sys, 'frozen', False):
+            base = Path(sys._MEIPASS)
+        else:
+            base = Path(__file__).resolve().parent.parent
+        return base / "resources" / "icons" / "app_icon.ico"
+    
     def init_ui(self):
         """Инициализация интерфейса"""
         username = self.user_data.get("username", self.translator.tr('user'))
@@ -68,6 +77,11 @@ class MektepMainWindow(QMainWindow):
         
         self.setWindowTitle(title)
         self.setMinimumSize(1100, 700)
+        
+        # Устанавливаем иконку окна
+        icon_path = self._get_icon_path()
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
         
         # Центральный виджет
         central_widget = QWidget()
@@ -109,10 +123,23 @@ class MektepMainWindow(QMainWindow):
         # Информация о пользователе
         username = self.user_data.get("username", self.translator.tr('user'))
         
-        online_text = "Онлайн" if self.translator.get_language() == 'ru' else "Желіде"
-        user_label = QLabel(f"{username} | {online_text}")
-        user_label.setStyleSheet("font-weight: bold; color: #198754;")
+        user_label = QLabel(f"{username}")
+        user_label.setStyleSheet("font-weight: bold; color: #212529;")
         info_layout.addWidget(user_label)
+        
+        # Индикатор подключения к серверу
+        server_url = self.settings.value("server/url", DEFAULT_SERVER_URL)
+        # Показываем только домен для компактности
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(server_url)
+            server_display = parsed.netloc or server_url
+        except Exception:
+            server_display = server_url
+        
+        self.connection_indicator = QLabel(f"🟢 {server_display}")
+        self.connection_indicator.setStyleSheet("color: #198754; font-size: 11px;")
+        info_layout.addWidget(self.connection_indicator)
         
         info_layout.addStretch()
         
@@ -608,6 +635,8 @@ class MektepMainWindow(QMainWindow):
     
     def open_settings(self):
         """Открыть диалог настроек"""
+        old_server_url = self.settings.value("server/url", DEFAULT_SERVER_URL)
+        
         dialog = SettingsDialog(self.settings, self)
         if dialog.exec():
             # Обновить менеджер отчетов с новым путем
@@ -622,6 +651,21 @@ class MektepMainWindow(QMainWindow):
             if hasattr(self, 'history_widget'):
                 self.history_widget.reports_manager = self.reports_manager
                 self.history_widget.refresh()
+            
+            # Обновить URL сервера в API клиенте
+            new_server_url = self.settings.value("server/url", DEFAULT_SERVER_URL)
+            if old_server_url != new_server_url:
+                self.api_client.set_base_url(new_server_url)
+                
+                # Обновляем индикатор
+                try:
+                    from urllib.parse import urlparse
+                    parsed = urlparse(new_server_url)
+                    server_display = parsed.netloc or new_server_url
+                except Exception:
+                    server_display = new_server_url
+                self.connection_indicator.setText(f"🔄 {server_display}")
+                self.connection_indicator.setStyleSheet("color: #ffc107; font-size: 11px;")
             
             # Проверить изменение языка
             new_lang = self.settings.value("language", "ru")
@@ -641,6 +685,12 @@ class MektepMainWindow(QMainWindow):
         )
         if reply == QMessageBox.StandardButton.Yes:
             self.api_client.logout()
+            
+            # Очищаем сохранённый токен
+            self.settings.remove("auth/token")
+            self.settings.remove("auth/token_expires")
+            self.settings.remove("auth/user_data")
+            
             self.close()
             # Перезапуск
             import sys

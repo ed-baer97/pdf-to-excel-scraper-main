@@ -2,6 +2,7 @@
 Settings Dialog - диалог настроек приложения
 
 Сохранение настроек через QSettings.
+Вкладки: Сервер | Папка отчётов | Язык
 """
 from pathlib import Path
 from PyQt6.QtWidgets import (
@@ -9,9 +10,25 @@ from PyQt6.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QCheckBox, QSpinBox,
     QComboBox, QGroupBox, QFileDialog, QDialogButtonBox, QMessageBox
 )
-from PyQt6.QtCore import QSettings
+from PyQt6.QtCore import QSettings, QTimer, QThread, pyqtSignal
+from PyQt6.QtGui import QIcon
 
+from .api_client import MektepAPIClient, DEFAULT_SERVER_URL
 from .translator import get_translator
+
+
+class _ConnectionCheckThread(QThread):
+    """Поток для проверки подключения"""
+    finished = pyqtSignal(dict)
+    
+    def __init__(self, url: str):
+        super().__init__()
+        self.url = url
+    
+    def run(self):
+        client = MektepAPIClient(self.url)
+        result = client.check_connection(timeout=8)
+        self.finished.emit(result)
 
 
 class SettingsDialog(QDialog):
@@ -21,18 +38,35 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.settings = settings
         self.translator = get_translator()
+        self._check_thread = None
         self.init_ui()
         self.load_settings()
+    
+    @staticmethod
+    def _get_icon_path() -> Path:
+        """Путь к иконке приложения"""
+        import sys
+        if getattr(sys, 'frozen', False):
+            base = Path(sys._MEIPASS)
+        else:
+            base = Path(__file__).resolve().parent.parent
+        return base / "resources" / "icons" / "app_icon.ico"
     
     def init_ui(self):
         """Инициализация интерфейса"""
         self.setWindowTitle(self.translator.tr('settings_title'))
-        self.setMinimumSize(550, 400)
+        self.setMinimumSize(550, 450)
+        
+        # Устанавливаем иконку окна
+        icon_path = self._get_icon_path()
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
         
         layout = QVBoxLayout(self)
         
         # Вкладки настроек
         tabs = QTabWidget()
+        tabs.addTab(self.create_server_tab(), self.translator.tr('server_url'))
         tabs.addTab(self.create_paths_tab(), self.translator.tr('reports_folder'))
         tabs.addTab(self.create_language_tab(), self.translator.tr('interface_language'))
         layout.addWidget(tabs)
@@ -45,59 +79,120 @@ class SettingsDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
     
-    # Удалены методы: create_server_tab, create_scraping_tab, create_ai_tab
+    # ==========================================================================
+    # Вкладка: Сервер
+    # ==========================================================================
     
-    def _old_create_server_tab(self) -> QWidget:
-        """Вкладка настроек сервера"""
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
+    def create_server_tab(self) -> QWidget:
+        """Настройки подключения к серверу"""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(20, 20, 20, 20)
         
         # URL сервера
-        server_group = QGroupBox("API Сервер")
-        server_layout = QVBoxLayout()
+        if self.translator.get_language() == 'ru':
+            group_title = "Подключение к серверу"
+        else:
+            group_title = "Серверге қосылу"
         
-        url_layout = QHBoxLayout()
-        url_layout.addWidget(QLabel("URL:"))
+        server_group = QGroupBox(group_title)
+        server_layout = QVBoxLayout()
+        server_layout.setSpacing(10)
+        
+        # URL
+        url_label = QLabel(f"{self.translator.tr('server_url')}:")
+        url_label.setStyleSheet("font-weight: 600; font-size: 13px;")
+        server_layout.addWidget(url_label)
+        
+        url_row = QHBoxLayout()
         self.server_url_input = QLineEdit()
-        self.server_url_input.setPlaceholderText("http://localhost:5000")
-        url_layout.addWidget(self.server_url_input)
-        server_layout.addLayout(url_layout)
+        self.server_url_input.setPlaceholderText(DEFAULT_SERVER_URL)
+        self.server_url_input.setMinimumHeight(38)
+        url_row.addWidget(self.server_url_input)
+        
+        check_text = "Проверить" if self.translator.get_language() == 'ru' else "Тексеру"
+        self.check_btn = QPushButton(check_text)
+        self.check_btn.setMinimumHeight(38)
+        self.check_btn.setMinimumWidth(120)
+        self.check_btn.clicked.connect(self.check_server_connection)
+        url_row.addWidget(self.check_btn)
+        
+        server_layout.addLayout(url_row)
+        
+        # Статус подключения
+        self.server_status = QLabel("")
+        self.server_status.setWordWrap(True)
+        self.server_status.setStyleSheet("color: #6c757d; font-size: 11px; padding: 5px 0;")
+        server_layout.addWidget(self.server_status)
+        
+        # Подсказка
+        if self.translator.get_language() == 'ru':
+            hint = (
+                "Укажите адрес сервера Mektep Platform.\n"
+                f"По умолчанию: {DEFAULT_SERVER_URL}\n\n"
+                "После изменения URL потребуется повторная авторизация."
+            )
+        else:
+            hint = (
+                "Mektep Platform серверінің мекенжайын көрсетіңіз.\n"
+                f"Әдепкі: {DEFAULT_SERVER_URL}\n\n"
+                "URL өзгертілгеннен кейін қайта авторизация қажет."
+            )
+        
+        hint_label = QLabel(hint)
+        hint_label.setWordWrap(True)
+        hint_label.setStyleSheet("color: #6c757d; font-size: 11px; padding: 10px;")
+        server_layout.addWidget(hint_label)
         
         server_group.setLayout(server_layout)
         layout.addWidget(server_group)
         
-        # Учетные данные веб-приложения
-        webapp_group = QGroupBox("Веб-приложение (опционально)")
-        webapp_layout = QVBoxLayout()
-        
-        webapp_login_layout = QHBoxLayout()
-        webapp_login_layout.addWidget(QLabel("Логин:"))
-        self.webapp_login_input = QLineEdit()
-        self.webapp_login_input.setPlaceholderText("Ваш логин для веб-приложения")
-        webapp_login_layout.addWidget(self.webapp_login_input)
-        webapp_layout.addLayout(webapp_login_layout)
-        
-        webapp_password_layout = QHBoxLayout()
-        webapp_password_layout.addWidget(QLabel("Пароль:"))
-        self.webapp_password_input = QLineEdit()
-        self.webapp_password_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.webapp_password_input.setPlaceholderText("Пароль для веб-приложения")
-        webapp_password_layout.addWidget(self.webapp_password_input)
-        webapp_layout.addLayout(webapp_password_layout)
-        
-        webapp_info = QLabel(
-            "Эти данные используются для входа в веб-версию платформы\n"
-            "и проверки квоты на успешные скрапы."
-        )
-        webapp_info.setWordWrap(True)
-        webapp_info.setStyleSheet("color: gray; font-size: 10px;")
-        webapp_layout.addWidget(webapp_info)
-        
-        webapp_group.setLayout(webapp_layout)
-        layout.addWidget(webapp_group)
-        
         layout.addStretch()
-        return tab
+        return widget
+    
+    def check_server_connection(self):
+        """Проверить подключение к серверу"""
+        url = self.server_url_input.text().strip()
+        if not url:
+            url = DEFAULT_SERVER_URL
+            self.server_url_input.setText(url)
+        
+        self.check_btn.setEnabled(False)
+        check_text = "Проверка..." if self.translator.get_language() == 'ru' else "Тексеруде..."
+        self.check_btn.setText(check_text)
+        self.server_status.setText("🔄 " + check_text)
+        self.server_status.setStyleSheet("color: #0d6efd; font-size: 11px; padding: 5px 0;")
+        
+        self._check_thread = _ConnectionCheckThread(url)
+        self._check_thread.finished.connect(self._on_check_finished)
+        self._check_thread.start()
+    
+    def _on_check_finished(self, result: dict):
+        """Обработка результата проверки"""
+        check_text = "Проверить" if self.translator.get_language() == 'ru' else "Тексеру"
+        self.check_btn.setText(check_text)
+        self.check_btn.setEnabled(True)
+        
+        if result.get("success"):
+            latency = result.get("latency_ms", 0)
+            if self.translator.get_language() == 'ru':
+                msg = f"✅ Подключение установлено ({latency} мс)"
+            else:
+                msg = f"✅ Қосылым орнатылды ({latency} мс)"
+            self.server_status.setText(msg)
+            self.server_status.setStyleSheet("color: #198754; font-size: 11px; padding: 5px 0;")
+        else:
+            error = result.get("error", "")
+            if self.translator.get_language() == 'ru':
+                msg = f"❌ Нет подключения: {error}"
+            else:
+                msg = f"❌ Қосылу жоқ: {error}"
+            self.server_status.setText(msg)
+            self.server_status.setStyleSheet("color: #dc3545; font-size: 11px; padding: 5px 0;")
+    
+    # ==========================================================================
+    # Вкладка: Папка отчётов
+    # ==========================================================================
     
     def create_paths_tab(self) -> QWidget:
         """Настройки пути для отчетов"""
@@ -129,6 +224,10 @@ class SettingsDialog(QDialog):
         
         layout.addStretch()
         return widget
+    
+    # ==========================================================================
+    # Вкладка: Язык
+    # ==========================================================================
     
     def create_language_tab(self) -> QWidget:
         """Настройки языка интерфейса"""
@@ -163,6 +262,10 @@ class SettingsDialog(QDialog):
         layout.addStretch()
         return widget
     
+    # ==========================================================================
+    # Общие методы
+    # ==========================================================================
+    
     def browse_directory(self, line_edit: QLineEdit):
         """Выбор директории"""
         current_path = line_edit.text() or str(Path.home())
@@ -176,6 +279,11 @@ class SettingsDialog(QDialog):
     
     def load_settings(self):
         """Загрузка текущих настроек"""
+        # URL сервера
+        self.server_url_input.setText(
+            self.settings.value("server/url", DEFAULT_SERVER_URL)
+        )
+        
         # Путь к отчетам
         self.reports_path_input.setText(
             self.settings.value(
@@ -192,6 +300,11 @@ class SettingsDialog(QDialog):
     
     def save_and_accept(self):
         """Сохранение настроек и закрытие"""
+        # URL сервера
+        old_url = self.settings.value("server/url", DEFAULT_SERVER_URL)
+        new_url = self.server_url_input.text().strip() or DEFAULT_SERVER_URL
+        self.settings.setValue("server/url", new_url)
+        
         # Путь к отчетам
         self.settings.setValue("storage/path", self.reports_path_input.text())
         
@@ -199,6 +312,19 @@ class SettingsDialog(QDialog):
         old_lang = self.settings.value("language", "ru")
         new_lang = self.language_combo.currentData()
         self.settings.setValue("language", new_lang)
+        
+        # Если URL сервера изменился, очищаем токен (нужен повторный вход)
+        if old_url != new_url:
+            self.settings.remove("auth/token")
+            self.settings.remove("auth/token_expires")
+            self.settings.remove("auth/user_data")
+            
+            if self.translator.get_language() == 'ru':
+                msg = "Адрес сервера изменён.\nТребуется повторная авторизация при следующем запуске."
+            else:
+                msg = "Сервер мекенжайы өзгертілді.\nКелесі іске қосуда қайта авторизация қажет."
+            
+            QMessageBox.information(self, self.translator.tr('info'), msg)
         
         # Если язык изменился, показываем сообщение
         if old_lang != new_lang:

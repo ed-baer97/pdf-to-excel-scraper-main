@@ -46,19 +46,34 @@ except ImportError:
         STAGE_COMPLETE = "COMPLETE"
         STAGE_ERROR = "ERROR"
 
+# Fix stdout/stderr for frozen PyInstaller builds (console=False → stdout is None)
+if getattr(sys, 'frozen', False):
+    import io as _io
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, "w", encoding="utf-8")
+    if sys.stderr is None:
+        sys.stderr = open(os.devnull, "w", encoding="utf-8")
+    
+    # Playwright driver: в frozen-режиме driver находится внутри _MEIPASS
+    _meipass = getattr(sys, '_MEIPASS', None)
+    if _meipass:
+        _frozen_driver = os.path.join(_meipass, 'playwright', 'driver')
+        if os.path.isdir(_frozen_driver):
+            os.environ.setdefault('PLAYWRIGHT_DRIVER_PATH', _frozen_driver)
+
 # Fix encoding issues on Windows when printing Unicode characters
 if sys.platform == "win32":
     try:
-        # Set UTF-8 encoding for stdout and stderr
-        if sys.stdout.encoding != "utf-8":
+        if sys.stdout is not None and hasattr(sys.stdout, 'encoding') and sys.stdout.encoding != "utf-8":
             sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        if sys.stderr.encoding != "utf-8":
+        if sys.stderr is not None and hasattr(sys.stderr, 'encoding') and sys.stderr.encoding != "utf-8":
             sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     except (AttributeError, ValueError):
-        # Fallback for older Python versions
         import io
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+        if sys.stdout is not None and hasattr(sys.stdout, 'buffer'):
+            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+        if sys.stderr is not None and hasattr(sys.stderr, 'buffer'):
+            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 try:
     from openpyxl import Workbook
@@ -939,6 +954,88 @@ def _export_students_xlsx(
     print(f"Saved: {xlsx_path}")
 
 
+def _auto_install_chromium() -> bool:
+    """Автоматическая установка Chromium через Playwright CLI.
+    
+    Возвращает True если установка прошла успешно.
+    """
+    import subprocess as _sp
+    log_info("Браузер Chromium не найден. Запускаю автоустановку...")
+    
+    try:
+        # В frozen-режиме sys.executable — это .exe, поэтому используем
+        # playwright CLI напрямую через его внутренний driver
+        from playwright._impl._driver import compute_driver_executable
+        driver = str(compute_driver_executable())
+        log_info(f"Playwright driver: {driver}")
+        
+        result = _sp.run(
+            [driver, "install", "chromium"],
+            capture_output=True, text=True, timeout=600,
+            env={**os.environ, "PLAYWRIGHT_BROWSERS_PATH": "0"},  # 0 = стандартная папка
+        )
+        if result.returncode == 0:
+            log_success("Chromium успешно установлен")
+            return True
+        else:
+            log_error(f"Ошибка установки Chromium (код {result.returncode}): {result.stderr[:500]}")
+            return False
+    except Exception as e:
+        log_error(f"Не удалось установить Chromium автоматически: {e}")
+        return False
+
+
+def _launch_browser(p, headless: bool, slow_mo_ms: int):
+    """Запуск браузера с fallback-цепочкой:
+    
+    1. Playwright-управляемый Chromium (ms-playwright)
+    2. Системный Microsoft Edge
+    3. Системный Google Chrome
+    4. Автоустановка Chromium → повторная попытка
+    """
+    # ── Попытка 1: Playwright Chromium ──
+    try:
+        log_info("Попытка запуска: Playwright Chromium...")
+        browser = p.chromium.launch(headless=headless, slow_mo=slow_mo_ms)
+        log_success("Браузер запущен: Playwright Chromium")
+        return browser
+    except Exception as e1:
+        log_warning(f"Playwright Chromium недоступен: {e1}")
+
+    # ── Попытка 2: Microsoft Edge ──
+    try:
+        log_info("Попытка запуска: Microsoft Edge...")
+        browser = p.chromium.launch(headless=headless, slow_mo=slow_mo_ms, channel="msedge")
+        log_success("Браузер запущен: Microsoft Edge")
+        return browser
+    except Exception as e2:
+        log_warning(f"Microsoft Edge недоступен: {e2}")
+
+    # ── Попытка 3: Google Chrome ──
+    try:
+        log_info("Попытка запуска: Google Chrome...")
+        browser = p.chromium.launch(headless=headless, slow_mo=slow_mo_ms, channel="chrome")
+        log_success("Браузер запущен: Google Chrome")
+        return browser
+    except Exception as e3:
+        log_warning(f"Google Chrome недоступен: {e3}")
+
+    # ── Попытка 4: автоустановка Chromium и повтор ──
+    log_info("Ни один браузер не найден. Запускаю автоустановку Chromium...")
+    if _auto_install_chromium():
+        try:
+            browser = p.chromium.launch(headless=headless, slow_mo=slow_mo_ms)
+            log_success("Браузер запущен: Playwright Chromium (после автоустановки)")
+            return browser
+        except Exception as e4:
+            log_error(f"Не удалось запустить Chromium после установки: {e4}")
+
+    raise RuntimeError(
+        "Не удалось запустить браузер. Убедитесь, что установлен "
+        "Microsoft Edge, Google Chrome или выполните команду: playwright install chromium"
+    )
+
+
 def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
     _ensure_dir(out_dir)
     
@@ -958,7 +1055,7 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
 
     with sync_playwright() as p:
         log_stage(ScraperLogger.STAGE_BROWSER, "Запуск браузера Chromium", 2)
-        browser = p.chromium.launch(headless=headless, slow_mo=slow_mo_ms)
+        browser = _launch_browser(p, headless, slow_mo_ms)
         context = browser.new_context(locale="ru-RU")
         page = context.new_page()
         log_success("Браузер запущен успешно")

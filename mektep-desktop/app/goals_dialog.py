@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QScrollArea, QSizePolicy, QFrame
 )
 from PyQt6.QtCore import Qt, QSettings
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtGui import QPixmap, QIcon
 
 from .reports_manager import ReportsManager
 from .translator import get_translator
@@ -26,6 +26,15 @@ def _get_logo_path() -> Path:
     else:
         base = Path(__file__).resolve().parent.parent
     return base / "resources" / "img" / "logo_edus_logo_white.png"
+
+
+def _get_icon_path() -> Path:
+    """Путь к иконке приложения (работает в dev и в скомпилированном виде)."""
+    if getattr(sys, 'frozen', False):
+        base = Path(sys._MEIPASS)
+    else:
+        base = Path(__file__).resolve().parent.parent
+    return base / "resources" / "icons" / "app_icon.ico"
 
 
 class GoalsDialog(QDialog):
@@ -50,6 +59,11 @@ class GoalsDialog(QDialog):
         """Инициализация интерфейса"""
         self.setWindowTitle(self.translator.tr('goals_title'))
         self.setMinimumSize(1000, 800)
+        
+        # Устанавливаем иконку окна
+        icon_path = _get_icon_path()
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
         
         layout = QVBoxLayout(self)
         layout.setSpacing(0)

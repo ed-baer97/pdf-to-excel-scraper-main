@@ -1,12 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-PyInstaller spec file for Mektep Desktop
+PyInstaller spec file for Mektep Desktop — ONEFILE (один EXE)
 
 Build command:
-    pyinstaller mektep_desktop.spec
+    pyinstaller mektep_desktop_onefile.spec
 
-Перед сборкой убедитесь что resources/icons/app_icon.ico существует.
-Для скачивания и конвертации логотипа запустите: python _download_logo.py
+Результат: dist/Mektep Desktop.exe (один файл)
 """
 import os
 from pathlib import Path
@@ -29,7 +28,6 @@ try:
     _pw_driver = os.path.join(_pw_dir, 'driver')
     if os.path.isdir(_pw_driver):
         _playwright_datas = [(os.path.join(_pw_driver, '*'), 'playwright/driver')]
-        # Включаем подпапки driver (package/ и т.д.)
         for _root, _dirs, _files in os.walk(_pw_driver):
             _rel = os.path.relpath(_root, _pw_dir)
             if _files:
@@ -101,7 +99,6 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        # Исключаем неиспользуемые модули
         'tkinter',
         'matplotlib',
         'numpy',
@@ -120,29 +117,20 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
     [],
-    exclude_binaries=True,
     name='Mektep Desktop',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=False,  # GUI приложение (без консоли)
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
     icon='resources/icons/app_icon.ico' if _icon.exists() else None,
-)
-
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    name='Mektep Desktop',
 )

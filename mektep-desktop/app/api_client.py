@@ -1,31 +1,103 @@
 """
 API Client для связи с сервером Mektep Platform
 
-Минимальный HTTP клиент для проверки квоты и логирования отчетов.
+HTTP клиент для авторизации, проверки подключения,
+загрузки/получения отчётов и аналитики.
 """
 import requests
 from typing import Optional, Dict, List
 from datetime import datetime, timedelta
 
 
+# Адрес сервера по умолчанию
+DEFAULT_SERVER_URL = "https://mektep-analyzer.kz"
+
+
 class MektepAPIClient:
     """HTTP клиент для API сервера"""
     
-    def __init__(self, base_url: str = "http://localhost:5000"):
+    def __init__(self, base_url: str = DEFAULT_SERVER_URL):
         """
         Инициализация клиента
         
         Args:
-            base_url: Базовый URL сервера (по умолчанию localhost)
+            base_url: Базовый URL сервера
         """
         self.base_url = base_url.rstrip("/")
         self.token: Optional[str] = None
         self.token_expires: Optional[datetime] = None
+        self.user_data: Optional[Dict] = None
         self.session = requests.Session()
         self.session.headers.update({
             "User-Agent": "Mektep-Desktop/1.0",
             "Content-Type": "application/json"
         })
+    
+    # ==========================================================================
+    # Управление подключением
+    # ==========================================================================
+    
+    def set_base_url(self, url: str):
+        """
+        Изменить URL сервера
+        
+        Args:
+            url: Новый базовый URL
+        """
+        self.base_url = url.rstrip("/")
+    
+    def check_connection(self, timeout: int = 5) -> Dict:
+        """
+        Проверка подключения к серверу (health-check)
+        
+        Вызывает GET /health/live — лёгкий эндпоинт без авторизации.
+        
+        Args:
+            timeout: Таймаут запроса в секундах
+        
+        Returns:
+            dict: {"success": bool, "status": str, "latency_ms": int}
+        """
+        try:
+            start = datetime.now()
+            response = self.session.get(
+                f"{self.base_url}/health/live",
+                timeout=timeout
+            )
+            latency = int((datetime.now() - start).total_seconds() * 1000)
+            
+            if response.status_code == 200:
+                data = response.json()
+                return {
+                    "success": True,
+                    "status": data.get("status", "ok"),
+                    "latency_ms": latency
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": f"Сервер вернул код {response.status_code}",
+                    "latency_ms": latency
+                }
+        except requests.exceptions.ConnectionError:
+            return {
+                "success": False,
+                "error": "Не удалось подключиться к серверу. Проверьте URL и подключение к интернету."
+            }
+        except requests.exceptions.Timeout:
+            return {
+                "success": False,
+                "error": "Превышено время ожидания ответа от сервера"
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Ошибка: {str(e)}"
+            }
+    
+    # ==========================================================================
+    # Управление токеном
+    # ==========================================================================
     
     def _is_token_valid(self) -> bool:
         """Проверка валидности токена"""
@@ -39,6 +111,68 @@ class MektepAPIClient:
             self.session.headers["Authorization"] = f"Bearer {self.token}"
         elif "Authorization" in self.session.headers:
             del self.session.headers["Authorization"]
+    
+    def restore_token(self, token: str, expires_iso: str, user_data: dict = None) -> bool:
+        """
+        Восстановление токена из сохранённых настроек (QSettings)
+        
+        Проверяет, что токен ещё действителен, делая запрос refresh.
+        
+        Args:
+            token: JWT токен
+            expires_iso: Дата истечения в ISO формате
+            user_data: Сохранённые данные пользователя
+            
+        Returns:
+            bool: True если токен восстановлен и действителен
+        """
+        try:
+            expires = datetime.fromisoformat(expires_iso)
+            if datetime.now() >= expires:
+                return False
+            
+            self.token = token
+            self.token_expires = expires
+            self.user_data = user_data
+            self._set_auth_header()
+            
+            # Проверяем токен через refresh
+            result = self.refresh_token()
+            if result.get("success"):
+                return True
+            
+            # Токен невалиден — очищаем
+            self.token = None
+            self.token_expires = None
+            self.user_data = None
+            self._set_auth_header()
+            return False
+            
+        except Exception:
+            self.token = None
+            self.token_expires = None
+            self.user_data = None
+            return False
+    
+    def get_token_info(self) -> Optional[Dict]:
+        """
+        Получить информацию о текущем токене для сохранения в QSettings
+        
+        Returns:
+            dict: {"token": str, "expires": str (ISO), "user_data": dict}
+                  или None если нет токена
+        """
+        if not self.token or not self.token_expires:
+            return None
+        return {
+            "token": self.token,
+            "expires": self.token_expires.isoformat(),
+            "user_data": self.user_data
+        }
+    
+    # ==========================================================================
+    # Авторизация
+    # ==========================================================================
     
     def login(self, username: str, password: str) -> Dict:
         """
@@ -66,13 +200,14 @@ class MektepAPIClient:
                 self.token = data.get("token")
                 expires_in = data.get("expires_in", 2592000)  # 30 days default
                 self.token_expires = datetime.now() + timedelta(seconds=expires_in)
+                self.user_data = data.get("user", {})
                 self._set_auth_header()
                 
                 return {
                     "success": True,
                     "token": self.token,
                     "expires_in": expires_in,
-                    "user": data.get("user", {})
+                    "user": self.user_data
                 }
             else:
                 return {
@@ -213,9 +348,10 @@ class MektepAPIClient:
             }
     
     def logout(self):
-        """Выход из системы (очистка токена)"""
+        """Выход из системы (очистка токена и данных)"""
         self.token = None
         self.token_expires = None
+        self.user_data = None
         self._set_auth_header()
     
     def is_authenticated(self) -> bool:

@@ -13,6 +13,13 @@ from pathlib import Path
 from typing import Optional, List, Dict, TYPE_CHECKING
 from PyQt6.QtCore import QThread, pyqtSignal
 
+# Защита от None stdout/stderr в frozen PyInstaller builds (console=False)
+if getattr(sys, 'frozen', False):
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, "w", encoding="utf-8")
+    if sys.stderr is None:
+        sys.stderr = open(os.devnull, "w", encoding="utf-8")
+
 if TYPE_CHECKING:
     from .api_client import MektepAPIClient
 
@@ -231,6 +238,18 @@ class ScraperThread(QThread):
             # Запускаем мониторинг прогресса
             self.progress.emit(5, "Инициализация...")
             
+            # ── Playwright: указываем путь к установленным браузерам ──
+            # В frozen-режиме (PyInstaller) Playwright ищет браузеры внутри
+            # _MEIPASS, но они туда не включены. Перенаправляем на стандартную
+            # папку %LOCALAPPDATA%\ms-playwright, где playwright install их ставит.
+            # Даже если папки нет — scrape_mektep._launch_browser() сам сделает
+            # fallback на Edge/Chrome или автоустановку Chromium.
+            if getattr(sys, 'frozen', False):
+                _local = os.environ.get('LOCALAPPDATA', '')
+                _pw_browsers = os.path.join(_local, 'ms-playwright')
+                if os.path.isdir(_pw_browsers):
+                    os.environ['PLAYWRIGHT_BROWSERS_PATH'] = _pw_browsers
+
             # Импортируем и запускаем скрапер (во временной папке)
             from scrape_mektep import run as scrape_run
             
@@ -332,7 +351,11 @@ class ScraperThread(QThread):
                 )
                 self.finished.emit(False, [])
             else:
-                self.error.emit(f"Скрапинг завершился с ошибкой (код: {self._scraper_result})")
+                detail = getattr(self, '_scraper_error_detail', '')
+                if detail:
+                    self.error.emit(f"Скрапинг завершился с ошибкой:\n{detail}")
+                else:
+                    self.error.emit(f"Скрапинг завершился с ошибкой (код: {self._scraper_result})")
                 self.finished.emit(False, [])
         
         except Exception as e:
@@ -369,7 +392,7 @@ class ScraperThread(QThread):
             )
             self._scraper_result = result
         except Exception as e:
-            print(f"Scraper error: {e}")
+            self._scraper_error_detail = f"{type(e).__name__}: {e}"
             self._scraper_result = 1
     
     def _finalize_reports(self) -> List[Dict]:

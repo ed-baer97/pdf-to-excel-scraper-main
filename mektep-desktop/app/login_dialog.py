@@ -2,16 +2,34 @@
 Login Dialog - окно авторизации при запуске
 
 Авторизация на сервере перед использованием приложения.
+Поддерживает:
+- Автоматический вход по сохранённому токену
 """
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QMessageBox, QFrame, QCheckBox, QWidget
 )
-from PyQt6.QtCore import Qt, QSettings, QTimer
-from PyQt6.QtGui import QFont, QPixmap
+from PyQt6.QtCore import Qt, QSettings, QTimer, QThread, pyqtSignal
+from PyQt6.QtGui import QFont
 
-from .api_client import MektepAPIClient
+from .api_client import MektepAPIClient, DEFAULT_SERVER_URL
 from .translator import get_translator
+
+
+class TokenRestoreThread(QThread):
+    """Поток для восстановления токена (не блокирует UI)"""
+    finished = pyqtSignal(bool)
+    
+    def __init__(self, api_client: MektepAPIClient, token: str, expires: str, user_data: dict):
+        super().__init__()
+        self.api_client = api_client
+        self.token = token
+        self.expires = expires
+        self.user_data = user_data
+    
+    def run(self):
+        ok = self.api_client.restore_token(self.token, self.expires, self.user_data)
+        self.finished.emit(ok)
 
 
 class LoginDialog(QDialog):
@@ -24,6 +42,7 @@ class LoginDialog(QDialog):
         self.translator = get_translator()
         self.authenticated = False
         self.user_data = None
+        self._restore_thread = None
         
         # Загрузить язык из настроек
         saved_lang = self.settings.value("language", "ru")
@@ -37,6 +56,12 @@ class LoginDialog(QDialog):
         self.setWindowTitle(self.translator.tr('login_title'))
         self.setFixedSize(480, 550)
         self.setModal(True)
+        
+        # Устанавливаем иконку окна
+        from PyQt6.QtGui import QIcon
+        icon_path = self._get_icon_path()
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
         
         # Основной layout
         main_layout = QVBoxLayout(self)
@@ -253,6 +278,69 @@ class LoginDialog(QDialog):
         else:
             self.username_input.setFocus()
     
+    # ==========================================================================
+    # Автоматический вход по сохранённому токену
+    # ==========================================================================
+    
+    def try_auto_login(self):
+        """Попытка автоматического входа по сохранённому токену"""
+        saved_token = self.settings.value("auth/token", "")
+        saved_expires = self.settings.value("auth/token_expires", "")
+        saved_user_data_str = self.settings.value("auth/user_data", "")
+        
+        if not saved_token or not saved_expires:
+            return
+        
+        # Парсим user_data из JSON
+        import json
+        try:
+            user_data = json.loads(saved_user_data_str) if saved_user_data_str else {}
+        except (json.JSONDecodeError, TypeError):
+            user_data = {}
+        
+        # Показываем статус
+        auto_msg = "Автоматический вход..." if self.translator.get_language() == 'ru' else "Автоматты кіру..."
+        self.status_label.setText(f"🔄 {auto_msg}")
+        self.status_label.setStyleSheet("color: #0d6efd; font-size: 12px;")
+        self.login_btn.setEnabled(False)
+        
+        # Запускаем восстановление токена в потоке
+        self._restore_thread = TokenRestoreThread(
+            self.api_client, saved_token, saved_expires, user_data
+        )
+        self._restore_thread.finished.connect(self._on_token_restored)
+        self._restore_thread.start()
+    
+    def _on_token_restored(self, success: bool):
+        """Обработка результата восстановления токена"""
+        if success:
+            self.user_data = self.api_client.user_data
+            self.authenticated = True
+            
+            if self.translator.get_language() == 'ru':
+                msg = "Автоматический вход выполнен"
+            else:
+                msg = "Автоматты кіру орындалды"
+            self.status_label.setText(f"✅ {msg}")
+            self.status_label.setStyleSheet("color: #198754; font-size: 12px;")
+            
+            # Обновляем сохранённый токен
+            self._save_token()
+            
+            QTimer.singleShot(500, self.accept)
+        else:
+            # Токен невалиден — очищаем и показываем форму
+            self.settings.remove("auth/token")
+            self.settings.remove("auth/token_expires")
+            self.settings.remove("auth/user_data")
+            
+            self.login_btn.setEnabled(True)
+            self.status_label.setText("")
+    
+    # ==========================================================================
+    # Авторизация
+    # ==========================================================================
+    
     def handle_login(self):
         """Обработка входа"""
         username = self.username_input.text().strip()
@@ -280,8 +368,6 @@ class LoginDialog(QDialog):
         if result.get("success"):
             # Успешная авторизация
             self.user_data = result.get("user", {})
-            
-            # Успешная авторизация — принимаем диалог
             self.authenticated = True
             
             # Сохраняем учетные данные если "Запомнить меня"
@@ -291,6 +377,9 @@ class LoginDialog(QDialog):
             else:
                 self.settings.remove("auth/username")
                 self.settings.setValue("auth/remember", False)
+            
+            # Сохраняем токен для автоматического входа
+            self._save_token()
             
             self.status_label.setText("✅ " + self.translator.tr('login_button'))
             self.status_label.setStyleSheet("color: #198754; font-size: 12px;")
@@ -320,6 +409,28 @@ class LoginDialog(QDialog):
             # Фокус на пароль для повторного ввода
             self.password_input.clear()
             self.password_input.setFocus()
+    
+    def _save_token(self):
+        """Сохранить токен в QSettings для автоматического входа"""
+        import json
+        token_info = self.api_client.get_token_info()
+        if token_info:
+            self.settings.setValue("auth/token", token_info["token"])
+            self.settings.setValue("auth/token_expires", token_info["expires"])
+            self.settings.setValue("auth/user_data", json.dumps(
+                token_info["user_data"], ensure_ascii=False
+            ))
+    
+    @staticmethod
+    def _get_icon_path() -> 'Path':
+        """Путь к иконке приложения"""
+        import sys
+        from pathlib import Path
+        if getattr(sys, 'frozen', False):
+            base = Path(sys._MEIPASS)
+        else:
+            base = Path(__file__).resolve().parent.parent
+        return base / "resources" / "icons" / "app_icon.ico"
     
     def is_authenticated(self) -> bool:
         """Проверка успешной авторизации"""
