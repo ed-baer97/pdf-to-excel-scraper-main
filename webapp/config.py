@@ -71,7 +71,7 @@ class Config:
     # DESKTOP_DOWNLOAD_PATH — путь к exe/zip (например dist/Mektep Desktop.zip)
     # DESKTOP_DOWNLOAD_URL — внешняя ссылка (если задана, используется вместо пути)
     DESKTOP_DOWNLOAD_PATH = os.getenv("DESKTOP_DOWNLOAD_PATH", "")
-    DESKTOP_DOWNLOAD_URL = os.getenv("DESKTOP_DOWNLOAD_URL", "")
+    DESKTOP_DOWNLOAD_URL = os.getenv("DESKTOP_DOWNLOAD_URL", "https://github.com/ed-baer97/pdf-to-excel-scraper-main/releases/download/v1.0.0/Mektep.Desktop.exe")
 
 
 class DevelopmentConfig(Config):
