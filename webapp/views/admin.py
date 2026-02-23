@@ -40,6 +40,18 @@ def _parse_class_grade(class_name: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
+def _class_accordion_group(class_name: str) -> str:
+    """Определяет группу аккордеона для класса по номеру (1А -> 1-4, 7Б -> 5-9, 10А -> 10-11)."""
+    grade = _parse_class_grade(class_name)
+    if grade is None:
+        return "1-4"  # fallback
+    if grade <= 4:
+        return "1-4"
+    if grade <= 9:
+        return "5-9"
+    return "10-11"
+
+
 def _teacher_accordion_group(teacher: User, classes: list) -> str:
     """
     Определяет группу аккордеона для учителя-классного руководителя.
@@ -80,11 +92,21 @@ def dashboard():
     for t in teachers:
         group = _teacher_accordion_group(t, classes)
         teachers_by_accordion[group].append(t)
+    # Группировка классов по аккордеонам (1-4, 5-9, 10-11)
+    classes_by_accordion = {
+        "1-4": [],
+        "5-9": [],
+        "10-11": [],
+    }
+    for cls in classes:
+        group = _class_accordion_group(cls.name)
+        classes_by_accordion[group].append(cls)
     return render_template(
         "admin/dashboard.html",
         teachers=teachers,
         teachers_by_accordion=teachers_by_accordion,
         classes=classes,
+        classes_by_accordion=classes_by_accordion,
     )
 
 
