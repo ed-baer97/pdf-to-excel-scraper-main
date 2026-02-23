@@ -1,0 +1,12 @@
+# Prometheus configuration for Mektep Platform
+# Scrapes metrics from Flask app (internal Docker network only)
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "mektep-webapp"
+    static_configs:
+      - targets: ["web:5000"]
+    metrics_path: /metrics

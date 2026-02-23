@@ -86,8 +86,45 @@ services:
       timeout: 5s
       retries: 5
 
+  # =============================================================================
+  # Prometheus (metrics collection)
+  # =============================================================================
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    ports:
+      - "9090:9090"
+    depends_on:
+      - web
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    networks:
+      - mektep-network
+    restart: unless-stopped
+
+  # =============================================================================
+  # Grafana (dashboards)
+  # =============================================================================
+  grafana:
+    image: grafana/grafana:10.2.0
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - mektep-network
+    restart: unless-stopped
+
 volumes:
   postgres-data:
+  grafana-data:
 
 networks:
   mektep-network:

@@ -22,7 +22,14 @@ def create_app(config_object=None) -> Flask:
     
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.config.from_object(config_object)
-    
+
+    # Prometheus metrics (internal /metrics endpoint)
+    try:
+        from prometheus_flask_exporter import PrometheusMetrics
+        PrometheusMetrics(app)
+    except ImportError:
+        pass  # prometheus-flask-exporter not installed
+
     db.init_app(app)
     migrate.init_app(app, db)
     login_manager.init_app(app)
