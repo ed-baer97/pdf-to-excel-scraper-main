@@ -349,9 +349,16 @@ def grades_overview():
     # Сортируем классы
     sorted_classes = sorted(classes_data.values(), key=lambda x: x["class_name"])
     
+    # Группировка по аккордеонам (1-4, 5-9, 10-11)
+    classes_by_accordion = {"1-4": [], "5-9": [], "10-11": []}
+    for cls in sorted_classes:
+        group = _class_accordion_group(cls["class_name"])
+        classes_by_accordion[group].append(cls)
+    
     return render_template(
         "admin/grades_overview.html",
         classes=sorted_classes,
+        classes_by_accordion=classes_by_accordion,
         period_type=period_type,
         period_number=period_number
     )
