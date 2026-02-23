@@ -1,3 +1,4 @@
+import re
 import secrets
 import json
 from functools import wraps
@@ -33,6 +34,31 @@ def admin_required(f):
     return decorated_function
 
 
+def _parse_class_grade(class_name: str) -> int | None:
+    """Извлекает номер класса из названия (1А -> 1, 10Б -> 10)."""
+    m = re.match(r"^(\d+)", str(class_name or ""))
+    return int(m.group(1)) if m else None
+
+
+def _teacher_accordion_group(teacher: User, classes: list) -> str:
+    """
+    Определяет группу аккордеона для учителя-классного руководителя.
+    Возвращает: "1-4", "5-9", "10-11" или "no_leadership".
+    """
+    teacher_classes = [c for c in classes if c.class_teacher_id == teacher.id]
+    if not teacher_classes:
+        return "no_leadership"
+    grades = [_parse_class_grade(c.name) for c in teacher_classes if _parse_class_grade(c.name) is not None]
+    if not grades:
+        return "1-4"  # fallback
+    min_grade = min(grades)
+    if min_grade <= 4:
+        return "1-4"
+    if min_grade <= 9:
+        return "5-9"
+    return "10-11"
+
+
 @bp.get("/")
 @login_required
 def dashboard():
@@ -40,13 +66,24 @@ def dashboard():
         return redirect(url_for("teacher.dashboard"))
     teachers = User.query.filter_by(
         role=Role.TEACHER.value, school_id=current_user.school_id
-    ).order_by(User.created_at.desc()).all()
+    ).order_by(User.full_name).all()
     classes = Class.query.filter_by(
         school_id=current_user.school_id
     ).order_by(Class.name).all()
+    # Группировка учителей по аккордеонам (1-4, 5-9, 10-11, без руководства)
+    teachers_by_accordion = {
+        "1-4": [],
+        "5-9": [],
+        "10-11": [],
+        "no_leadership": [],
+    }
+    for t in teachers:
+        group = _teacher_accordion_group(t, classes)
+        teachers_by_accordion[group].append(t)
     return render_template(
         "admin/dashboard.html",
         teachers=teachers,
+        teachers_by_accordion=teachers_by_accordion,
         classes=classes,
     )
 
@@ -570,6 +607,260 @@ def analytics_home():
         period_type=period_type,
         period_number=period_number,
         periods=periods
+    )
+
+
+def _apply_analytics_filters(subjects_data_sor, subjects_data_soch, subjects_data_grades,
+                             filter_subject, filter_class, filter_teacher):
+    """Применяет фильтры к данным аналитики (subject, class, teacher)."""
+    def _filter_item(item):
+        if filter_class and item.get("class_name") != filter_class:
+            return False
+        if filter_teacher and (item.get("teacher") or "").strip() != filter_teacher:
+            return False
+        return True
+
+    def _filter_dict(data_dict):
+        result = {}
+        for subj, items in data_dict.items():
+            if filter_subject and subj != filter_subject:
+                continue
+            filtered = [i for i in items if _filter_item(i)]
+            if filtered:
+                result[subj] = filtered
+        return result
+
+    return (
+        _filter_dict(subjects_data_sor),
+        _filter_dict(subjects_data_soch),
+        _filter_dict(subjects_data_grades),
+    )
+
+
+@bp.get("/analytics/download-excel")
+@login_required
+def download_analytics_excel():
+    """Скачать аналитику СОР/СОЧ/Оценки в Excel (с учётом фильтров subject/class/teacher)"""
+    if not _require_admin():
+        return redirect(url_for("teacher.dashboard"))
+    
+    period_type = request.args.get("period_type", "quarter")
+    period_number = int(request.args.get("period_number", 2))
+    filter_subject = request.args.get("subject", "").strip() or None
+    filter_class = request.args.get("class", "").strip() or None
+    filter_teacher = request.args.get("teacher", "").strip() or None
+    period_name = f"{period_number} {'четверть' if period_type == 'quarter' else 'полугодие'}"
+    
+    reports = GradeReport.query.filter_by(
+        school_id=current_user.school_id,
+        period_type=period_type,
+        period_number=period_number
+    ).all()
+    
+    subjects_data_sor = {}
+    subjects_data_soch = {}
+    subjects_data_grades = {}
+    
+    for report in reports:
+        subj = report.subject_name
+        cls = report.class_name
+        teacher_name = ""
+        if report.teacher:
+            teacher_name = report.teacher.full_name or report.teacher.username
+        
+        if report.analytics_json:
+            try:
+                analytics = json.loads(report.analytics_json)
+                sor_list = analytics.get("sor", [])
+                for sor in sor_list:
+                    total = (sor.get("count_5", 0) + sor.get("count_4", 0) +
+                             sor.get("count_3", 0) + sor.get("count_2", 0))
+                    sor["total"] = total
+                    if total > 0:
+                        sor["quality"] = round((sor.get("count_5", 0) + sor.get("count_4", 0)) / total * 100, 1)
+                        sor["success_rate"] = round((total - sor.get("count_2", 0)) / total * 100, 1)
+                    else:
+                        sor["quality"] = None
+                        sor["success_rate"] = None
+                
+                if subj not in subjects_data_sor:
+                    subjects_data_sor[subj] = []
+                subjects_data_sor[subj].append({
+                    "class_name": cls, "sor_list": sor_list, "teacher": teacher_name, "has_data": len(sor_list) > 0
+                })
+                
+                soch = analytics.get("soch", {})
+                if soch:
+                    s5 = soch.get("count_5", 0)
+                    s4 = soch.get("count_4", 0)
+                    s3 = soch.get("count_3", 0)
+                    s2 = soch.get("count_2", 0)
+                    total = s5 + s4 + s3 + s2
+                    if subj not in subjects_data_soch:
+                        subjects_data_soch[subj] = []
+                    subjects_data_soch[subj].append({
+                        "class_name": cls,
+                        "count_5": s5, "count_4": s4, "count_3": s3, "count_2": s2,
+                        "total": total,
+                        "quality": round((s5 + s4) / total * 100, 1) if total else None,
+                        "success_rate": round((total - s2) / total * 100, 1) if total else None,
+                        "teacher": teacher_name, "has_data": total > 0
+                    })
+            except json.JSONDecodeError:
+                pass
+        
+        if report.grades_json:
+            try:
+                grades_data = json.loads(report.grades_json)
+                s5 = s4 = s3 = s2 = 0
+                for student in grades_data.get("students", []):
+                    g = student.get("grade")
+                    if g == 5: s5 += 1
+                    elif g == 4: s4 += 1
+                    elif g == 3: s3 += 1
+                    elif g is not None and g <= 2: s2 += 1
+                total = s5 + s4 + s3 + s2
+                quality = grades_data.get("quality_percent") or (round((s5 + s4) / total * 100, 1) if total else None)
+                success = grades_data.get("success_percent") or (round((total - s2) / total * 100, 1) if total else None)
+                
+                if subj not in subjects_data_grades:
+                    subjects_data_grades[subj] = []
+                subjects_data_grades[subj].append({
+                    "class_name": cls,
+                    "count_5": s5, "count_4": s4, "count_3": s3, "count_2": s2,
+                    "total": total, "quality": quality, "success_rate": success,
+                    "teacher": teacher_name, "has_data": total > 0
+                })
+            except json.JSONDecodeError:
+                pass
+    
+    for subj_data in [subjects_data_sor, subjects_data_soch, subjects_data_grades]:
+        for subj in subj_data:
+            subj_data[subj].sort(key=lambda x: x["class_name"])
+    
+    # Применяем фильтры (subject, class, teacher)
+    if filter_subject or filter_class or filter_teacher:
+        subjects_data_sor, subjects_data_soch, subjects_data_grades = _apply_analytics_filters(
+            subjects_data_sor, subjects_data_soch, subjects_data_grades,
+            filter_subject, filter_class, filter_teacher
+        )
+    
+    styles = _create_excel_styles()
+    wb = Workbook()
+    
+    def _write_sor_sheet():
+        ws = wb.active
+        ws.title = "СОР"[:31]
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=10)
+        ws["A1"] = f"Аналитика СОР ({period_name})"
+        ws["A1"].font = Font(bold=True, size=14)
+        ws["A1"].alignment = Alignment(horizontal="center")
+        row = 3
+        for subj, data_list in sorted(subjects_data_sor.items()):
+            ws.cell(row=row, column=1, value=subj).font = Font(bold=True, size=12)
+            row += 1
+            headers = ["Класс", "СОР", "5", "4", "3", "2", "Всего", "Качество %", "Успеваемость %", "Учитель"]
+            for col, h in enumerate(headers, 1):
+                c = ws.cell(row=row, column=col, value=h)
+                c.font = styles["header_font"]
+                c.fill = styles["header_fill"]
+                c.border = styles["border"]
+            row += 1
+            for item in data_list:
+                if item["sor_list"]:
+                    for sor in item["sor_list"]:
+                        ws.cell(row=row, column=1, value=item["class_name"]).border = styles["border"]
+                        ws.cell(row=row, column=2, value=sor.get("name", "-")).border = styles["border"]
+                        ws.cell(row=row, column=3, value=sor.get("count_5", 0)).border = styles["border"]
+                        ws.cell(row=row, column=4, value=sor.get("count_4", 0)).border = styles["border"]
+                        ws.cell(row=row, column=5, value=sor.get("count_3", 0)).border = styles["border"]
+                        ws.cell(row=row, column=6, value=sor.get("count_2", 0)).border = styles["border"]
+                        ws.cell(row=row, column=7, value=sor.get("total", 0)).border = styles["border"]
+                        ws.cell(row=row, column=8, value=sor.get("quality") or "-").border = styles["border"]
+                        ws.cell(row=row, column=9, value=sor.get("success_rate") or "-").border = styles["border"]
+                        ws.cell(row=row, column=10, value=item["teacher"] or "-").border = styles["border"]
+                        row += 1
+                else:
+                    ws.cell(row=row, column=1, value=item["class_name"]).border = styles["border"]
+                    for col in range(2, 10):
+                        ws.cell(row=row, column=col, value="-").border = styles["border"]
+                    ws.cell(row=row, column=10, value=item["teacher"] or "-").border = styles["border"]
+                    row += 1
+            row += 2
+    
+    def _write_soch_sheet():
+        ws = wb.create_sheet(title="СОЧ"[:31])
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=9)
+        ws["A1"] = f"Аналитика СОЧ ({period_name})"
+        ws["A1"].font = Font(bold=True, size=14)
+        ws["A1"].alignment = Alignment(horizontal="center")
+        row = 3
+        for subj, data_list in sorted(subjects_data_soch.items()):
+            ws.cell(row=row, column=1, value=subj).font = Font(bold=True, size=12)
+            row += 1
+            headers = ["Класс", "5", "4", "3", "2", "Всего", "Качество %", "Успеваемость %", "Учитель"]
+            for col, h in enumerate(headers, 1):
+                c = ws.cell(row=row, column=col, value=h)
+                c.font = styles["header_font"]
+                c.fill = styles["header_fill"]
+                c.border = styles["border"]
+            row += 1
+            for item in data_list:
+                ws.cell(row=row, column=1, value=item["class_name"]).border = styles["border"]
+                ws.cell(row=row, column=2, value=item["count_5"]).border = styles["border"]
+                ws.cell(row=row, column=3, value=item["count_4"]).border = styles["border"]
+                ws.cell(row=row, column=4, value=item["count_3"]).border = styles["border"]
+                ws.cell(row=row, column=5, value=item["count_2"]).border = styles["border"]
+                ws.cell(row=row, column=6, value=item["total"]).border = styles["border"]
+                ws.cell(row=row, column=7, value=item["quality"] or "-").border = styles["border"]
+                ws.cell(row=row, column=8, value=item["success_rate"] or "-").border = styles["border"]
+                ws.cell(row=row, column=9, value=item["teacher"] or "-").border = styles["border"]
+                row += 1
+            row += 2
+    
+    def _write_grades_sheet():
+        ws = wb.create_sheet(title="Оценки"[:31])
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=9)
+        ws["A1"] = f"Аналитика оценок ({period_name})"
+        ws["A1"].font = Font(bold=True, size=14)
+        ws["A1"].alignment = Alignment(horizontal="center")
+        row = 3
+        for subj, data_list in sorted(subjects_data_grades.items()):
+            ws.cell(row=row, column=1, value=subj).font = Font(bold=True, size=12)
+            row += 1
+            headers = ["Класс", "5", "4", "3", "2", "Всего", "Качество %", "Успеваемость %", "Учитель"]
+            for col, h in enumerate(headers, 1):
+                c = ws.cell(row=row, column=col, value=h)
+                c.font = styles["header_font"]
+                c.fill = styles["header_fill"]
+                c.border = styles["border"]
+            row += 1
+            for item in data_list:
+                ws.cell(row=row, column=1, value=item["class_name"]).border = styles["border"]
+                ws.cell(row=row, column=2, value=item["count_5"]).border = styles["border"]
+                ws.cell(row=row, column=3, value=item["count_4"]).border = styles["border"]
+                ws.cell(row=row, column=4, value=item["count_3"]).border = styles["border"]
+                ws.cell(row=row, column=5, value=item["count_2"]).border = styles["border"]
+                ws.cell(row=row, column=6, value=item["total"]).border = styles["border"]
+                ws.cell(row=row, column=7, value=item["quality"] or "-").border = styles["border"]
+                ws.cell(row=row, column=8, value=item["success_rate"] or "-").border = styles["border"]
+                ws.cell(row=row, column=9, value=item["teacher"] or "-").border = styles["border"]
+                row += 1
+            row += 2
+    
+    _write_sor_sheet()
+    _write_soch_sheet()
+    _write_grades_sheet()
+    
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    filename = f"Аналитика_СОР_СОЧ_{period_name.replace(' ', '_')}.xlsx"
+    return send_file(
+        output,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=filename
     )
 
 

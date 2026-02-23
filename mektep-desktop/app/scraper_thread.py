@@ -188,7 +188,9 @@ class ScraperThread(QThread):
                     school_info = self.api_client.get_my_school()
                     if school_info.get("success"):
                         school_name = school_info.get("school_name")
-                        allow_cross = school_info.get("allow_cross_school_reports", True)
+                        # Явное приведение к bool: API возвращает true/false, но прокси/сериализация могут искажать
+                        _ac = school_info.get("allow_cross_school_reports", True)
+                        allow_cross = _ac is True if isinstance(_ac, bool) else str(_ac).lower() not in ("false", "0", "no", "")
                         if school_name and not allow_cross:
                             os.environ["MEKTEP_EXPECTED_SCHOOL"] = school_name
                             print(f"[DEBUG] Защита: ожидаемая школа = '{school_name}'")
@@ -432,15 +434,22 @@ class ScraperThread(QThread):
         final_reports_dir = self.output_dir / safe_teacher_name / period_name
         final_reports_dir.mkdir(parents=True, exist_ok=True)
         
-        # ===== Читаем имя организации из org_name.txt =====
+        # ===== Читаем имя организации: приоритет org_name_ru.txt для API (БД на русском) =====
         self._scraped_org_name = None
         org_name_file = self.temp_dir / "org_name.txt"
-        if org_name_file.exists():
+        org_name_ru_file = self.temp_dir / "org_name_ru.txt"
+        if org_name_ru_file.exists():
+            try:
+                _ru = org_name_ru_file.read_text(encoding="utf-8").strip()
+                if _ru:
+                    self._scraped_org_name = _ru
+            except Exception:
+                pass
+        if self._scraped_org_name is None and org_name_file.exists():
             try:
                 self._scraped_org_name = org_name_file.read_text(encoding="utf-8").strip()
-                print(f"[DEBUG] Организация из скрапера: '{self._scraped_org_name}'")
-            except Exception as e:
-                print(f"[DEBUG] Ошибка чтения org_name.txt: {e}")
+            except Exception:
+                pass
         
         # ===== Предварительная проверка: есть ли организация в БД сервера =====
         self._org_upload_allowed = True  # По умолчанию разрешаем загрузку
@@ -607,6 +616,11 @@ class ScraperThread(QThread):
                               f"Отчёт сохранён только локально: {class_name} {subject_name}")
                         report_data["upload_skipped"] = True
                         report_data["upload_skip_reason"] = "org_not_found_server"
+                    elif upload_result.get("org_mismatch"):
+                        print(f"[DEBUG] Сервер: создание отчётов для других школ запрещено. "
+                              f"Включите «Отчёты для других школ» в настройках: {class_name} {subject_name}")
+                        report_data["upload_skipped"] = True
+                        report_data["upload_skip_reason"] = "org_mismatch"
                     else:
                         print(f"[DEBUG] Ошибка загрузки: {upload_result.get('error')}")
             except Exception as e:

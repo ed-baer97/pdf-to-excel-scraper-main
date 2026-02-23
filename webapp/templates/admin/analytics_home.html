@@ -1,11 +1,14 @@
 {% extends "layout.html" %}
 {% block content %}
 <div class="container-fluid py-3">
-  <div class="d-flex justify-content-between align-items-center mb-3">
+  <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <div>
       <h2 class="mb-0">{{ _('analytics') }}</h2>
       <p class="text-muted mb-0">{{ _('analytics_desc') }}</p>
     </div>
+    <a href="{{ url_for('admin.download_analytics_excel', period_type=period_type, period_number=period_number) }}" id="downloadExcelBtn" class="btn btn-success">
+      <i class="bi bi-file-earmark-excel"></i> {{ _('download_excel') }}
+    </a>
   </div>
 
   <!-- Фильтр по периоду -->
@@ -327,14 +330,25 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    function updateDownloadLink() {
+        const baseUrl = "{{ url_for('admin.download_analytics_excel', period_type=period_type, period_number=period_number) }}";
+        const params = new URLSearchParams();
+        if (subjectSel.value) params.set('subject', subjectSel.value);
+        if (classSel.value) params.set('class', classSel.value);
+        if (teacherSel.value) params.set('teacher', teacherSel.value);
+        const qs = params.toString();
+        document.getElementById('downloadExcelBtn').href = qs ? baseUrl + '&' + qs : baseUrl;
+    }
+
     // Инициализация
     refreshFilters();
-    subjectSel.addEventListener('change', () => { refreshFilters(); applyFilters(); });
-    classSel.addEventListener('change', () => { refreshFilters(); applyFilters(); });
-    teacherSel.addEventListener('change', () => { refreshFilters(); applyFilters(); });
+    updateDownloadLink();
+    subjectSel.addEventListener('change', () => { refreshFilters(); applyFilters(); updateDownloadLink(); });
+    classSel.addEventListener('change', () => { refreshFilters(); applyFilters(); updateDownloadLink(); });
+    teacherSel.addEventListener('change', () => { refreshFilters(); applyFilters(); updateDownloadLink(); });
     document.getElementById('resetFilters').addEventListener('click', () => {
         subjectSel.value = ''; classSel.value = ''; teacherSel.value = '';
-        refreshFilters(); applyFilters();
+        refreshFilters(); applyFilters(); updateDownloadLink();
     });
     document.querySelectorAll('[data-bs-toggle="tab"]').forEach(btn => {
         btn.addEventListener('shown.bs.tab', () => setTimeout(applyFilters, 50));

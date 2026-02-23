@@ -531,13 +531,16 @@ def api_upload_report():
         school_id = school.id
         
         # ===== Проверка: org_name совпадает со школой учителя? =====
-        # Если разрешение выключено и организация отличается — отклоняем.
+        # Разрешено (allow_cross_school_reports=True) → любые школы.
+        # Запрещено (False) → только своя организация.
         if user.school_id and school_id != user.school_id:
             user_school = db.session.get(School, user.school_id)
-            if user_school and not user_school.allow_cross_school_reports:
+            allow_cross = user_school.allow_cross_school_reports if user_school else True
+            if user_school and not allow_cross:
                 return jsonify({
                     "error": f"Организация «{org_name}» не совпадает с вашей школой «{user_school.name}». "
-                             "Создание отчётов для других школ запрещено.",
+                             "Создание отчётов для других школ запрещено. "
+                             "Включите «Отчёты для других школ» в настройках школы.",
                     "org_mismatch": True
                 }), 403
     else:

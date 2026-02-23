@@ -551,7 +551,14 @@ class MektepAPIClient:
                 return {
                     "success": False,
                     "error": response.json().get("error", "Организация не найдена"),
-                    "org_not_found": response.json().get("org_not_found", False)
+                    "org_not_found": response.json().get("org_not_found", True)
+                }
+            elif response.status_code == 403:
+                j = response.json()
+                return {
+                    "success": False,
+                    "error": j.get("error", "Создание отчётов для других школ запрещено."),
+                    "org_mismatch": j.get("org_mismatch", True)
                 }
             else:
                 return {

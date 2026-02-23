@@ -483,11 +483,17 @@ class MektepMainWindow(QMainWindow):
             org_name = None
             skipped_count = 0
             uploaded_count = 0
+            skip_reason = None  # org_not_found | org_mismatch
             for report in reports:
                 if not org_name and report.get("org_name"):
                     org_name = report["org_name"]
                 if report.get("upload_skipped"):
                     skipped_count += 1
+                    r = report.get("upload_skip_reason")
+                    if r == "org_mismatch":
+                        skip_reason = "org_mismatch"
+                    elif r and not skip_reason:
+                        skip_reason = r
                 elif report.get("server_report_id"):
                     uploaded_count += 1
             
@@ -501,12 +507,22 @@ class MektepMainWindow(QMainWindow):
                     f"<span style='color: #198754;'>Загружено на сервер: {uploaded_count}</span>"
                 )
             if skipped_count > 0:
-                if self.translator.get_language() == 'ru':
-                    skip_msg = (f"<span style='color: #ff9800;'>Не загружено на сервер: "
-                                f"{skipped_count} (организация не найдена в базе данных)</span>")
+                if skip_reason == "org_mismatch":
+                    if self.translator.get_language() == 'ru':
+                        skip_msg = (f"<span style='color: #ff9800;'>Не загружено на сервер: "
+                                    f"{skipped_count} (создание отчётов для других школ запрещено). "
+                                    f"Включите «Отчёты для других школ» в настройках школы.</span>")
+                    else:
+                        skip_msg = (f"<span style='color: #ff9800;'>Серверге жүктелмеді: "
+                                    f"{skipped_count} (басқа мектептерге есеп құру тыйым салынған). "
+                                    f"Мектеп баптауларында «Басқа мектептерге есептер» қосымшасын қосыңыз.</span>")
                 else:
-                    skip_msg = (f"<span style='color: #ff9800;'>Серверге жүктелмеді: "
-                                f"{skipped_count} (ұйым деректер базасында табылмады)</span>")
+                    if self.translator.get_language() == 'ru':
+                        skip_msg = (f"<span style='color: #ff9800;'>Не загружено на сервер: "
+                                    f"{skipped_count} (организация не найдена в базе данных)</span>")
+                    else:
+                        skip_msg = (f"<span style='color: #ff9800;'>Серверге жүктелмеді: "
+                                    f"{skipped_count} (ұйым деректер базасында табылмады)</span>")
                 self.log_text.append(skip_msg)
             
             # Сохраняем в историю
@@ -521,9 +537,13 @@ class MektepMainWindow(QMainWindow):
                 if org_name:
                     msg += f"\nОрганизация: {org_name}"
                 if skipped_count > 0:
-                    msg += (f"\n\n{skipped_count} отчёт(ов) не загружено на сервер: "
-                            f"организация не найдена в базе данных.\n"
-                            f"Файлы Excel/Word сохранены локально.")
+                    if skip_reason == "org_mismatch":
+                        msg += (f"\n\n{skipped_count} отчёт(ов) не загружено: создание отчётов "
+                                f"для других школ запрещено.\nВключите «Отчёты для других школ» в настройках школы.\n"
+                                f"Файлы Excel/Word сохранены локально.")
+                    else:
+                        msg += (f"\n\n{skipped_count} отчёт(ов) не загружено: организация не найдена в базе данных.\n"
+                                f"Файлы Excel/Word сохранены локально.")
                 if uploaded_count > 0:
                     msg += f"\nЗагружено на сервер: {uploaded_count}"
             else:
@@ -531,9 +551,13 @@ class MektepMainWindow(QMainWindow):
                 if org_name:
                     msg += f"\nҰйым: {org_name}"
                 if skipped_count > 0:
-                    msg += (f"\n\n{skipped_count} есеп серверге жүктелмеді: "
-                            f"ұйым деректер базасында табылмады.\n"
-                            f"Excel/Word файлдары жергілікті сақталды.")
+                    if skip_reason == "org_mismatch":
+                        msg += (f"\n\n{skipped_count} есеп жүктелмеді: басқа мектептерге есеп құру тыйым салынған. "
+                                f"Мектеп баптауларында қосыңыз.\nExcel/Word файлдары жергілікті сақталды.")
+                    else:
+                        msg += (f"\n\n{skipped_count} есеп серверге жүктелмеді: "
+                                f"ұйым деректер базасында табылмады.\n"
+                                f"Excel/Word файлдары жергілікті сақталды.")
                 if uploaded_count > 0:
                     msg += f"\nСерверге жүктелді: {uploaded_count}"
             
