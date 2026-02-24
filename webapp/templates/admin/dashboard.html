@@ -92,9 +92,9 @@
                         <td>{{ t.full_name or t.username }}</td>
                         <td class="text-muted">{{ t.username }}</td>
                         <td class="text-end">
-                          <button class="btn btn-sm btn-outline-secondary me-1" onclick="editTeacherModal({{ t.id }}, {{ (t.full_name or t.username)|tojson }})"><i class="bi bi-pencil"></i></button>
-                          <button class="btn btn-sm btn-outline-dark me-1" onclick="showPasswordModal({{ t.id }}, {{ t.username|tojson }})"><i class="bi bi-key"></i> {{ _('password_btn') }}</button>
-                          <button class="btn btn-sm btn-outline-danger" onclick="confirmDeleteTeacher({{ t.id }}, {{ (t.full_name or t.username)|tojson }})"><i class="bi bi-trash"></i></button>
+                          <button class="btn btn-sm btn-outline-secondary me-1" onclick='editTeacherModal({{ t.id }}, {{ (t.full_name or t.username)|tojson }})'><i class="bi bi-pencil"></i></button>
+                          <button class="btn btn-sm btn-outline-dark me-1" onclick='showPasswordModal({{ t.id }}, {{ t.username|tojson }})'><i class="bi bi-key"></i> {{ _('password_btn') }}</button>
+                          <button class="btn btn-sm btn-outline-danger" onclick='confirmDeleteTeacher({{ t.id }}, {{ (t.full_name or t.username)|tojson }})'><i class="bi bi-trash"></i></button>
                         </td>
                       </tr>
                       {% else %}
@@ -121,9 +121,9 @@
                         <td>{{ t.full_name or t.username }}</td>
                         <td class="text-muted">{{ t.username }}</td>
                         <td class="text-end">
-                          <button class="btn btn-sm btn-outline-secondary me-1" onclick="editTeacherModal({{ t.id }}, {{ (t.full_name or t.username)|tojson }})"><i class="bi bi-pencil"></i></button>
-                          <button class="btn btn-sm btn-outline-dark me-1" onclick="showPasswordModal({{ t.id }}, {{ t.username|tojson }})"><i class="bi bi-key"></i> {{ _('password_btn') }}</button>
-                          <button class="btn btn-sm btn-outline-danger" onclick="confirmDeleteTeacher({{ t.id }}, {{ (t.full_name or t.username)|tojson }})"><i class="bi bi-trash"></i></button>
+                          <button class="btn btn-sm btn-outline-secondary me-1" onclick='editTeacherModal({{ t.id }}, {{ (t.full_name or t.username)|tojson }})'><i class="bi bi-pencil"></i></button>
+                          <button class="btn btn-sm btn-outline-dark me-1" onclick='showPasswordModal({{ t.id }}, {{ t.username|tojson }})'><i class="bi bi-key"></i> {{ _('password_btn') }}</button>
+                          <button class="btn btn-sm btn-outline-danger" onclick='confirmDeleteTeacher({{ t.id }}, {{ (t.full_name or t.username)|tojson }})'><i class="bi bi-trash"></i></button>
                         </td>
                       </tr>
                       {% else %}
@@ -150,9 +150,9 @@
                         <td>{{ t.full_name or t.username }}</td>
                         <td class="text-muted">{{ t.username }}</td>
                         <td class="text-end">
-                          <button class="btn btn-sm btn-outline-secondary me-1" onclick="editTeacherModal({{ t.id }}, {{ (t.full_name or t.username)|tojson }})"><i class="bi bi-pencil"></i></button>
-                          <button class="btn btn-sm btn-outline-dark me-1" onclick="showPasswordModal({{ t.id }}, {{ t.username|tojson }})"><i class="bi bi-key"></i> {{ _('password_btn') }}</button>
-                          <button class="btn btn-sm btn-outline-danger" onclick="confirmDeleteTeacher({{ t.id }}, {{ (t.full_name or t.username)|tojson }})"><i class="bi bi-trash"></i></button>
+                          <button class="btn btn-sm btn-outline-secondary me-1" onclick='editTeacherModal({{ t.id }}, {{ (t.full_name or t.username)|tojson }})'><i class="bi bi-pencil"></i></button>
+                          <button class="btn btn-sm btn-outline-dark me-1" onclick='showPasswordModal({{ t.id }}, {{ t.username|tojson }})'><i class="bi bi-key"></i> {{ _('password_btn') }}</button>
+                          <button class="btn btn-sm btn-outline-danger" onclick='confirmDeleteTeacher({{ t.id }}, {{ (t.full_name or t.username)|tojson }})'><i class="bi bi-trash"></i></button>
                         </td>
                       </tr>
                       {% else %}
@@ -179,9 +179,9 @@
                         <td>{{ t.full_name or t.username }}</td>
                         <td class="text-muted">{{ t.username }}</td>
                         <td class="text-end">
-                          <button class="btn btn-sm btn-outline-secondary me-1" onclick="editTeacherModal({{ t.id }}, {{ (t.full_name or t.username)|tojson }})"><i class="bi bi-pencil"></i></button>
-                          <button class="btn btn-sm btn-outline-dark me-1" onclick="showPasswordModal({{ t.id }}, {{ t.username|tojson }})"><i class="bi bi-key"></i> {{ _('password_btn') }}</button>
-                          <button class="btn btn-sm btn-outline-danger" onclick="confirmDeleteTeacher({{ t.id }}, {{ (t.full_name or t.username)|tojson }})"><i class="bi bi-trash"></i></button>
+                          <button class="btn btn-sm btn-outline-secondary me-1" onclick='editTeacherModal({{ t.id }}, {{ (t.full_name or t.username)|tojson }})'><i class="bi bi-pencil"></i></button>
+                          <button class="btn btn-sm btn-outline-dark me-1" onclick='showPasswordModal({{ t.id }}, {{ t.username|tojson }})'><i class="bi bi-key"></i> {{ _('password_btn') }}</button>
+                          <button class="btn btn-sm btn-outline-danger" onclick='confirmDeleteTeacher({{ t.id }}, {{ (t.full_name or t.username)|tojson }})'><i class="bi bi-trash"></i></button>
                         </td>
                       </tr>
                       {% else %}
