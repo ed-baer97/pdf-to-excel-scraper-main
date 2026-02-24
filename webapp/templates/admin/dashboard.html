@@ -237,10 +237,8 @@
                           <td><strong>{{ cls.name }}</strong></td>
                           <td>{% if cls.class_teacher %}{{ cls.class_teacher.full_name or cls.class_teacher.username }}{% else %}<span class="text-muted">{{ _('not_assigned') }}</span>{% endif %}</td>
                           <td>
-                            <button class="btn btn-sm btn-outline-primary" onclick="editClassModal({{ cls.id }}, {{ cls.name|tojson }}, {{ cls.class_teacher_id or 'null' }})"><i class="bi bi-pencil"></i></button>
-                            <form method="post" action="{{ url_for('admin.delete_class', class_id=cls.id) }}" class="d-inline" onsubmit='return confirm({{ _("confirm_delete_class")|replace("{}", cls.name)|tojson }})'>
-                              <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
-                            </form>
+                            <button class="btn btn-sm btn-outline-primary" onclick='editClassModal({{ cls.id }}, {{ cls.name|tojson }}, {{ cls.class_teacher_id or "null" }})'><i class="bi bi-pencil"></i></button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" onclick='confirmDeleteClass({{ cls.id }}, {{ cls.name|tojson }})'><i class="bi bi-trash"></i></button>
                           </td>
                         </tr>
                         {% else %}
@@ -267,10 +265,8 @@
                           <td><strong>{{ cls.name }}</strong></td>
                           <td>{% if cls.class_teacher %}{{ cls.class_teacher.full_name or cls.class_teacher.username }}{% else %}<span class="text-muted">{{ _('not_assigned') }}</span>{% endif %}</td>
                           <td>
-                            <button class="btn btn-sm btn-outline-primary" onclick="editClassModal({{ cls.id }}, {{ cls.name|tojson }}, {{ cls.class_teacher_id or 'null' }})"><i class="bi bi-pencil"></i></button>
-                            <form method="post" action="{{ url_for('admin.delete_class', class_id=cls.id) }}" class="d-inline" onsubmit='return confirm({{ _("confirm_delete_class")|replace("{}", cls.name)|tojson }})'>
-                              <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
-                            </form>
+                            <button class="btn btn-sm btn-outline-primary" onclick='editClassModal({{ cls.id }}, {{ cls.name|tojson }}, {{ cls.class_teacher_id or "null" }})'><i class="bi bi-pencil"></i></button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" onclick='confirmDeleteClass({{ cls.id }}, {{ cls.name|tojson }})'><i class="bi bi-trash"></i></button>
                           </td>
                         </tr>
                         {% else %}
@@ -297,10 +293,8 @@
                           <td><strong>{{ cls.name }}</strong></td>
                           <td>{% if cls.class_teacher %}{{ cls.class_teacher.full_name or cls.class_teacher.username }}{% else %}<span class="text-muted">{{ _('not_assigned') }}</span>{% endif %}</td>
                           <td>
-                            <button class="btn btn-sm btn-outline-primary" onclick="editClassModal({{ cls.id }}, {{ cls.name|tojson }}, {{ cls.class_teacher_id or 'null' }})"><i class="bi bi-pencil"></i></button>
-                            <form method="post" action="{{ url_for('admin.delete_class', class_id=cls.id) }}" class="d-inline" onsubmit='return confirm({{ _("confirm_delete_class")|replace("{}", cls.name)|tojson }})'>
-                              <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
-                            </form>
+                            <button class="btn btn-sm btn-outline-primary" onclick='editClassModal({{ cls.id }}, {{ cls.name|tojson }}, {{ cls.class_teacher_id or "null" }})'><i class="bi bi-pencil"></i></button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" onclick='confirmDeleteClass({{ cls.id }}, {{ cls.name|tojson }})'><i class="bi bi-trash"></i></button>
                           </td>
                         </tr>
                         {% else %}
@@ -473,6 +467,17 @@
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = `/admin/teachers/${teacherId}/delete`;
+        document.body.appendChild(form);
+        form.submit();
+      }
+    }
+
+    // Delete class confirmation
+    function confirmDeleteClass(classId, className) {
+      if (confirm({{ _("confirm_delete_class")|tojson }}.replace('{}', className))) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = `/admin/classes/${classId}/delete`;
         document.body.appendChild(form);
         form.submit();
       }
