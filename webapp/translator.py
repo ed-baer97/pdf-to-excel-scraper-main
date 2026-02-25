@@ -97,6 +97,12 @@ TRANSLATIONS = {
         'not_available': 'Недоступен',
         'confirm_delete_teacher': 'Вы уверены, что хотите удалить учителя "{}"?\n\nВсе данные учителя (отчёты, назначения) будут удалены безвозвратно.',
         'confirm_delete_class': 'Удалить класс «{}»?',
+        'import_excel': 'Импорт из Excel',
+        'import_excel_desc': 'Загрузите Excel-файл со списком учителей (колонки: ФИО, Логин)',
+        'download_template': 'Скачать шаблон',
+        'select_file': 'Выберите файл...',
+        'import_btn': 'Импортировать',
+        'or_import': 'или загрузите списком:',
 
         # Grades Overview
         'period_type': 'Тип периода',
@@ -330,6 +336,12 @@ TRANSLATIONS = {
         'not_available': 'Қолжетімсіз',
         'confirm_delete_teacher': 'Сіз "{}" мұғалімін жоюға сенімдісіз бе?\n\nМұғалімнің барлық деректері (есептер, тағайындаулар) қайтарымсыз жойылады.',
         'confirm_delete_class': '«{}» сыныбын жою керек пе?',
+        'import_excel': 'Excel-ден импорттау',
+        'import_excel_desc': 'Мұғалімдер тізімі бар Excel файлын жүктеңіз (бағандар: Аты-жөні, Логин)',
+        'download_template': 'Үлгіні жүктеу',
+        'select_file': 'Файлды таңдаңыз...',
+        'import_btn': 'Импорттау',
+        'or_import': 'немесе тізіммен жүктеңіз:',
 
         # Grades Overview
         'period_type': 'Кезең түрі',

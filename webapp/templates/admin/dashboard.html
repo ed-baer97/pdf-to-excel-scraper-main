@@ -75,6 +75,29 @@
             </div>
           </form>
 
+          <!-- Excel Import Section -->
+          <div class="card bg-light mb-3">
+            <div class="card-body py-2">
+              <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <div>
+                  <strong><i class="bi bi-file-earmark-excel text-success"></i> {{ _('import_excel') }}</strong>
+                  <small class="text-muted ms-2">{{ _('import_excel_desc') }}</small>
+                </div>
+                <a href="{{ url_for('admin.download_import_template') }}" class="btn btn-sm btn-outline-success">
+                  <i class="bi bi-download"></i> {{ _('download_template') }}
+                </a>
+              </div>
+              <form class="row g-2 mt-1" method="post" action="{{ url_for('admin.import_teachers') }}" enctype="multipart/form-data">
+                <div class="col">
+                  <input class="form-control form-control-sm" type="file" name="file" accept=".xlsx,.xls" required>
+                </div>
+                <div class="col-auto">
+                  <button class="btn btn-sm btn-success"><i class="bi bi-upload"></i> {{ _('import_btn') }}</button>
+                </div>
+              </form>
+            </div>
+          </div>
+
           <div class="accordion" id="teachersAccordion">
             <div class="accordion-item">
               <h2 class="accordion-header">

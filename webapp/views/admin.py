@@ -7,7 +7,7 @@ from io import BytesIO
 from flask import Blueprint, current_app, jsonify, redirect, render_template, request, url_for, flash, send_file
 from flask_login import login_required, current_user
 from sqlalchemy import func
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
 
@@ -138,6 +138,142 @@ def create_teacher():
     db.session.add(u)
     db.session.commit()
     flash(f"Учитель создан. Пароль: {pw}", "success")
+    return redirect(url_for("admin.dashboard"))
+
+
+@bp.get("/teachers/import-template")
+@login_required
+def download_import_template():
+    """Download an Excel template for bulk teacher import."""
+    if not _require_admin():
+        return redirect(url_for("teacher.dashboard"))
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Учителя"
+
+    headers = ["ФИО учителя", "Логин"]
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=h)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center")
+
+    ws.cell(row=2, column=1, value="Иванов Иван Иванович")
+    ws.cell(row=2, column=2, value="ivanov")
+    ws.cell(row=3, column=1, value="Петрова Мария Сергеевна")
+    ws.cell(row=3, column=2, value="petrova")
+
+    ws.column_dimensions["A"].width = 35
+    ws.column_dimensions["B"].width = 20
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return send_file(
+        output,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name="шаблон_импорта_учителей.xlsx",
+    )
+
+
+@bp.post("/teachers/import")
+@login_required
+def import_teachers():
+    """Bulk import teachers from an uploaded Excel file."""
+    if not _require_admin():
+        return redirect(url_for("teacher.dashboard"))
+
+    file = request.files.get("file")
+    if not file or not file.filename:
+        flash("Файл не выбран.", "danger")
+        return redirect(url_for("admin.dashboard"))
+
+    if not file.filename.lower().endswith((".xlsx", ".xls")):
+        flash("Поддерживается только формат Excel (.xlsx).", "danger")
+        return redirect(url_for("admin.dashboard"))
+
+    try:
+        wb = load_workbook(file, read_only=True, data_only=True)
+    except Exception:
+        flash("Не удалось прочитать файл. Убедитесь, что это корректный файл Excel (.xlsx).", "danger")
+        return redirect(url_for("admin.dashboard"))
+
+    ws = wb.active
+    rows = list(ws.iter_rows(min_row=2, values_only=True))
+    wb.close()
+
+    if not rows:
+        flash("Файл пуст или содержит только заголовок.", "warning")
+        return redirect(url_for("admin.dashboard"))
+
+    created = 0
+    skipped = 0
+    errors = []
+    passwords_info = []
+
+    max_seq = (
+        db.session.query(func.max(User.fs_teacher_seq))
+        .filter(User.school_id == current_user.school_id, User.role == Role.TEACHER.value)
+        .scalar()
+    )
+    next_seq = int(max_seq or 0) + 1
+
+    for i, row in enumerate(rows, start=2):
+        if not row or len(row) < 1:
+            continue
+
+        full_name = str(row[0] or "").strip()
+        username = str(row[1] or "").strip() if len(row) > 1 else ""
+
+        if not full_name:
+            continue
+
+        if not username:
+            username = re.sub(r"[^a-zA-Zа-яА-ЯёЁ0-9]", "", full_name.split()[0].lower()) if full_name.split() else ""
+            if not username:
+                errors.append(f"Строка {i}: невозможно создать логин для \"{full_name}\"")
+                skipped += 1
+                continue
+
+        if User.query.filter_by(username=username).first():
+            errors.append(f"Строка {i}: логин \"{username}\" уже существует")
+            skipped += 1
+            continue
+
+        pw = secrets.token_urlsafe(8)
+        u = User(
+            username=username,
+            full_name=full_name,
+            role=Role.TEACHER.value,
+            school_id=current_user.school_id,
+            is_active=True,
+        )
+        u.fs_teacher_seq = next_seq
+        next_seq += 1
+        u.set_password(pw)
+        u.password_enc = encrypt_password(pw, current_app.config.get("PASSWORD_ENC_KEY", ""))
+        db.session.add(u)
+        passwords_info.append(f"{full_name} ({username}): {pw}")
+        created += 1
+
+    if created:
+        db.session.commit()
+
+    msg_parts = [f"Импорт завершён: создано {created}"]
+    if skipped:
+        msg_parts.append(f"пропущено {skipped}")
+    flash(". ".join(msg_parts) + ".", "success" if created else "warning")
+
+    if errors:
+        flash("Ошибки: " + "; ".join(errors[:10]) + ("..." if len(errors) > 10 else ""), "warning")
+
+    if passwords_info:
+        flash("Пароли: " + " | ".join(passwords_info), "info")
+
     return redirect(url_for("admin.dashboard"))
 
 
