@@ -463,7 +463,12 @@ def _list_criteria_tabs(page) -> list[dict]:
 
 def _click_criteria_tab(page, href: str) -> None:
     # href like "#chetvert_2"
-    page.locator(f'ul#pills-tab a[data-toggle="pill"][href="{href}"]').first.click(timeout=7000)
+    loc = page.locator(f'ul#pills-tab a[data-toggle="pill"][href="{href}"]').first
+    try:
+        loc.click(timeout=7000)
+    except Exception:
+        # Fixed header (topline/top_header) may intercept pointer events; use JS click as fallback
+        loc.evaluate("el => el.click()")
     # Wait until the corresponding pane is shown (Bootstrap adds 'show' + 'active').
     pane_id = href.lstrip("#")
     pane = page.locator(f"div.tab-content div.tab-pane#{pane_id}").first
@@ -504,15 +509,15 @@ def _pick_tab_href_for_period(period_code: str, tabs: list[dict]) -> str | None:
     if period_code == "4":
         if "#chetvert_4" in hrefs:
             return "#chetvert_4"
-        # Fallback by label:
+        # Fallback by label (Russian: полугодие, Kazakh: жартыжылдық):
         for href, txt in texts.items():
-            if "2 полугод" in txt.lower():
+            if "2 полугод" in txt.lower() or ("2" in txt and "жартыжылдық" in txt):
                 return href
 
     if period_code == "2":
         # Fallback to "1 полугодие" if 2nd quarter is absent.
         for href, txt in texts.items():
-            if "1 полугод" in txt.lower():
+            if "1 полугод" in txt.lower() or ("1" in txt and "жартыжылдық" in txt):
                 return href
 
     # Fallback by matching quarter number in text.
