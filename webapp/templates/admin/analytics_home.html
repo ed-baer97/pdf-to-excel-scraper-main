@@ -32,6 +32,20 @@
             {% endfor %}
           </select>
         </div>
+        <div class="col-md-3">
+          <label class="form-label">Параллель классов</label>
+          <ul class="nav nav-pills">
+            <li class="nav-item">
+              <button type="submit" name="segment" value="" class="nav-link {% if not segment %}active{% endif %}">1–11</button>
+            </li>
+            <li class="nav-item">
+              <button type="submit" name="segment" value="1-4" class="nav-link {% if segment == '1-4' %}active{% endif %}">1–4</button>
+            </li>
+            <li class="nav-item">
+              <button type="submit" name="segment" value="5-11" class="nav-link {% if segment == '5-11' %}active{% endif %}">5–11</button>
+            </li>
+          </ul>
+        </div>
       </form>
     </div>
   </div>

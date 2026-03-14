@@ -167,6 +167,42 @@ def _try_click(locator, timeout_ms: int = 1500) -> None:
         pass
 
 
+def _dismiss_announcement_modal(page: Page, timeout_ms: int = 600) -> bool:
+    """
+    Best-effort close of the optional "Объявление" modal that may block UI.
+    Returns True if the modal was detected (and close was attempted).
+    """
+    try:
+        title = page.locator("#jurnalCloseWarningModal h5.modal-title:has-text('Объявление')").first
+        title.wait_for(state="visible", timeout=timeout_ms)
+    except Exception:
+        return False
+
+    try:
+        btn = page.locator(
+            "#jurnalCloseWarningModal button.btn.btn-danger:has-text('Закрыть'), "
+            "#jurnalCloseWarningModal button[data-dismiss='modal']:has-text('Закрыть')"
+        ).first
+        btn.click(timeout=1500)
+    except Exception:
+        pass
+
+    try:
+        page.locator("#jurnalCloseWarningModal").first.wait_for(state="hidden", timeout=2000)
+    except Exception:
+        pass
+
+    return True
+
+
+def _dismiss_blocking_ui(page: Page) -> None:
+    # Generic close buttons (Bootstrap/modal patterns)
+    _try_click(page.locator("button:has-text('×')"))
+    _try_click(page.locator("[aria-label='Close']"))
+    # Site-specific announcement modal (may or may not appear)
+    _dismiss_announcement_modal(page)
+
+
 def _click_login_button(page) -> None:
     # Prefer stable attributes from the provided HTML:
     # <button ... data-toggle="collapse" href="#collapseThree" aria-controls="collapseThree">Вход в систему</button>
@@ -193,6 +229,8 @@ def _click_login_button(page) -> None:
 
 
 def _get_current_language(page) -> str | None:
+    # На некоторых страницах модальные окна могут перекрывать переключатель языка.
+    _dismiss_blocking_ui(page)
     btn = page.locator("div.topline .btn-group button.btn.btn-default.dropdown-toggle").first
     try:
         btn.wait_for(state="visible", timeout=7000)
@@ -218,6 +256,7 @@ def _ensure_language(page, lang_code: str) -> None:
     # Desktop dropdown
     dropdown_btn = page.locator("div.topline .btn-group button.btn.btn-default.dropdown-toggle").first
     try:
+        _dismiss_blocking_ui(page)
         dropdown_btn.wait_for(state="visible", timeout=7000)
         dropdown_btn.click(timeout=7000)
         page.locator(f'div.topline .dropdown-menu a.dropdown-item[href*="{LANG_MAP[lang_code]["query"]}"]').first.click(
@@ -229,6 +268,7 @@ def _ensure_language(page, lang_code: str) -> None:
         pass
 
     # Mobile fallback (direct link)
+    _dismiss_blocking_ui(page)
     page.locator(f'div.mobile_lang a[href*="{LANG_MAP[lang_code]["query"]}"]').first.click(timeout=7000)
     page.wait_for_load_state("domcontentloaded")
 
@@ -284,6 +324,7 @@ def _choose_period() -> tuple[str, str]:
 def _go_to_grades(page) -> None:
     # Nav item:
     # <a class="nav-link" href="/office/?action=semester">Оценки</a>
+    _dismiss_blocking_ui(page)
     link = page.locator('a.nav-link[href="/office/?action=semester"]:visible').first
     try:
         link.wait_for(state="visible", timeout=7000)
@@ -292,6 +333,7 @@ def _go_to_grades(page) -> None:
         page.goto("https://mektep.edu.kz/office/?action=semester", wait_until="domcontentloaded")
 
     page.wait_for_load_state("domcontentloaded")
+    _dismiss_blocking_ui(page)
 
 def _extract_grades_table(page) -> list[dict]:
     """
@@ -411,11 +453,13 @@ def _open_criteria(page, href: str) -> None:
     if not href:
         raise ValueError("Empty criteria link.")
     # Use navigation by click if possible; fallback to goto.
+    _dismiss_blocking_ui(page)
     try:
         page.locator(f'a[href="{href}"]').first.click(timeout=7000)
     except Exception:
         page.goto(urljoin(page.url, href), wait_until="domcontentloaded")
     page.wait_for_load_state("domcontentloaded")
+    _dismiss_blocking_ui(page)
 
 
 def _check_criteria_warning(page) -> bool:
@@ -1081,8 +1125,7 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
         page.wait_for_load_state("domcontentloaded")
 
         # Best-effort dismiss of any popups/modals that can block clicks.
-        _try_click(page.locator("button:has-text('×')"))
-        _try_click(page.locator("[aria-label='Close']"))
+        _dismiss_blocking_ui(page)
 
         log_stage(ScraperLogger.STAGE_LOGIN_FORM, "Открытие формы входа", 4)
         # Debug artifacts before clicking (useful if selector fails due to unexpected content).

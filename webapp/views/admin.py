@@ -512,6 +512,7 @@ def analytics_home():
     # Параметры
     period_type = request.args.get("period_type", "quarter")
     period_number = int(request.args.get("period_number", 2))
+    segment = request.args.get("segment")  # '1-4' или '5-11' или None
     
     # Получаем все отчёты школы за период
     reports = GradeReport.query.filter_by(
@@ -532,6 +533,11 @@ def analytics_home():
     for report in reports:
         subj = report.subject_name
         cls = report.class_name
+        # Фильтрация по сегменту классов 1-4 / 5-11, если указан
+        if segment == "1-4" and not cls.startswith(("1", "2", "3", "4")):
+            continue
+        if segment == "5-11" and not cls.startswith(("5", "6", "7", "8", "9", "10", "11")):
+            continue
         teacher_name = ""
         # Получаем имя учителя
         if report.teacher:
@@ -635,7 +641,8 @@ def analytics_home():
         subjects_data_grades=dict(sorted(subjects_data_grades.items())),
         period_type=period_type,
         period_number=period_number,
-        periods=periods
+        periods=periods,
+        segment=segment
     )
 
 
@@ -915,6 +922,7 @@ def class_teacher_report():
     # Параметры
     period_type = request.args.get("period_type", "quarter")
     period_number = int(request.args.get("period_number", 2))
+    segment = request.args.get("segment")  # '1-4' или '5-11' или None
     
     # Периоды для фильтра
     periods = [
@@ -929,7 +937,12 @@ def class_teacher_report():
         period_type=period_type,
         period_number=period_number
     ).distinct()
-    class_names = sorted([c[0] for c in class_names_query.all()])
+    class_names = sorted([
+        c[0] for c in class_names_query.all()
+        if not segment
+        or (segment == "1-4" and str(c[0]).startswith(("1", "2", "3", "4")))
+        or (segment == "5-11" and str(c[0]).startswith(("5", "6", "7", "8", "9", "10", "11")))
+    ])
     
     # Собираем данные по каждому классу
     categories_data = {
@@ -1072,7 +1085,8 @@ def class_teacher_report():
         categories_data=categories_data,
         period_type=period_type,
         period_number=period_number,
-        periods=periods
+        periods=periods,
+        segment=segment
     )
 
 

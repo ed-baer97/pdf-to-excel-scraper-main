@@ -34,7 +34,7 @@
   <!-- Фильтр по периоду -->
   <div class="card shadow-sm mb-4">
     <div class="card-body">
-      <form method="GET" class="row g-3">
+      <form method="GET" class="row g-3 align-items-end">
         <div class="col-md-4">
           <label for="period_type" class="form-label">{{ _('period_type') }}</label>
           <select class="form-select" id="period_type" name="period_type" onchange="this.form.submit()">
@@ -51,6 +51,20 @@
               {% endif %}
             {% endfor %}
           </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Параллель классов</label>
+          <ul class="nav nav-pills">
+            <li class="nav-item">
+              <button type="submit" name="segment" value="" class="nav-link {% if not segment %}active{% endif %}">1–11</button>
+            </li>
+            <li class="nav-item">
+              <button type="submit" name="segment" value="1-4" class="nav-link {% if segment == '1-4' %}active{% endif %}">1–4</button>
+            </li>
+            <li class="nav-item">
+              <button type="submit" name="segment" value="5-11" class="nav-link {% if segment == '5-11' %}active{% endif %}">5–11</button>
+            </li>
+          </ul>
         </div>
       </form>
     </div>
