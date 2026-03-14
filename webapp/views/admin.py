@@ -534,9 +534,16 @@ def analytics_home():
         subj = report.subject_name
         cls = report.class_name
         # Фильтрация по сегменту классов 1-4 / 5-11, если указан
-        if segment == "1-4" and not cls.startswith(("1", "2", "3", "4")):
+        grade_str = ""
+        for ch in str(cls):
+            if ch.isdigit():
+                grade_str += ch
+            else:
+                break
+        grade_num = int(grade_str) if grade_str else None
+        if segment == "1-4" and not (grade_num and 1 <= grade_num <= 4):
             continue
-        if segment == "5-11" and not cls.startswith(("5", "6", "7", "8", "9", "10", "11")):
+        if segment == "5-11" and not (grade_num and 5 <= grade_num <= 11):
             continue
         teacher_name = ""
         # Получаем имя учителя
@@ -622,10 +629,21 @@ def analytics_home():
             except json.JSONDecodeError:
                 pass
     
-    # Сортируем классы внутри каждого предмета
+    # Сортируем классы внутри каждого предмета (по номеру класса 1..11, затем по имени)
+    def _class_sort_key(item):
+        name = str(item.get("class_name") or "")
+        grade_str = ""
+        for ch in name:
+            if ch.isdigit():
+                grade_str += ch
+            else:
+                break
+        grade_num = int(grade_str) if grade_str else 999
+        return (grade_num, name)
+
     for subj_data in [subjects_data_sor, subjects_data_soch, subjects_data_grades]:
         for subj in subj_data:
-            subj_data[subj].sort(key=lambda x: x["class_name"])
+            subj_data[subj].sort(key=_class_sort_key)
     
     # Периоды для фильтра
     periods = [
@@ -937,12 +955,29 @@ def class_teacher_report():
         period_type=period_type,
         period_number=period_number
     ).distinct()
-    class_names = sorted([
-        c[0] for c in class_names_query.all()
-        if not segment
-        or (segment == "1-4" and str(c[0]).startswith(("1", "2", "3", "4")))
-        or (segment == "5-11" and str(c[0]).startswith(("5", "6", "7", "8", "9", "10", "11")))
-    ])
+    def _parse_grade_from_name(name: str):
+        grade_str = ""
+        for ch in str(name):
+            if ch.isdigit():
+                grade_str += ch
+            else:
+                break
+        return int(grade_str) if grade_str else None
+
+    class_names = []
+    for (cls_name,) in class_names_query.all():
+        grade_num = _parse_grade_from_name(cls_name)
+        if segment == "1-4":
+            if grade_num and 1 <= grade_num <= 4:
+                class_names.append((grade_num, cls_name))
+        elif segment == "5-11":
+            if grade_num and 5 <= grade_num <= 11:
+                class_names.append((grade_num, cls_name))
+        else:
+            # Без сегмента — берём все, но сортируем по номеру класса
+            class_names.append((grade_num if grade_num is not None else 999, cls_name))
+
+    class_names = [name for _, name in sorted(class_names, key=lambda x: (x[0], x[1]))]
     
     # Собираем данные по каждому классу
     categories_data = {
