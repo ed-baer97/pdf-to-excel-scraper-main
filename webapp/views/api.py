@@ -17,6 +17,7 @@ from ..models import (
     User, Role, ReportFile, GradeReport,
     Class, Subject, TeacherSubject, TeacherClass, School,
 )
+from ..constants import normalize_subject_name
 import json
 
 bp = Blueprint("api", __name__, url_prefix="/api")
@@ -803,7 +804,8 @@ def api_get_class_grades(class_name: str):
     students_data = {}  # name -> {subject -> {percent, grade}}
     
     for report in reports:
-        subjects.add(report.subject_name)
+        subj = normalize_subject_name(report.subject_name)
+        subjects.add(subj)
         
         if report.grades_json:
             try:
@@ -818,10 +820,12 @@ def api_get_class_grades(class_name: str):
                     if name not in students_data:
                         students_data[name] = {}
                     
-                    students_data[name][report.subject_name] = {
-                        "percent": student.get("percent"),
-                        "grade": student.get("grade")
-                    }
+                    existing = students_data[name].get(subj)
+                    new_grade = {"percent": student.get("percent"), "grade": student.get("grade")}
+                    if existing is None or existing.get("grade") is None:
+                        students_data[name][subj] = new_grade
+                    elif new_grade.get("grade") is not None and new_grade["grade"] > existing.get("grade", 0):
+                        students_data[name][subj] = new_grade
             except json.JSONDecodeError:
                 current_app.logger.error(f"Invalid JSON in report {report.id}")
     
@@ -989,9 +993,9 @@ def api_teacher_subject_report():
     
     # Группируем по предмету → классу
     subjects_map = {}  # subject_name -> {class_name -> report}
-    
+
     for report in reports:
-        subj = report.subject_name
+        subj = normalize_subject_name(report.subject_name)
         cls = report.class_name
         
         if subj not in subjects_map:
@@ -1132,7 +1136,8 @@ def api_teacher_class_teacher_report():
             teacher_name = ""
             if report.teacher:
                 teacher_name = report.teacher.full_name or report.teacher.username
-            subject_teachers[report.subject_name] = teacher_name
+            subj = normalize_subject_name(report.subject_name)
+            subject_teachers[subj] = teacher_name
             
             if report.grades_json:
                 try:
@@ -1143,7 +1148,9 @@ def api_teacher_class_teacher_report():
                         if name and grade is not None:
                             if name not in students_grades:
                                 students_grades[name] = {}
-                            students_grades[name][report.subject_name] = grade
+                            prev = students_grades[name].get(subj)
+                            if prev is None or grade > prev:
+                                students_grades[name][subj] = grade
                 except json.JSONDecodeError:
                     pass
         

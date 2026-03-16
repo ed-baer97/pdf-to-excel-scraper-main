@@ -14,6 +14,7 @@ from openpyxl.utils import get_column_letter
 from ..extensions import db
 from ..models import Role, User, GradeReport, Class, ReportFile, TeacherSubject, TeacherClass
 from ..security import decrypt_password, encrypt_password
+from ..constants import normalize_subject_name
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -69,6 +70,33 @@ def _teacher_accordion_group(teacher: User, classes: list) -> str:
     if min_grade <= 9:
         return "5-9"
     return "10-11"
+
+
+def _get_semester_subject_pairs(school_id: int) -> set:
+    """
+    Returns set of (class_name, normalized_subject_name) pairs that have
+    semester-graded data.  Used to exclude these subjects from quarter 1/3.
+    """
+    rows = (
+        db.session.query(GradeReport.class_name, GradeReport.subject_name)
+        .filter_by(school_id=school_id, period_type="semester")
+        .distinct()
+        .all()
+    )
+    return {(r.class_name, normalize_subject_name(r.subject_name)) for r in rows}
+
+
+def _exclude_semester_subjects(reports: list, period_type: str, period_number: int, school_id: int) -> list:
+    """
+    For quarter periods 1 and 3, exclude reports whose subjects are graded
+    by semester (they only have meaningful data in semesters 1/2).
+    """
+    if period_type != "quarter" or period_number not in (1, 3):
+        return reports
+    semester_pairs = _get_semester_subject_pairs(school_id)
+    if not semester_pairs:
+        return reports
+    return [r for r in reports if (r.class_name, normalize_subject_name(r.subject_name)) not in semester_pairs]
 
 
 @bp.get("/")
@@ -319,6 +347,7 @@ def grades_overview():
         period_type=period_type,
         period_number=period_number
     ).all()
+    reports = _exclude_semester_subjects(reports, period_type, period_number, current_user.school_id)
     
     # Группируем по классам
     classes_data = {}
@@ -333,7 +362,9 @@ def grades_overview():
                 "success_percent": 0
             }
         
-        classes_data[class_name]["subjects"].append(report.subject_name)
+        subj_norm = normalize_subject_name(report.subject_name)
+        if subj_norm not in classes_data[class_name]["subjects"]:
+            classes_data[class_name]["subjects"].append(subj_norm)
         
         # Собираем статистику
         if report.grades_json:
@@ -382,13 +413,15 @@ def grades_class(class_name: str):
         period_type=period_type,
         period_number=period_number
     ).all()
+    reports = _exclude_semester_subjects(reports, period_type, period_number, current_user.school_id)
     
     # Собираем данные
     subjects = set()
     students_data = {}  # name -> {subject -> {percent, grade}}
     
     for report in reports:
-        subjects.add(report.subject_name)
+        subj = normalize_subject_name(report.subject_name)
+        subjects.add(subj)
         
         if report.grades_json:
             try:
@@ -403,10 +436,12 @@ def grades_class(class_name: str):
                     if name not in students_data:
                         students_data[name] = {}
                     
-                    students_data[name][report.subject_name] = {
-                        "percent": student.get("percent"),
-                        "grade": student.get("grade")
-                    }
+                    existing = students_data[name].get(subj)
+                    new_grade = {"percent": student.get("percent"), "grade": student.get("grade")}
+                    if existing is None or existing.get("grade") is None:
+                        students_data[name][subj] = new_grade
+                    elif new_grade.get("grade") is not None and new_grade["grade"] > existing.get("grade", 0):
+                        students_data[name][subj] = new_grade
             except json.JSONDecodeError:
                 pass
     
@@ -520,6 +555,7 @@ def analytics_home():
         period_type=period_type,
         period_number=period_number
     ).all()
+    reports = _exclude_semester_subjects(reports, period_type, period_number, current_user.school_id)
     
     # Группируем по предмету
     # subjects_data_sor:    { subject_name -> [{ class_name, sor_list, teacher, has_data }] }
@@ -531,7 +567,7 @@ def analytics_home():
     subjects_data_grades = {}
     
     for report in reports:
-        subj = report.subject_name
+        subj = normalize_subject_name(report.subject_name)
         cls = report.class_name
         # Фильтрация по сегменту классов 1-4 / 5-11, если указан
         grade_str = ""
@@ -710,13 +746,14 @@ def download_analytics_excel():
         period_type=period_type,
         period_number=period_number
     ).all()
+    reports = _exclude_semester_subjects(reports, period_type, period_number, current_user.school_id)
     
     subjects_data_sor = {}
     subjects_data_soch = {}
     subjects_data_grades = {}
     
     for report in reports:
-        subj = report.subject_name
+        subj = normalize_subject_name(report.subject_name)
         cls = report.class_name
         teacher_name = ""
         if report.teacher:
@@ -1003,6 +1040,7 @@ def class_teacher_report():
             period_type=period_type,
             period_number=period_number
         ).all()
+        reports = _exclude_semester_subjects(reports, period_type, period_number, current_user.school_id)
         
         # Собираем оценки: name -> {subject_name: grade}
         # И учителей: subject_name -> teacher_name
@@ -1010,10 +1048,11 @@ def class_teacher_report():
         subject_teachers = {}  # subject_name -> teacher_name
         
         for report in reports:
+            subj = normalize_subject_name(report.subject_name)
             teacher_name = ""
             if report.teacher:
                 teacher_name = report.teacher.full_name or report.teacher.username
-            subject_teachers[report.subject_name] = teacher_name
+            subject_teachers[subj] = teacher_name
             
             if report.grades_json:
                 try:
@@ -1024,7 +1063,9 @@ def class_teacher_report():
                         if name and grade is not None:
                             if name not in students_grades:
                                 students_grades[name] = {}
-                            students_grades[name][report.subject_name] = grade
+                            prev = students_grades[name].get(subj)
+                            if prev is None or grade > prev:
+                                students_grades[name][subj] = grade
                 except json.JSONDecodeError:
                     pass
         
@@ -1202,13 +1243,15 @@ def download_grades_class_excel(class_name: str):
         period_type=period_type,
         period_number=period_number
     ).all()
+    reports = _exclude_semester_subjects(reports, period_type, period_number, current_user.school_id)
     
     # Собираем данные
     subjects = set()
     students_data = {}  # name -> {subject -> {percent, grade}}
     
     for report in reports:
-        subjects.add(report.subject_name)
+        subj = normalize_subject_name(report.subject_name)
+        subjects.add(subj)
         
         if report.grades_json:
             try:
@@ -1223,10 +1266,12 @@ def download_grades_class_excel(class_name: str):
                     if name not in students_data:
                         students_data[name] = {}
                     
-                    students_data[name][report.subject_name] = {
-                        "percent": student.get("percent"),
-                        "grade": student.get("grade")
-                    }
+                    existing = students_data[name].get(subj)
+                    new_grade = {"percent": student.get("percent"), "grade": student.get("grade")}
+                    if existing is None or existing.get("grade") is None:
+                        students_data[name][subj] = new_grade
+                    elif new_grade.get("grade") is not None and new_grade["grade"] > existing.get("grade", 0):
+                        students_data[name][subj] = new_grade
             except json.JSONDecodeError:
                 pass
     
@@ -1485,14 +1530,16 @@ def download_class_teacher_report_excel():
             period_type=period_type,
             period_number=period_number
         ).all()
+        reports = _exclude_semester_subjects(reports, period_type, period_number, current_user.school_id)
         
         students_grades = {}
         subject_teachers = {}
         for report in reports:
+            subj = normalize_subject_name(report.subject_name)
             t_name = ""
             if report.teacher:
                 t_name = report.teacher.full_name or report.teacher.username
-            subject_teachers[report.subject_name] = t_name
+            subject_teachers[subj] = t_name
             if report.grades_json:
                 try:
                     gd = json.loads(report.grades_json)
@@ -1500,7 +1547,10 @@ def download_class_teacher_report_excel():
                         nm = st.get("name")
                         gr = st.get("grade")
                         if nm and gr is not None:
-                            students_grades.setdefault(nm, {})[report.subject_name] = gr
+                            students_grades.setdefault(nm, {})
+                            prev = students_grades[nm].get(subj)
+                            if prev is None or gr > prev:
+                                students_grades[nm][subj] = gr
                 except json.JSONDecodeError:
                     pass
         

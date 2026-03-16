@@ -585,8 +585,11 @@ class ScraperThread(QThread):
             try:
                 grades_data, analytics_data = self._build_grades_and_analytics(subdir)
                 if grades_data:
-                    period_type = "quarter"
-                    period_number = int(self.period_code)
+                    period_type, period_number, skip = self._resolve_period(subdir)
+                    if skip:
+                        print(f"[DEBUG] Пропуск полугодового предмета для четверти {self.period_code}: "
+                              f"{class_name} {subject_name}")
+                        return report_data
                     
                     upload_result = self.api_client.upload_report(
                         class_name=class_name,
@@ -742,6 +745,58 @@ class ScraperThread(QThread):
         except (ValueError, TypeError):
             return None
     
+    # ==================================================================
+    # Определение типа периода (четверть / полугодие)
+    # ==================================================================
+
+    def _resolve_period(self, batch_subdir: Path) -> tuple:
+        """
+        Определяет period_type и period_number для предмета.
+
+        Полугодовой предмет определяется по вкладкам скрапера:
+        если criteria_tabs.json содержит «полугод» или «жартыжылдық»
+        вместо четвертных вкладок, предмет считается полугодовым.
+
+        Returns:
+            (period_type, period_number, skip):
+            - skip=True  -> предмет полугодовой, а выбрана четверть 1/3 -> пропустить
+            - skip=False -> нормальный режим
+        """
+        is_semester = self._is_semester_subject(batch_subdir)
+
+        if is_semester:
+            if self.period_code in ("1", "3"):
+                return "semester", 0, True
+            if self.period_code == "2":
+                return "semester", 1, False
+            if self.period_code == "4":
+                return "semester", 2, False
+
+        return "quarter", int(self.period_code), False
+
+    @staticmethod
+    def _is_semester_subject(batch_subdir: Path) -> bool:
+        """
+        Проверяет, является ли предмет полугодовым по данным скрапера.
+
+        Читает criteria_tabs.json (сохраняется скрапером для каждого предмета)
+        и ищет метки «полугод» / «жартыжылдық» в текстах вкладок.
+        Если хотя бы одна вкладка содержит такой текст — предмет полугодовой.
+        """
+        tabs_file = batch_subdir / "criteria_tabs.json"
+        if not tabs_file.exists():
+            return False
+        try:
+            with open(tabs_file, "r", encoding="utf-8") as f:
+                tabs = json.load(f)
+            for tab in tabs:
+                text = (tab.get("text") or "").lower()
+                if "полугод" in text or "жартыжылдық" in text:
+                    return True
+        except Exception:
+            pass
+        return False
+
     # ==================================================================
     # Формирование JSON данных из сырых данных скрапера
     # ==================================================================

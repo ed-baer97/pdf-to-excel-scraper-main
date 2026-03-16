@@ -31,6 +31,8 @@ class SubjectReportWidget(QWidget):
         ("2 четверть", "quarter", 2),
         ("3 четверть", "quarter", 3),
         ("4 четверть", "quarter", 4),
+        ("1 полугодие", "semester", 1),
+        ("2 полугодие", "semester", 2),
     ]
 
     def __init__(self, api_client: Optional["MektepAPIClient"] = None):

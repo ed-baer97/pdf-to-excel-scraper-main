@@ -10,7 +10,10 @@ from __future__ import annotations
 
 from typing import List
 
-from . import version as app_version
+try:
+    from . import version as app_version
+except (ImportError, SystemError):
+    import version as app_version  # type: ignore[import-untyped]
 
 
 class PyuConfig:

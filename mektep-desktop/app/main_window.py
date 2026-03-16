@@ -23,8 +23,16 @@ from .grades_widget import GradesWidget
 from .subject_report_widget import SubjectReportWidget
 from .class_report_widget import ClassReportWidget
 
-from .. import version as app_version
-from ..pyu_config import PyuConfig
+try:
+    from .. import version as app_version
+    from ..pyu_config import PyuConfig
+except (ImportError, SystemError):
+    import sys, importlib
+    _parent = str(Path(__file__).resolve().parent.parent)
+    if _parent not in sys.path:
+        sys.path.insert(0, _parent)
+    app_version = importlib.import_module("version")
+    from pyu_config import PyuConfig  # type: ignore[import-untyped]
 
 try:
     from pyupdater.client import Client as PyuClient  # type: ignore
