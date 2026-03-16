@@ -99,6 +99,41 @@ def _exclude_semester_subjects(reports: list, period_type: str, period_number: i
     return [r for r in reports if (r.class_name, normalize_subject_name(r.subject_name)) not in semester_pairs]
 
 
+def _get_quarter_reports(school_id: int, period_number: int, **extra_filters):
+    """
+    Получает отчёты для четверти, автоматически подтягивая полугодовые
+    предметы для четвертей 2 и 4.
+
+    Четверть 2 -> + semester/1,  Четверть 4 -> + semester/2.
+    Четверти 1 и 3 -> исключаем полугодовые предметы.
+    """
+    reports = GradeReport.query.filter_by(
+        school_id=school_id,
+        period_type="quarter",
+        period_number=period_number,
+        **extra_filters,
+    ).all()
+
+    if period_number == 2:
+        reports += GradeReport.query.filter_by(
+            school_id=school_id,
+            period_type="semester",
+            period_number=1,
+            **extra_filters,
+        ).all()
+    elif period_number == 4:
+        reports += GradeReport.query.filter_by(
+            school_id=school_id,
+            period_type="semester",
+            period_number=2,
+            **extra_filters,
+        ).all()
+    else:
+        reports = _exclude_semester_subjects(reports, "quarter", period_number, school_id)
+
+    return reports
+
+
 @bp.get("/")
 @login_required
 def dashboard():
@@ -337,17 +372,11 @@ def grades_overview():
     if not _require_admin():
         return redirect(url_for("teacher.dashboard"))
     
-    # Параметры фильтрации
-    period_type = request.args.get("period_type", "quarter")
+    # Параметры фильтрации (только четверти)
     period_number = int(request.args.get("period_number", 2))
     
-    # Получаем все отчёты школы
-    reports = GradeReport.query.filter_by(
-        school_id=current_user.school_id,
-        period_type=period_type,
-        period_number=period_number
-    ).all()
-    reports = _exclude_semester_subjects(reports, period_type, period_number, current_user.school_id)
+    # Получаем отчёты (включая полугодовые для четвертей 2/4)
+    reports = _get_quarter_reports(current_user.school_id, period_number)
     
     # Группируем по классам
     classes_data = {}
@@ -390,7 +419,6 @@ def grades_overview():
         "admin/grades_overview.html",
         classes=sorted_classes,
         classes_by_accordion=classes_by_accordion,
-        period_type=period_type,
         period_number=period_number
     )
 
@@ -402,18 +430,11 @@ def grades_class(class_name: str):
     if not _require_admin():
         return redirect(url_for("teacher.dashboard"))
     
-    # Параметры
-    period_type = request.args.get("period_type", "quarter")
+    # Параметры (только четверти)
     period_number = int(request.args.get("period_number", 2))
     
-    # Получаем все отчёты для этого класса
-    reports = GradeReport.query.filter_by(
-        school_id=current_user.school_id,
-        class_name=class_name,
-        period_type=period_type,
-        period_number=period_number
-    ).all()
-    reports = _exclude_semester_subjects(reports, period_type, period_number, current_user.school_id)
+    # Получаем все отчёты для этого класса (включая полугодовые для 2/4)
+    reports = _get_quarter_reports(current_user.school_id, period_number, class_name=class_name)
     
     # Собираем данные
     subjects = set()
@@ -522,7 +543,6 @@ def grades_class(class_name: str):
         subjects=subjects_list,
         students=students_list,
         subject_stats=subject_stats,
-        period_type=period_type,
         period_number=period_number,
         summary={
             "total_students": total_students,
@@ -544,18 +564,12 @@ def analytics_home():
     if not _require_admin():
         return redirect(url_for("teacher.dashboard"))
     
-    # Параметры
-    period_type = request.args.get("period_type", "quarter")
+    # Параметры (только четверти)
     period_number = int(request.args.get("period_number", 2))
     segment = request.args.get("segment")  # '1-4' или '5-11' или None
     
-    # Получаем все отчёты школы за период
-    reports = GradeReport.query.filter_by(
-        school_id=current_user.school_id,
-        period_type=period_type,
-        period_number=period_number
-    ).all()
-    reports = _exclude_semester_subjects(reports, period_type, period_number, current_user.school_id)
+    # Получаем отчёты (включая полугодовые для четвертей 2/4)
+    reports = _get_quarter_reports(current_user.school_id, period_number)
     
     # Группируем по предмету
     # subjects_data_sor:    { subject_name -> [{ class_name, sor_list, teacher, has_data }] }
@@ -681,21 +695,12 @@ def analytics_home():
         for subj in subj_data:
             subj_data[subj].sort(key=_class_sort_key)
     
-    # Периоды для фильтра
-    periods = [
-        {"type": "quarter", "number": i, "name": f"{i} четверть"} for i in range(1, 5)
-    ] + [
-        {"type": "semester", "number": i, "name": f"{i} полугодие"} for i in range(1, 3)
-    ]
-
     return render_template(
         "admin/analytics_home.html",
         subjects_data_sor=dict(sorted(subjects_data_sor.items())),
         subjects_data_soch=dict(sorted(subjects_data_soch.items())),
         subjects_data_grades=dict(sorted(subjects_data_grades.items())),
-        period_type=period_type,
         period_number=period_number,
-        periods=periods,
         segment=segment
     )
 
@@ -734,19 +739,13 @@ def download_analytics_excel():
     if not _require_admin():
         return redirect(url_for("teacher.dashboard"))
     
-    period_type = request.args.get("period_type", "quarter")
     period_number = int(request.args.get("period_number", 2))
     filter_subject = request.args.get("subject", "").strip() or None
     filter_class = request.args.get("class", "").strip() or None
     filter_teacher = request.args.get("teacher", "").strip() or None
-    period_name = f"{period_number} {'четверть' if period_type == 'quarter' else 'полугодие'}"
+    period_name = f"{period_number} четверть"
     
-    reports = GradeReport.query.filter_by(
-        school_id=current_user.school_id,
-        period_type=period_type,
-        period_number=period_number
-    ).all()
-    reports = _exclude_semester_subjects(reports, period_type, period_number, current_user.school_id)
+    reports = _get_quarter_reports(current_user.school_id, period_number)
     
     subjects_data_sor = {}
     subjects_data_soch = {}
@@ -974,24 +973,13 @@ def class_teacher_report():
     if not _require_admin():
         return redirect(url_for("teacher.dashboard"))
     
-    # Параметры
-    period_type = request.args.get("period_type", "quarter")
+    # Параметры (только четверти)
     period_number = int(request.args.get("period_number", 2))
     segment = request.args.get("segment")  # '1-4' или '5-11' или None
     
-    # Периоды для фильтра
-    periods = [
-        {"type": "quarter", "number": i, "name": f"{i} четверть"} for i in range(1, 5)
-    ] + [
-        {"type": "semester", "number": i, "name": f"{i} полугодие"} for i in range(1, 3)
-    ]
-    
-    # Получаем все классы с данными
-    class_names_query = db.session.query(GradeReport.class_name).filter_by(
-        school_id=current_user.school_id,
-        period_type=period_type,
-        period_number=period_number
-    ).distinct()
+    # Получаем все отчёты (включая полугодовые для 2/4)
+    all_reports = _get_quarter_reports(current_user.school_id, period_number)
+    all_class_names = {r.class_name for r in all_reports}
     def _parse_grade_from_name(name: str):
         grade_str = ""
         for ch in str(name):
@@ -1002,7 +990,7 @@ def class_teacher_report():
         return int(grade_str) if grade_str else None
 
     class_names = []
-    for (cls_name,) in class_names_query.all():
+    for cls_name in all_class_names:
         grade_num = _parse_grade_from_name(cls_name)
         if segment == "1-4":
             if grade_num and 1 <= grade_num <= 4:
@@ -1011,7 +999,6 @@ def class_teacher_report():
             if grade_num and 5 <= grade_num <= 11:
                 class_names.append((grade_num, cls_name))
         else:
-            # Без сегмента — берём все, но сортируем по номеру класса
             class_names.append((grade_num if grade_num is not None else 999, cls_name))
 
     class_names = [name for _, name in sorted(class_names, key=lambda x: (x[0], x[1]))]
@@ -1033,14 +1020,8 @@ def class_teacher_report():
         if cls_obj and cls_obj.class_teacher:
             class_teacher_name = cls_obj.class_teacher.full_name or cls_obj.class_teacher.username
         
-        # Получаем все отчёты для класса
-        reports = GradeReport.query.filter_by(
-            school_id=current_user.school_id,
-            class_name=cls_name,
-            period_type=period_type,
-            period_number=period_number
-        ).all()
-        reports = _exclude_semester_subjects(reports, period_type, period_number, current_user.school_id)
+        # Отчёты для класса из уже загруженных
+        reports = [r for r in all_reports if r.class_name == cls_name]
         
         # Собираем оценки: name -> {subject_name: grade}
         # И учителей: subject_name -> teacher_name
@@ -1159,9 +1140,7 @@ def class_teacher_report():
     return render_template(
         "admin/class_teacher_report.html",
         categories_data=categories_data,
-        period_type=period_type,
         period_number=period_number,
-        periods=periods,
         segment=segment
     )
 
@@ -1232,18 +1211,11 @@ def download_grades_class_excel(class_name: str):
     if not _require_admin():
         return redirect(url_for("teacher.dashboard"))
     
-    # Параметры
-    period_type = request.args.get("period_type", "quarter")
+    # Параметры (только четверти)
     period_number = int(request.args.get("period_number", 2))
     
-    # Получаем все отчёты для этого класса
-    reports = GradeReport.query.filter_by(
-        school_id=current_user.school_id,
-        class_name=class_name,
-        period_type=period_type,
-        period_number=period_number
-    ).all()
-    reports = _exclude_semester_subjects(reports, period_type, period_number, current_user.school_id)
+    # Получаем все отчёты для этого класса (включая полугодовые для 2/4)
+    reports = _get_quarter_reports(current_user.school_id, period_number, class_name=class_name)
     
     # Собираем данные
     subjects = set()
@@ -1322,7 +1294,7 @@ def download_grades_class_excel(class_name: str):
     center_align = Alignment(horizontal="center")
     
     # Заголовок
-    period_name = f"{period_number} {'четверть' if period_type == 'quarter' else 'полугодие'}"
+    period_name = f"{period_number} четверть"
     total_cols = len(subjects_list) + 5  # №, ФИО, предметы..., Кол5, Кол4, Кол3
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=total_cols)
     ws["A1"] = f"Сводная таблица оценок: {class_name} ({period_name})"
@@ -1484,7 +1456,7 @@ def download_grades_class_excel(class_name: str):
     wb.save(output)
     output.seek(0)
     
-    filename = f"Оценки_{class_name}_{period_number}_{'четверть' if period_type == 'quarter' else 'полугодие'}.xlsx"
+    filename = f"Оценки_{class_name}_{period_number}_четверть.xlsx"
     
     return send_file(
         output,
@@ -1501,17 +1473,12 @@ def download_class_teacher_report_excel():
     if not _require_admin():
         return redirect(url_for("teacher.dashboard"))
     
-    period_type = request.args.get("period_type", "quarter")
     period_number = int(request.args.get("period_number", 2))
-    period_name = f"{period_number} {'четверть' if period_type == 'quarter' else 'полугодие'}"
+    period_name = f"{period_number} четверть"
     
     # --- Собираем данные (повторяем логику class_teacher_report) ---
-    class_names_query = db.session.query(GradeReport.class_name).filter_by(
-        school_id=current_user.school_id,
-        period_type=period_type,
-        period_number=period_number
-    ).distinct()
-    class_names = sorted([c[0] for c in class_names_query.all()])
+    all_reports = _get_quarter_reports(current_user.school_id, period_number)
+    class_names = sorted({r.class_name for r in all_reports})
     
     categories_data = {
         "excellent": [], "good": [], "one_4": [],
@@ -1524,13 +1491,7 @@ def download_class_teacher_report_excel():
         if cls_obj and cls_obj.class_teacher:
             class_teacher_name = cls_obj.class_teacher.full_name or cls_obj.class_teacher.username
         
-        reports = GradeReport.query.filter_by(
-            school_id=current_user.school_id,
-            class_name=cls_name,
-            period_type=period_type,
-            period_number=period_number
-        ).all()
-        reports = _exclude_semester_subjects(reports, period_type, period_number, current_user.school_id)
+        reports = [r for r in all_reports if r.class_name == cls_name]
         
         students_grades = {}
         subject_teachers = {}

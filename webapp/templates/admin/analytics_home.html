@@ -6,7 +6,7 @@
       <h2 class="mb-0">{{ _('analytics') }}</h2>
       <p class="text-muted mb-0">{{ _('analytics_desc') }}</p>
     </div>
-    <a href="{{ url_for('admin.download_analytics_excel', period_type=period_type, period_number=period_number) }}" id="downloadExcelBtn" class="btn btn-success">
+    <a href="{{ url_for('admin.download_analytics_excel', period_number=period_number) }}" id="downloadExcelBtn" class="btn btn-success">
       <i class="bi bi-file-earmark-excel"></i> {{ _('download_excel') }}
     </a>
   </div>
@@ -16,19 +16,10 @@
     <div class="card-body">
       <form method="GET" class="row g-3 align-items-end">
         <div class="col-md-3">
-          <label for="period_type" class="form-label">{{ _('period_type') }}</label>
-          <select class="form-select" id="period_type" name="period_type" onchange="this.form.submit()">
-            <option value="quarter" {% if period_type == 'quarter' %}selected{% endif %}>{{ _('quarter_label') }}</option>
-            <option value="semester" {% if period_type == 'semester' %}selected{% endif %}>{{ _('semester_label') }}</option>
-          </select>
-        </div>
-        <div class="col-md-3">
           <label for="period_number" class="form-label">{{ _('period_number') }}</label>
           <select class="form-select" id="period_number" name="period_number" onchange="this.form.submit()">
-            {% for p in periods %}
-              {% if p.type == period_type %}
-                <option value="{{ p.number }}" {% if period_number == p.number %}selected{% endif %}>{{ p.name }}</option>
-              {% endif %}
+            {% for i in range(1, 5) %}
+              <option value="{{ i }}" {% if period_number == i %}selected{% endif %}>{{ i }} {{ _('quarter_suffix') }}</option>
             {% endfor %}
           </select>
         </div>
@@ -45,9 +36,6 @@
               <button type="submit" name="segment" value="5-11" class="nav-link {% if segment == '5-11' %}active{% endif %}">5–11</button>
             </li>
           </ul>
-        </div>
-        <div class="col-12">
-          <small class="text-muted">Для полугодовых предметов четверти 1 и 3 не учитываются (данные отображаются только в полугодиях).</small>
         </div>
       </form>
     </div>
@@ -348,7 +336,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function updateDownloadLink() {
-        const baseUrl = "{{ url_for('admin.download_analytics_excel', period_type=period_type, period_number=period_number) }}";
+        const baseUrl = "{{ url_for('admin.download_analytics_excel', period_number=period_number) }}";
         const params = new URLSearchParams();
         if (subjectSel.value) params.set('subject', subjectSel.value);
         if (classSel.value) params.set('class', classSel.value);

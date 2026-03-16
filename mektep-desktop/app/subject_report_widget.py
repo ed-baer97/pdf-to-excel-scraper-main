@@ -27,12 +27,10 @@ class SubjectReportWidget(QWidget):
     """Отчёт предметника"""
 
     PERIOD_ITEMS = [
-        ("1 четверть", "quarter", 1),
-        ("2 четверть", "quarter", 2),
-        ("3 четверть", "quarter", 3),
-        ("4 четверть", "quarter", 4),
-        ("1 полугодие", "semester", 1),
-        ("2 полугодие", "semester", 2),
+        ("1 четверть", 1),
+        ("2 четверть", 2),
+        ("3 четверть", 3),
+        ("4 четверть", 4),
     ]
 
     def __init__(self, api_client: Optional["MektepAPIClient"] = None):
@@ -118,14 +116,13 @@ class SubjectReportWidget(QWidget):
         if not self.api_client or not self.api_client.is_authenticated():
             return
 
-        _, period_type, period_number = self.PERIOD_ITEMS[self.period_combo.currentIndex()]
+        _, period_number = self.PERIOD_ITEMS[self.period_combo.currentIndex()]
 
         self.loading_overlay.show_overlay(self.tr.tr('loading_subject_report'))
         self.refresh_btn.setEnabled(False)
 
         self._worker = ApiWorker(
             self.api_client.get_subject_report,
-            period_type=period_type,
             period_number=period_number
         )
         self._worker.finished.connect(self._on_data_loaded)

@@ -26,12 +26,10 @@ class GradesWidget(QWidget):
     """Сводная таблица оценок по классам"""
 
     PERIOD_ITEMS = [
-        ("1 четверть", "quarter", 1),
-        ("2 четверть", "quarter", 2),
-        ("3 четверть", "quarter", 3),
-        ("4 четверть", "quarter", 4),
-        ("1 полугодие", "semester", 1),
-        ("2 полугодие", "semester", 2),
+        ("1 четверть", 1),
+        ("2 четверть", 2),
+        ("3 четверть", 3),
+        ("4 четверть", 4),
     ]
 
     # Цвета оценок
@@ -231,7 +229,7 @@ class GradesWidget(QWidget):
             self.stack.setCurrentIndex(0)
             return
 
-        _, period_type, period_number = self.PERIOD_ITEMS[self.period_combo.currentIndex()]
+        _, period_number = self.PERIOD_ITEMS[self.period_combo.currentIndex()]
 
         self.loading_overlay.show_overlay(self.tr.tr('loading_grades', class_name))
         self.refresh_btn.setEnabled(False)
@@ -239,7 +237,6 @@ class GradesWidget(QWidget):
         self._worker = ApiWorker(
             self.api_client.get_class_grades,
             class_name=class_name,
-            period_type=period_type,
             period_number=period_number
         )
         self._worker.finished.connect(self._on_grades_loaded)

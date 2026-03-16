@@ -23,6 +23,52 @@ import json
 bp = Blueprint("api", __name__, url_prefix="/api")
 
 
+def _get_quarter_reports_api(school_id: int, period_number: int, **extra_filters):
+    """
+    Quarter-aware query: for quarters 2/4, also include semester 1/2 reports.
+    For quarters 1/3, semester subjects are excluded.
+    """
+    reports = GradeReport.query.filter_by(
+        school_id=school_id,
+        period_type="quarter",
+        period_number=period_number,
+        **extra_filters,
+    ).all()
+
+    if period_number == 2:
+        reports += GradeReport.query.filter_by(
+            school_id=school_id,
+            period_type="semester",
+            period_number=1,
+            **extra_filters,
+        ).all()
+    elif period_number == 4:
+        reports += GradeReport.query.filter_by(
+            school_id=school_id,
+            period_type="semester",
+            period_number=2,
+            **extra_filters,
+        ).all()
+    else:
+        semester_rows = (
+            db.session.query(GradeReport.class_name, GradeReport.subject_name)
+            .filter_by(school_id=school_id, period_type="semester")
+            .distinct()
+            .all()
+        )
+        semester_pairs = {
+            (r.class_name, normalize_subject_name(r.subject_name))
+            for r in semester_rows
+        }
+        if semester_pairs:
+            reports = [
+                r for r in reports
+                if (r.class_name, normalize_subject_name(r.subject_name)) not in semester_pairs
+            ]
+
+    return reports
+
+
 def _find_school_by_org_name(org_name: str):
     """
     Поиск школы по названию организации (Python-side сравнение).
@@ -772,23 +818,16 @@ def api_get_class_grades(class_name: str):
     """
     user = request.current_user
     
-    # Параметры
-    period_type = request.args.get("period_type", "quarter")
+    # Параметры (только четверти)
     period_number = int(request.args.get("period_number", 2))
     
-    # Получаем все отчёты для этого класса из школы пользователя
-    reports = GradeReport.query.filter_by(
-        school_id=user.school_id,
-        class_name=class_name,
-        period_type=period_type,
-        period_number=period_number
-    ).all()
+    # Получаем все отчёты для этого класса (включая полугодовые для 2/4)
+    reports = _get_quarter_reports_api(user.school_id, period_number, class_name=class_name)
     
     if not reports:
         return jsonify({
             "success": True,
             "class_name": class_name,
-            "period_type": period_type,
             "period_number": period_number,
             "subjects": [],
             "students": [],
@@ -844,7 +883,6 @@ def api_get_class_grades(class_name: str):
     grades_count = {"5": 0, "4": 0, "3": 0, "2": 0}
     
     for name, grades in students_data.items():
-        # Средний балл по всем предметам
         grades_values = [g.get("grade") for g in grades.values() if g.get("grade")]
         if grades_values:
             avg_grade = sum(grades_values) / len(grades_values)
@@ -866,7 +904,6 @@ def api_get_class_grades(class_name: str):
     return jsonify({
         "success": True,
         "class_name": class_name,
-        "period_type": period_type,
         "period_number": period_number,
         "subjects": subjects_list,
         "students": students_list,
@@ -980,16 +1017,10 @@ def api_teacher_subject_report():
         }
     """
     user = request.current_user
-    period_type = request.args.get("period_type", "quarter")
     period_number = int(request.args.get("period_number", 2))
     
-    # Получаем отчёты текущего учителя за период
-    reports = GradeReport.query.filter_by(
-        teacher_id=user.id,
-        school_id=user.school_id,
-        period_type=period_type,
-        period_number=period_number
-    ).all()
+    # Получаем отчёты текущего учителя за период (включая полугодовые для 2/4)
+    reports = _get_quarter_reports_api(user.school_id, period_number, teacher_id=user.id)
     
     # Группируем по предмету → классу
     subjects_map = {}  # subject_name -> {class_name -> report}
@@ -1060,7 +1091,6 @@ def api_teacher_subject_report():
     return jsonify({
         "success": True,
         "subjects": subjects_list,
-        "period_type": period_type,
         "period_number": period_number
     }), 200
 
@@ -1095,7 +1125,6 @@ def api_teacher_class_teacher_report():
         }
     """
     user = request.current_user
-    period_type = request.args.get("period_type", "quarter")
     period_number = int(request.args.get("period_number", 2))
     
     # Находим классы, где учитель — классный руководитель
@@ -1116,13 +1145,8 @@ def api_teacher_class_teacher_report():
     for cls_obj in managed_classes:
         cls_name = cls_obj.name
         
-        # Все отчёты по этому классу за период (от всех учителей)
-        reports = GradeReport.query.filter_by(
-            school_id=user.school_id,
-            class_name=cls_name,
-            period_type=period_type,
-            period_number=period_number
-        ).all()
+        # Все отчёты по этому классу за период (включая полугодовые для 2/4)
+        reports = _get_quarter_reports_api(user.school_id, period_number, class_name=cls_name)
         
         if not reports:
             continue
@@ -1232,6 +1256,5 @@ def api_teacher_class_teacher_report():
     return jsonify({
         "success": True,
         "classes": result_classes,
-        "period_type": period_type,
         "period_number": period_number
     }), 200

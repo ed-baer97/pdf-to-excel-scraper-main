@@ -811,8 +811,8 @@ class MektepAPIClient:
     
     def get_subject_report(
         self,
-        period_type: str = "quarter",
-        period_number: int = 2
+        period_number: int = 2,
+        **_kwargs
     ) -> Dict:
         """
         Отчёт предметника: статистика оценок по предметам и классам
@@ -827,7 +827,7 @@ class MektepAPIClient:
             self._set_auth_header()
             response = self.session.get(
                 f"{self.base_url}/api/teacher/subject-report",
-                params={"period_type": period_type, "period_number": period_number},
+                params={"period_number": period_number},
                 timeout=30
             )
             if response.status_code == 200:
@@ -845,8 +845,8 @@ class MektepAPIClient:
     
     def get_class_teacher_report(
         self,
-        period_type: str = "quarter",
-        period_number: int = 2
+        period_number: int = 2,
+        **_kwargs
     ) -> Dict:
         """
         Отчёт классного руководителя: категоризация учеников
@@ -861,7 +861,7 @@ class MektepAPIClient:
             self._set_auth_header()
             response = self.session.get(
                 f"{self.base_url}/api/teacher/class-teacher-report",
-                params={"period_type": period_type, "period_number": period_number},
+                params={"period_number": period_number},
                 timeout=30
             )
             if response.status_code == 200:
@@ -880,34 +880,23 @@ class MektepAPIClient:
     def get_class_grades(
         self,
         class_name: str,
-        period_type: str = "quarter",
-        period_number: int = 2
+        period_number: int = 2,
+        **_kwargs
     ) -> Dict:
         """
         Получение сводной таблицы оценок класса
         
         Args:
             class_name: Название класса ("7А")
-            period_type: Тип периода ("quarter" или "semester")
-            period_number: Номер периода
+            period_number: Номер четверти (1-4)
         
         Returns:
             dict: {
                 "success": bool,
                 "class_name": "7А",
-                "period_type": "quarter",
                 "period_number": 2,
                 "subjects": ["Математика", "Физика", ...],
-                "students": [
-                    {
-                        "name": "Иванов Иван",
-                        "grades": {
-                            "Математика": {"percent": 85.5, "grade": 4},
-                            ...
-                        }
-                    },
-                    ...
-                ],
+                "students": [...],
                 "summary": {
                     "total_students": 25,
                     "quality_percent": 66.7,
@@ -924,16 +913,12 @@ class MektepAPIClient:
         try:
             self._set_auth_header()
             
-            # URL encode class_name для безопасности
             import urllib.parse
             encoded_class = urllib.parse.quote(class_name, safe='')
             
             response = self.session.get(
                 f"{self.base_url}/api/grades/class/{encoded_class}",
-                params={
-                    "period_type": period_type,
-                    "period_number": period_number
-                },
+                params={"period_number": period_number},
                 timeout=30
             )
             
