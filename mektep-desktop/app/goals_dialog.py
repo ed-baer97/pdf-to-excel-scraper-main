@@ -184,15 +184,21 @@ class GoalsDialog(QDialog):
         analysis_group.setLayout(analysis_layout)
         content_layout.addWidget(analysis_group)
         
-        # === Секция: Выбор отчетов ===
+        # === Секция: Выбор отчетов (вкладки по четвертям) ===
         reports_group = QGroupBox("Выберите отчеты для применения")
         reports_layout = QVBoxLayout()
         
-        self.reports_list = QListWidget()
-        self.reports_list.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
-        self.reports_list.setMaximumHeight(150)
+        self.reports_tabs = QTabWidget()
+        self.quarter_lists = {}
+        for q in range(1, 5):
+            q_list = QListWidget()
+            q_list.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
+            q_list.setMaximumHeight(150)
+            self.quarter_lists[str(q)] = q_list
+            self.reports_tabs.addTab(q_list, f"Четверть {q}")
+        
         self.load_reports_list()
-        reports_layout.addWidget(self.reports_list)
+        reports_layout.addWidget(self.reports_tabs)
         
         reports_group.setLayout(reports_layout)
         content_layout.addWidget(reports_group)
@@ -289,18 +295,30 @@ class GoalsDialog(QDialog):
         return tab
     
     def load_reports_list(self):
-        """Загрузить список отчетов"""
-        self.reports_list.clear()
+        """Загрузить список отчетов, распределяя по вкладкам четвертей"""
+        for q_list in self.quarter_lists.values():
+            q_list.clear()
+        
         reports = self.reports_manager.get_reports()
+        
+        counts = {q: 0 for q in self.quarter_lists}
         
         for report in reports:
             if report.get("word_path") and Path(report["word_path"]).exists():
-                item_text = f"{report['class_name']} - {report['subject']} (Четверть {report['period_code']})"
-                self.reports_list.addItem(item_text)
-                # Сохраняем report в data
-                self.reports_list.item(self.reports_list.count() - 1).setData(
+                period = str(report.get("period_code", ""))
+                q_list = self.quarter_lists.get(period)
+                if not q_list:
+                    continue
+                item_text = f"{report['class_name']} - {report['subject']}"
+                q_list.addItem(item_text)
+                q_list.item(q_list.count() - 1).setData(
                     Qt.ItemDataRole.UserRole, report
                 )
+                counts[period] = counts.get(period, 0) + 1
+        
+        for q, q_list in self.quarter_lists.items():
+            idx = int(q) - 1
+            self.reports_tabs.setTabText(idx, f"Четверть {q} ({counts.get(q, 0)})")
     
     def get_current_sor_type(self) -> str:
         """Получить текущий тип СОР по активной вкладке"""
@@ -392,8 +410,11 @@ class GoalsDialog(QDialog):
     
     def apply_goals(self):
         """Применить цели к выбранным отчетам"""
-        # Получаем выбранные отчеты
-        selected_items = self.reports_list.selectedItems()
+        # Собираем выбранные элементы из всех вкладок четвертей
+        selected_items = []
+        for q_list in self.quarter_lists.values():
+            selected_items.extend(q_list.selectedItems())
+        
         if not selected_items:
             QMessageBox.warning(
                 self,
