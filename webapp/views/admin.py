@@ -553,6 +553,63 @@ def grades_class(class_name: str):
     )
 
 
+@bp.post("/grades/class/<class_name>/subjects/delete")
+@login_required
+def delete_subject_from_class(class_name: str):
+    """Удаление предмета из всех связанных отчетов указанного класса."""
+    if not _require_admin():
+        return redirect(url_for("teacher.dashboard"))
+
+    subject_name = (request.form.get("subject_name") or "").strip()
+    period_raw = request.form.get("period_number", "2")
+    try:
+        period_number = int(period_raw)
+    except (TypeError, ValueError):
+        period_number = 2
+
+    if not subject_name:
+        flash("Не указан предмет для удаления.", "danger")
+        return redirect(url_for("admin.grades_class", class_name=class_name, period_number=period_number))
+
+    target_subject = normalize_subject_name(subject_name)
+
+    # Удаляем GradeReport по текущему классу и предмету (включая все периоды/типы периода).
+    reports = GradeReport.query.filter_by(
+        school_id=current_user.school_id,
+        class_name=class_name,
+    ).all()
+    reports_to_delete = [
+        r for r in reports
+        if normalize_subject_name(r.subject_name) == target_subject
+    ]
+
+    # Удаляем связанные записи ReportFile для этого же класса и предмета.
+    report_files = ReportFile.query.filter_by(
+        school_id=current_user.school_id,
+        class_name=class_name,
+    ).all()
+    files_to_delete = [
+        rf for rf in report_files
+        if normalize_subject_name(rf.subject) == target_subject
+    ]
+
+    if not reports_to_delete and not files_to_delete:
+        flash(f'Связанные отчёты для предмета "{target_subject}" не найдены.', "warning")
+        return redirect(url_for("admin.grades_class", class_name=class_name, period_number=period_number))
+
+    for r in reports_to_delete:
+        db.session.delete(r)
+    for rf in files_to_delete:
+        db.session.delete(rf)
+    db.session.commit()
+
+    flash(
+        f'Предмет "{target_subject}" удалён: отчётов оценок — {len(reports_to_delete)}, файлов отчётов — {len(files_to_delete)}.',
+        "success",
+    )
+    return redirect(url_for("admin.grades_class", class_name=class_name, period_number=period_number))
+
+
 @bp.get("/analytics")
 @login_required
 def analytics_home():

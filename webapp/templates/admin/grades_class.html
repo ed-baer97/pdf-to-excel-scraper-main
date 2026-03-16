@@ -72,7 +72,19 @@
                 <th class="sticky-col">№</th>
                 <th class="sticky-col" style="left: 30px;">{{ _('student_fio') }}</th>
                 {% for subject in subjects %}
-                  <th class="text-center subject-col">{{ subject }}</th>
+                  <th class="text-center subject-col">
+                    <div class="d-flex justify-content-between align-items-start gap-1">
+                      <span>{{ subject }}</span>
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-outline-danger subject-delete-btn"
+                        title="Удалить предмет из связанных отчётов класса"
+                        onclick='deleteSubject({{ subject|tojson }})'
+                      >
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </div>
+                  </th>
                 {% endfor %}
                 <th class="text-center col-count bg-count-5">5</th>
                 <th class="text-center col-count bg-count-4">4</th>
@@ -172,6 +184,24 @@
   </div>
 </div>
 
+<form id="deleteSubjectForm" method="post" action="{{ url_for('admin.delete_subject_from_class', class_name=class_name) }}" style="display:none;">
+  <input type="hidden" name="subject_name" id="deleteSubjectName">
+  <input type="hidden" name="period_number" value="{{ period_number }}">
+</form>
+
+<script>
+  function deleteSubject(subjectName) {
+    const ok = confirm(
+      `Удалить предмет "${subjectName}" из всех связанных отчётов этого класса?\n` +
+      "Будут удалены оценки по всем периодам для этого предмета."
+    );
+    if (!ok) return;
+
+    document.getElementById("deleteSubjectName").value = subjectName;
+    document.getElementById("deleteSubjectForm").submit();
+  }
+</script>
+
 <style>
   .sticky-col {
     position: sticky;
@@ -190,6 +220,10 @@
     white-space: normal;
     word-break: break-word;
     min-width: 70px;
+  }
+  .subject-delete-btn {
+    padding: 0.1rem 0.35rem;
+    line-height: 1;
   }
   
   /* Пограничные оценки — яркая подсветка */
