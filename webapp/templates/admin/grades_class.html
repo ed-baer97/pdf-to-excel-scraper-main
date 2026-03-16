@@ -187,6 +187,7 @@
 <form id="deleteSubjectForm" method="post" action="{{ url_for('admin.delete_subject_from_class', class_name=class_name) }}" style="display:none;">
   <input type="hidden" name="subject_name" id="deleteSubjectName">
   <input type="hidden" name="period_number" value="{{ period_number }}">
+  <input type="hidden" name="next_url" id="deleteSubjectNextUrl">
 </form>
 
 <script>
@@ -198,6 +199,7 @@
     if (!ok) return;
 
     document.getElementById("deleteSubjectName").value = subjectName;
+    document.getElementById("deleteSubjectNextUrl").value = window.location.href;
     document.getElementById("deleteSubjectForm").submit();
   }
 </script>

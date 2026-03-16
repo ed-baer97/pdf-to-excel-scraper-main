@@ -64,6 +64,7 @@
         <div class="card-body">
           <h5>{{ _('teachers') }}</h5>
           <form class="row g-2 mb-3" method="post" action="{{ url_for('admin.create_teacher') }}">
+            <input type="hidden" name="next_url">
             <div class="col-4">
               <input class="form-control" name="full_name" placeholder="{{ _('teacher_fio') }}" required>
             </div>
@@ -203,6 +204,7 @@
         <div class="card-body">
           <h5>{{ _('classes') }}</h5>
           <form class="row g-2 mb-3" method="post" action="{{ url_for('admin.create_class') }}">
+            <input type="hidden" name="next_url">
             <div class="col-5">
               <input class="form-control" name="name" placeholder="{{ _('class_name_placeholder') }}" required>
             </div>
@@ -333,6 +335,7 @@
           </div>
           <hr>
           <form id="changePasswordForm" method="post">
+            <input type="hidden" name="next_url">
             <div class="mb-3">
               <label class="form-label">{{ _('new_password') }}</label>
               <input type="password" class="form-control" name="new_password" id="newPassword" minlength="4" required autocomplete="new-password">
@@ -354,6 +357,7 @@
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <form id="editClassForm" method="post">
+          <input type="hidden" name="next_url">
           <div class="modal-body">
             <div class="mb-3">
               <label class="form-label">{{ _('class_name_label') }}</label>
@@ -387,6 +391,7 @@
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <form id="editTeacherForm" method="post">
+          <input type="hidden" name="next_url">
           <div class="modal-body">
             <div class="mb-3">
               <label class="form-label">{{ _('fio_label') }}</label>
@@ -405,6 +410,12 @@
   <script>
     // Activate tab from URL hash
     document.addEventListener('DOMContentLoaded', function() {
+      // Keep user on the same page/tab after POST actions.
+      document.querySelectorAll('form[method="post"], form[method="POST"]').forEach(form => {
+        const nextInput = form.querySelector('input[name="next_url"]');
+        if (nextInput) nextInput.value = window.location.href;
+      });
+
       const hash = window.location.hash;
       if (hash) {
         const tabBtn = document.querySelector(`[data-bs-target="${hash}"]`);
@@ -467,6 +478,11 @@
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = `/admin/teachers/${teacherId}/delete`;
+        const nextInput = document.createElement('input');
+        nextInput.type = 'hidden';
+        nextInput.name = 'next_url';
+        nextInput.value = window.location.href;
+        form.appendChild(nextInput);
         document.body.appendChild(form);
         form.submit();
       }
@@ -478,6 +494,11 @@
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = `/admin/classes/${classId}/delete`;
+        const nextInput = document.createElement('input');
+        nextInput.type = 'hidden';
+        nextInput.name = 'next_url';
+        nextInput.value = window.location.href;
+        form.appendChild(nextInput);
         document.body.appendChild(form);
         form.submit();
       }

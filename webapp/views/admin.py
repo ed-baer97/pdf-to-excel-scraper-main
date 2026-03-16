@@ -3,6 +3,7 @@ import secrets
 import json
 from functools import wraps
 from io import BytesIO
+from urllib.parse import urlparse
 
 from flask import Blueprint, current_app, jsonify, redirect, render_template, request, url_for, flash, send_file
 from flask_login import login_required, current_user
@@ -33,6 +34,31 @@ def admin_required(f):
             return redirect(url_for("main.index"))
         return f(*args, **kwargs)
     return decorated_function
+
+
+def _is_safe_redirect_url(target: str) -> bool:
+    """Разрешаем только локальные URL (защита от open redirect)."""
+    if not target:
+        return False
+    ref = urlparse(request.host_url)
+    test = urlparse(target)
+    # relative URL
+    if not test.scheme and not test.netloc:
+        return target.startswith("/")
+    # absolute URL only for same host
+    return test.scheme in ("http", "https") and test.netloc == ref.netloc
+
+
+def _redirect_back(fallback_url: str):
+    """Возврат на предыдущую страницу (из next_url/referrer) или fallback."""
+    next_url = (
+        request.form.get("next_url")
+        or request.args.get("next_url")
+        or request.referrer
+    )
+    if next_url and _is_safe_redirect_url(next_url):
+        return redirect(next_url)
+    return redirect(fallback_url)
 
 
 def _parse_class_grade(class_name: str) -> int | None:
@@ -182,10 +208,10 @@ def create_teacher():
     full_name = request.form.get("full_name", "").strip()
     if not username:
         flash("Логин учителя обязателен.", "danger")
-        return redirect(url_for("admin.dashboard"))
+        return _redirect_back(url_for("admin.dashboard"))
     if User.query.filter_by(username=username).first():
         flash("Такой логин уже существует.", "danger")
-        return redirect(url_for("admin.dashboard"))
+        return _redirect_back(url_for("admin.dashboard"))
 
     pw = secrets.token_urlsafe(8)
     u = User(username=username, full_name=full_name or username, role=Role.TEACHER.value, school_id=current_user.school_id, is_active=True)
@@ -201,7 +227,7 @@ def create_teacher():
     db.session.add(u)
     db.session.commit()
     flash(f"Учитель создан. Пароль: {pw}", "success")
-    return redirect(url_for("admin.dashboard"))
+    return _redirect_back(url_for("admin.dashboard"))
 
 
 @bp.get("/teachers/<int:user_id>/password")
@@ -223,20 +249,20 @@ def update_teacher_password(user_id: int):
     """Update teacher password."""
     if not _require_admin():
         flash("Доступ запрещен.", "danger")
-        return redirect(url_for("admin.dashboard"))
+        return _redirect_back(url_for("admin.dashboard"))
     u = db.session.get(User, user_id)
     if not u or u.role != Role.TEACHER.value or u.school_id != current_user.school_id:
         flash("Пользователь не найден.", "danger")
-        return redirect(url_for("admin.dashboard"))
+        return _redirect_back(url_for("admin.dashboard"))
     new_password = request.form.get("new_password", "").strip()
     if not new_password or len(new_password) < 4:
         flash("Пароль должен быть не менее 4 символов.", "danger")
-        return redirect(url_for("admin.dashboard"))
+        return _redirect_back(url_for("admin.dashboard"))
     u.set_password(new_password)
     u.password_enc = encrypt_password(new_password, current_app.config.get("PASSWORD_ENC_KEY", ""))
     db.session.commit()
     flash(f"Пароль для {u.username} обновлен.", "success")
-    return redirect(url_for("admin.dashboard"))
+    return _redirect_back(url_for("admin.dashboard"))
 
 
 @bp.post("/teachers/<int:user_id>/edit")
@@ -248,15 +274,15 @@ def edit_teacher(user_id: int):
     u = db.session.get(User, user_id)
     if not u or u.role != Role.TEACHER.value or u.school_id != current_user.school_id:
         flash("Учитель не найден.", "danger")
-        return redirect(url_for("admin.dashboard"))
+        return _redirect_back(url_for("admin.dashboard"))
     full_name = request.form.get("full_name", "").strip()
     if not full_name:
         flash("ФИО не может быть пустым.", "danger")
-        return redirect(url_for("admin.dashboard"))
+        return _redirect_back(url_for("admin.dashboard"))
     u.full_name = full_name
     db.session.commit()
     flash(f'ФИО обновлено: "{full_name}".', "success")
-    return redirect(url_for("admin.dashboard"))
+    return _redirect_back(url_for("admin.dashboard"))
 
 
 @bp.post("/teachers/<int:user_id>/delete")
@@ -268,7 +294,7 @@ def delete_teacher(user_id: int):
     u = db.session.get(User, user_id)
     if not u or u.role != Role.TEACHER.value or u.school_id != current_user.school_id:
         flash("Учитель не найден.", "danger")
-        return redirect(url_for("admin.dashboard"))
+        return _redirect_back(url_for("admin.dashboard"))
     
     teacher_name = u.full_name or u.username
     
@@ -288,7 +314,7 @@ def delete_teacher(user_id: int):
     db.session.delete(u)
     db.session.commit()
     flash(f'Учитель "{teacher_name}" удалён.', "success")
-    return redirect(url_for("admin.dashboard"))
+    return _redirect_back(url_for("admin.dashboard"))
 
 
 # ==============================================================================
@@ -305,19 +331,19 @@ def create_class():
     class_teacher_id = request.form.get("class_teacher_id")
     if not name:
         flash("Название класса обязательно.", "danger")
-        return redirect(url_for("admin.dashboard") + "#classes-tab")
+        return _redirect_back(url_for("admin.dashboard") + "#classes-tab")
     # Проверяем дубликат
     existing = Class.query.filter_by(school_id=current_user.school_id, name=name).first()
     if existing:
         flash(f'Класс "{name}" уже существует.', "danger")
-        return redirect(url_for("admin.dashboard") + "#classes-tab")
+        return _redirect_back(url_for("admin.dashboard") + "#classes-tab")
     cls = Class(name=name, school_id=current_user.school_id)
     if class_teacher_id:
         cls.class_teacher_id = int(class_teacher_id)
     db.session.add(cls)
     db.session.commit()
     flash(f'Класс "{name}" создан.', "success")
-    return redirect(url_for("admin.dashboard") + "#classes-tab")
+    return _redirect_back(url_for("admin.dashboard") + "#classes-tab")
 
 
 @bp.post("/classes/<int:class_id>/edit")
@@ -329,20 +355,20 @@ def edit_class(class_id: int):
     cls = db.session.get(Class, class_id)
     if not cls or cls.school_id != current_user.school_id:
         flash("Класс не найден.", "danger")
-        return redirect(url_for("admin.dashboard") + "#classes-tab")
+        return _redirect_back(url_for("admin.dashboard") + "#classes-tab")
     name = request.form.get("name", "").strip()
     if name:
         # Проверяем, нет ли другого класса с таким именем
         dup = Class.query.filter_by(school_id=current_user.school_id, name=name).first()
         if dup and dup.id != class_id:
             flash(f'Класс "{name}" уже существует.', "danger")
-            return redirect(url_for("admin.dashboard") + "#classes-tab")
+            return _redirect_back(url_for("admin.dashboard") + "#classes-tab")
         cls.name = name
     class_teacher_id = request.form.get("class_teacher_id")
     cls.class_teacher_id = int(class_teacher_id) if class_teacher_id else None
     db.session.commit()
     flash(f'Класс "{cls.name}" обновлён.', "success")
-    return redirect(url_for("admin.dashboard") + "#classes-tab")
+    return _redirect_back(url_for("admin.dashboard") + "#classes-tab")
 
 
 @bp.post("/classes/<int:class_id>/delete")
@@ -354,11 +380,11 @@ def delete_class(class_id: int):
     cls = db.session.get(Class, class_id)
     if not cls or cls.school_id != current_user.school_id:
         flash("Класс не найден.", "danger")
-        return redirect(url_for("admin.dashboard") + "#classes-tab")
+        return _redirect_back(url_for("admin.dashboard") + "#classes-tab")
     db.session.delete(cls)
     db.session.commit()
     flash(f'Класс "{cls.name}" удалён.', "success")
-    return redirect(url_for("admin.dashboard") + "#classes-tab")
+    return _redirect_back(url_for("admin.dashboard") + "#classes-tab")
 
 
 # ==============================================================================
@@ -569,7 +595,7 @@ def delete_subject_from_class(class_name: str):
 
     if not subject_name:
         flash("Не указан предмет для удаления.", "danger")
-        return redirect(url_for("admin.grades_class", class_name=class_name, period_number=period_number))
+        return _redirect_back(url_for("admin.grades_class", class_name=class_name, period_number=period_number))
 
     target_subject = normalize_subject_name(subject_name)
 
@@ -606,7 +632,7 @@ def delete_subject_from_class(class_name: str):
 
     if not reports_to_delete and not files_to_delete:
         flash(f'Связанные отчёты для предмета "{target_subject}" не найдены.', "warning")
-        return redirect(url_for("admin.grades_class", class_name=class_name, period_number=period_number))
+        return _redirect_back(url_for("admin.grades_class", class_name=class_name, period_number=period_number))
 
     for r in reports_to_delete:
         db.session.delete(r)
@@ -618,7 +644,7 @@ def delete_subject_from_class(class_name: str):
         f'Предмет "{target_subject}" удалён: отчётов оценок — {len(reports_to_delete)}, файлов отчётов — {len(files_to_delete)}.',
         "success",
     )
-    return redirect(url_for("admin.grades_class", class_name=class_name, period_number=period_number))
+    return _redirect_back(url_for("admin.grades_class", class_name=class_name, period_number=period_number))
 
 
 @bp.get("/analytics")
