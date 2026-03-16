@@ -556,7 +556,7 @@ def grades_class(class_name: str):
 @bp.post("/grades/class/<class_name>/subjects/delete")
 @login_required
 def delete_subject_from_class(class_name: str):
-    """Удаление предмета из всех связанных отчетов указанного класса."""
+    """Удаление предмета из отчетов указанного класса за выбранную четверть."""
     if not _require_admin():
         return redirect(url_for("teacher.dashboard"))
 
@@ -573,17 +573,27 @@ def delete_subject_from_class(class_name: str):
 
     target_subject = normalize_subject_name(subject_name)
 
-    # Удаляем GradeReport по текущему классу и предмету (включая все периоды/типы периода).
+    # Удаляем GradeReport по текущему классу и предмету ТОЛЬКО за выбранную четверть.
+    # Для 2 и 4 четвертей дополнительно удаляем соответствующее полугодие.
     reports = GradeReport.query.filter_by(
         school_id=current_user.school_id,
         class_name=class_name,
     ).all()
+
+    allowed_periods = {("quarter", period_number)}
+    if period_number == 2:
+        allowed_periods.add(("semester", 1))
+    elif period_number == 4:
+        allowed_periods.add(("semester", 2))
+
     reports_to_delete = [
         r for r in reports
         if normalize_subject_name(r.subject_name) == target_subject
+        and (r.period_type, r.period_number) in allowed_periods
     ]
 
-    # Удаляем связанные записи ReportFile для этого же класса и предмета.
+    # Удаляем связанные записи ReportFile только за выбранную четверть.
+    # ReportFile хранит period_code как код четверти (1..4).
     report_files = ReportFile.query.filter_by(
         school_id=current_user.school_id,
         class_name=class_name,
@@ -591,6 +601,7 @@ def delete_subject_from_class(class_name: str):
     files_to_delete = [
         rf for rf in report_files
         if normalize_subject_name(rf.subject) == target_subject
+        and str(rf.period_code) == str(period_number)
     ]
 
     if not reports_to_delete and not files_to_delete:
