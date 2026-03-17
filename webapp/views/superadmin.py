@@ -7,6 +7,7 @@ from sqlalchemy import func
 from ..extensions import db
 from ..models import Role, School, User, Class, GradeReport, ReportFile, TeacherSubject, TeacherClass, Subject
 from ..security import decrypt_password, encrypt_password
+from ..constants import kazakh_sort_key
 
 bp = Blueprint("superadmin", __name__, url_prefix="/superadmin")
 
@@ -276,17 +277,21 @@ def school_detail(school_id: int):
 
     admins = User.query.filter_by(
         role=Role.SCHOOL_ADMIN.value, school_id=school_id
-    ).order_by(User.username).all()
+    ).all()
     teachers = User.query.filter_by(
         role=Role.TEACHER.value, school_id=school_id
-    ).order_by(User.username).all()
-    classes = Class.query.filter_by(school_id=school_id).order_by(Class.name).all()
+    ).all()
+    classes = Class.query.filter_by(school_id=school_id).all()
+    admins.sort(key=lambda u: kazakh_sort_key(u.full_name or u.username))
+    teachers.sort(key=lambda u: kazakh_sort_key(u.full_name or u.username))
+    classes.sort(key=lambda c: kazakh_sort_key(c.name))
 
     # Предметы извлекаем из GradeReport (автоматически из скрапинга)
     subject_rows = db.session.query(
         GradeReport.subject_name,
         func.count(func.distinct(GradeReport.teacher_id)).label("teacher_count")
-    ).filter_by(school_id=school_id).group_by(GradeReport.subject_name).order_by(GradeReport.subject_name).all()
+    ).filter_by(school_id=school_id).group_by(GradeReport.subject_name).all()
+    subject_rows.sort(key=lambda row: kazakh_sort_key(row.subject_name))
     subjects = [{"name": row.subject_name, "teacher_count": row.teacher_count} for row in subject_rows]
 
     return render_template(

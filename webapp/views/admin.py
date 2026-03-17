@@ -15,7 +15,7 @@ from openpyxl.utils import get_column_letter
 from ..extensions import db
 from ..models import Role, User, GradeReport, Class, ReportFile, TeacherSubject, TeacherClass
 from ..security import decrypt_password, encrypt_password
-from ..constants import normalize_subject_name
+from ..constants import normalize_subject_name, kazakh_sort_key
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -167,10 +167,12 @@ def dashboard():
         return redirect(url_for("teacher.dashboard"))
     teachers = User.query.filter_by(
         role=Role.TEACHER.value, school_id=current_user.school_id
-    ).order_by(User.full_name).all()
+    ).all()
     classes = Class.query.filter_by(
         school_id=current_user.school_id
-    ).order_by(Class.name).all()
+    ).all()
+    teachers.sort(key=lambda t: kazakh_sort_key(t.full_name or t.username))
+    classes.sort(key=lambda c: kazakh_sort_key(c.name))
     # Группировка учителей по аккордеонам (1-4, 5-9, 10-11, без руководства)
     teachers_by_accordion = {
         "1-4": [],
@@ -556,7 +558,7 @@ def grades_overview():
                 pass
     
     # Сортируем классы
-    sorted_classes = sorted(classes_data.values(), key=lambda x: x["class_name"])
+    sorted_classes = sorted(classes_data.values(), key=lambda x: kazakh_sort_key(x["class_name"]))
     
     # Группировка по аккордеонам (1-4, 5-9, 10-11)
     classes_by_accordion = {"1-4": [], "5-9": [], "10-11": []}
@@ -616,10 +618,10 @@ def grades_class(class_name: str):
                 pass
     
     # Формируем списки для шаблона
-    subjects_list = sorted(subjects)
+    subjects_list = sorted(subjects, key=kazakh_sort_key)
     students_list = []
     
-    for name in sorted(students_data.keys()):
+    for name in sorted(students_data.keys(), key=kazakh_sort_key):
         grades = students_data[name]
         
         # Подсчёт 5, 4, 3 по строке (ученику)
@@ -914,9 +916,9 @@ def analytics_home():
     
     return render_template(
         "admin/analytics_home.html",
-        subjects_data_sor=dict(sorted(subjects_data_sor.items())),
-        subjects_data_soch=dict(sorted(subjects_data_soch.items())),
-        subjects_data_grades=dict(sorted(subjects_data_grades.items())),
+        subjects_data_sor=dict(sorted(subjects_data_sor.items(), key=lambda item: kazakh_sort_key(item[0]))),
+        subjects_data_soch=dict(sorted(subjects_data_soch.items(), key=lambda item: kazakh_sort_key(item[0]))),
+        subjects_data_grades=dict(sorted(subjects_data_grades.items(), key=lambda item: kazakh_sort_key(item[0]))),
         period_number=period_number,
         segment=segment
     )
@@ -1063,7 +1065,7 @@ def download_analytics_excel():
         ws["A1"].font = Font(bold=True, size=14)
         ws["A1"].alignment = Alignment(horizontal="center")
         row = 3
-        for subj, data_list in sorted(subjects_data_sor.items()):
+        for subj, data_list in sorted(subjects_data_sor.items(), key=lambda item: kazakh_sort_key(item[0])):
             ws.cell(row=row, column=1, value=subj).font = Font(bold=True, size=12)
             row += 1
             headers = ["Класс", "СОР", "5", "4", "3", "2", "Всего", "Качество %", "Успеваемость %", "Учитель"]
@@ -1102,7 +1104,7 @@ def download_analytics_excel():
         ws["A1"].font = Font(bold=True, size=14)
         ws["A1"].alignment = Alignment(horizontal="center")
         row = 3
-        for subj, data_list in sorted(subjects_data_soch.items()):
+        for subj, data_list in sorted(subjects_data_soch.items(), key=lambda item: kazakh_sort_key(item[0])):
             ws.cell(row=row, column=1, value=subj).font = Font(bold=True, size=12)
             row += 1
             headers = ["Класс", "5", "4", "3", "2", "Всего", "Качество %", "Успеваемость %", "Учитель"]
@@ -1132,7 +1134,7 @@ def download_analytics_excel():
         ws["A1"].font = Font(bold=True, size=14)
         ws["A1"].alignment = Alignment(horizontal="center")
         row = 3
-        for subj, data_list in sorted(subjects_data_grades.items()):
+        for subj, data_list in sorted(subjects_data_grades.items(), key=lambda item: kazakh_sort_key(item[0])):
             ws.cell(row=row, column=1, value=subj).font = Font(bold=True, size=12)
             row += 1
             headers = ["Класс", "5", "4", "3", "2", "Всего", "Качество %", "Успеваемость %", "Учитель"]
@@ -1218,7 +1220,7 @@ def class_teacher_report():
         else:
             class_names.append((grade_num if grade_num is not None else 999, cls_name))
 
-    class_names = [name for _, name in sorted(class_names, key=lambda x: (x[0], x[1]))]
+    class_names = [name for _, name in sorted(class_names, key=lambda x: (x[0], kazakh_sort_key(x[1])))]
     
     # Собираем данные по каждому классу
     categories_data = {
@@ -1276,7 +1278,7 @@ def class_teacher_report():
         one_3_students = []
         poor_students = []
         
-        for name, subj_grades in sorted(students_grades.items()):
+        for name, subj_grades in sorted(students_grades.items(), key=lambda item: kazakh_sort_key(item[0])):
             grades_list = list(subj_grades.values())
             if not grades_list:
                 continue
@@ -1465,10 +1467,10 @@ def download_grades_class_excel(class_name: str):
                 pass
     
     # Формируем списки
-    subjects_list = sorted(subjects)
+    subjects_list = sorted(subjects, key=kazakh_sort_key)
     students_list = []
     
-    for name in sorted(students_data.keys()):
+    for name in sorted(students_data.keys(), key=kazakh_sort_key):
         grades = students_data[name]
         row_count_5 = sum(1 for g in grades.values() if g.get("grade") == 5)
         row_count_4 = sum(1 for g in grades.values() if g.get("grade") == 4)
@@ -1695,7 +1697,7 @@ def download_class_teacher_report_excel():
     
     # --- Собираем данные (повторяем логику class_teacher_report) ---
     all_reports = _get_quarter_reports(current_user.school_id, period_number)
-    class_names = sorted({r.class_name for r in all_reports})
+    class_names = sorted({r.class_name for r in all_reports}, key=kazakh_sort_key)
     
     categories_data = {
         "excellent": [], "good": [], "one_4": [],
@@ -1733,7 +1735,7 @@ def download_class_teacher_report_excel():
                     pass
         
         excellent_s, good_s, one4_s, satisf_s, troech_d, one3_s, poor_s = [], [], [], [], [], [], []
-        for name, sg in sorted(students_grades.items()):
+        for name, sg in sorted(students_grades.items(), key=lambda item: kazakh_sort_key(item[0])):
             gl = list(sg.values())
             if not gl:
                 continue

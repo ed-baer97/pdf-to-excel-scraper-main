@@ -11,6 +11,12 @@ PERIOD_MAP = {
 
 _SUBGROUP_RE = re.compile(r"\s*\(\d+\)\s*$")
 
+# Kazakh Cyrillic collation order (with common Cyrillic letters).
+_KAZAKH_ALPHABET = (
+    "аәбвгғдеёжзийкқлмнңоөпрстуұүфхһцчшщъыіьэюя"
+)
+_KAZAKH_ORDER = {char: idx for idx, char in enumerate(_KAZAKH_ALPHABET)}
+
 
 def normalize_subject_name(raw: str) -> str:
     """Normalize subject name: strip subgroup suffix and deduplicate repeated base name.
@@ -38,3 +44,15 @@ def normalize_subject_name(raw: str) -> str:
             name = left
 
     return name
+
+
+def kazakh_sort_key(raw: str | None) -> tuple:
+    """
+    Locale-like sort key for Kazakh Cyrillic text.
+
+    Unknown symbols are placed after alphabet characters and then ordered by
+    Unicode code point.
+    """
+    text = str(raw or "").strip().lower()
+    order = tuple(_KAZAKH_ORDER.get(char, 1000 + ord(char)) for char in text)
+    return (order, text)
