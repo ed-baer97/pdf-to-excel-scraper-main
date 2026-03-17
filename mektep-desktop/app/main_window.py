@@ -13,6 +13,7 @@ from PyQt6.QtCore import Qt, QSettings
 from PyQt6.QtGui import QFont, QIcon
 
 from .api_client import MektepAPIClient, DEFAULT_SERVER_URL
+from .debug_log import debug_log
 from .scraper_thread import ScraperThread
 from .reports_manager import ReportsManager
 from .history_widget import HistoryWidget
@@ -72,6 +73,18 @@ class MektepMainWindow(QMainWindow):
         ))
         current_username = self.user_data.get("username", "")
         self.reports_manager = ReportsManager(storage_path, username=current_username)
+        # region agent log
+        debug_log(
+            "H1",
+            "main_window.py:69",
+            "reports manager initialized",
+            {
+                "storage_path": str(storage_path),
+                "username": current_username,
+                "db_path": str(self.reports_manager.db_path),
+            },
+        )
+        # endregion
         
         # Поток скрапинга
         self.scraper_thread = None
@@ -433,7 +446,29 @@ class MektepMainWindow(QMainWindow):
             
     def open_goals_dialog(self):
         """Открыть диалог целей"""
+        # region agent log
+        debug_log(
+            "H4",
+            "main_window.py:434",
+            "open_goals_dialog called",
+            {
+                "manager_db_path": str(self.reports_manager.db_path),
+                "manager_username": self.reports_manager.username,
+            },
+        )
+        # endregion
         dialog = GoalsDialog(self.reports_manager, self.user_data, self)
+        # region agent log
+        debug_log(
+            "H4",
+            "main_window.py:436",
+            "goals dialog constructed",
+            {
+                "manager_db_path": str(dialog.reports_manager.db_path),
+                "manager_username": dialog.reports_manager.username,
+            },
+        )
+        # endregion
         dialog.exec()
     
     def load_settings(self):
@@ -519,6 +554,22 @@ class MektepMainWindow(QMainWindow):
         self.stop_btn.setEnabled(True)
         
         if success:
+            # region agent log
+            debug_log(
+                "H5",
+                "main_window.py:521",
+                "scraping finished",
+                {
+                    "success": success,
+                    "reports_count": len(reports),
+                    "sample_periods": sorted({str(r.get("period_code", "")) for r in reports})[:5],
+                    "sample_excel_paths": [r.get("excel_path") for r in reports[:3]],
+                    "sample_word_paths": [r.get("word_path") for r in reports[:3]],
+                    "manager_db_path": str(self.reports_manager.db_path),
+                    "manager_username": self.reports_manager.username,
+                },
+            )
+            # endregion
             self.progress_bar.setValue(100)
             self.progress_label.setText("Готово!")
             self.log_text.append(f"Создано отчетов: {len(reports)}")

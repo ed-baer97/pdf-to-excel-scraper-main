@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QSettings
 from PyQt6.QtGui import QPixmap, QIcon
 
+from .debug_log import debug_log
 from .reports_manager import ReportsManager
 from .translator import get_translator
 
@@ -48,6 +49,18 @@ class GoalsDialog(QDialog):
         self.translator = get_translator()
         saved_lang = self.settings.value("language", "ru")
         self.translator.set_language(saved_lang)
+        # region agent log
+        debug_log(
+            "H4",
+            "goals_dialog.py:44",
+            "goals dialog init",
+            {
+                "db_path": str(self.reports_manager.db_path),
+                "username": self.reports_manager.username,
+                "language": saved_lang,
+            },
+        )
+        # endregion
         
         # Словари для хранения виджетов
         self.goals_widgets = {}  # {sor_type: {"achieved": QTextEdit, "difficulties": QTextEdit}}
@@ -57,6 +70,17 @@ class GoalsDialog(QDialog):
     
     def init_ui(self):
         """Инициализация интерфейса"""
+        # region agent log
+        debug_log(
+            "H4",
+            "goals_dialog.py:59",
+            "goals dialog init_ui start",
+            {
+                "db_path": str(self.reports_manager.db_path),
+                "username": self.reports_manager.username,
+            },
+        )
+        # endregion
         self.setWindowTitle(self.translator.tr('goals_title'))
         self.setMinimumSize(1000, 800)
         
@@ -198,6 +222,17 @@ class GoalsDialog(QDialog):
             self.reports_tabs.addTab(q_list, f"Четверть {q}")
         
         self.load_reports_list()
+        # region agent log
+        debug_log(
+            "H4",
+            "goals_dialog.py:201",
+            "goals dialog load_reports_list returned",
+            {
+                "db_path": str(self.reports_manager.db_path),
+                "username": self.reports_manager.username,
+            },
+        )
+        # endregion
         reports_layout.addWidget(self.reports_tabs)
         
         reports_group.setLayout(reports_layout)
@@ -300,25 +335,70 @@ class GoalsDialog(QDialog):
             q_list.clear()
         
         reports = self.reports_manager.get_reports()
+        initial_count = len(reports)
+        # Fallback: если по текущему username пусто (рассинхрон сессии),
+        # показываем локальные отчёты без фильтра по пользователю.
+        if not reports:
+            reports = self.reports_manager.get_reports(include_all_users=True)
+        fallback_used = initial_count == 0
+        skipped_periods = []
+        routing_samples = []
         
         counts = {q: 0 for q in self.quarter_lists}
         
         for report in reports:
-            if report.get("word_path") and Path(report["word_path"]).exists():
-                period = str(report.get("period_code", ""))
-                q_list = self.quarter_lists.get(period)
-                if not q_list:
-                    continue
-                item_text = f"{report['class_name']} - {report['subject']}"
-                q_list.addItem(item_text)
-                q_list.item(q_list.count() - 1).setData(
-                    Qt.ItemDataRole.UserRole, report
-                )
-                counts[period] = counts.get(period, 0) + 1
+            period = self._normalize_period_code(report.get("period_code"))
+            if not period:
+                skipped_periods.append(str(report.get("period_code")))
+                continue
+            q_list = self.quarter_lists.get(period)
+            if len(routing_samples) < 5:
+                routing_samples.append({
+                    "period": period,
+                    "available_keys": list(self.quarter_lists.keys()),
+                    "q_list_is_none": q_list is None,
+                    "q_list_truthy": bool(q_list) if q_list is not None else None,
+                })
+            if q_list is None:
+                continue
+            item_text = f"{report.get('class_name', '—')} - {report.get('subject', '—')}"
+            q_list.addItem(item_text)
+            q_list.item(q_list.count() - 1).setData(
+                Qt.ItemDataRole.UserRole, report
+            )
+            counts[period] = counts.get(period, 0) + 1
         
         for q, q_list in self.quarter_lists.items():
             idx = int(q) - 1
             self.reports_tabs.setTabText(idx, f"Четверть {q} ({counts.get(q, 0)})")
+        # region agent log
+        debug_log(
+            "H3",
+            "goals_dialog.py:324",
+            "goals dialog loaded reports",
+            {
+                "db_path": str(self.reports_manager.db_path),
+                "username": self.reports_manager.username,
+                "initial_count": initial_count,
+                "final_count": len(reports),
+                "fallback_used": fallback_used,
+                "quarter_counts": counts,
+                "skipped_periods": skipped_periods[:10],
+                "routing_samples": routing_samples,
+            },
+        )
+        # endregion
+
+    @staticmethod
+    def _normalize_period_code(raw_period) -> str | None:
+        """Нормализует period_code к значениям '1'..'4'."""
+        val = str(raw_period or "").strip().lower()
+        if val in {"1", "2", "3", "4"}:
+            return val
+        for digit in ("1", "2", "3", "4"):
+            if digit in val:
+                return digit
+        return None
     
     def get_current_sor_type(self) -> str:
         """Получить текущий тип СОР по активной вкладке"""

@@ -9,6 +9,8 @@ from typing import Optional, List, Dict
 from datetime import datetime
 import json
 
+from .debug_log import debug_log
+
 
 class ReportsManager:
     """Менеджер локальных отчетов"""
@@ -173,12 +175,28 @@ class ReportsManager:
         
         conn.commit()
         conn.close()
+        # region agent log
+        debug_log(
+            "H2",
+            "reports_manager.py:174",
+            "report saved to sqlite",
+            {
+                "db_path": str(self.db_path),
+                "username": self.username,
+                "period_code": str(report.get("period_code", "")),
+                "has_excel_path": bool(report.get("excel_path")),
+                "has_word_path": bool(report.get("word_path")),
+                "mode": "update" if existing else "insert",
+                "report_id": report_id,
+            },
+        )
+        # endregion
         
         return report_id
     
-    def get_reports(self, filters: Optional[Dict] = None) -> List[Dict]:
+    def get_reports(self, filters: Optional[Dict] = None, include_all_users: bool = False) -> List[Dict]:
         """
-        Получить список отчетов с фильтрацией (только для текущего пользователя)
+        Получить список отчетов с фильтрацией.
         
         Args:
             filters: Фильтры (опционально):
@@ -188,6 +206,7 @@ class ReportsManager:
                     "subject": "Математика",
                     "synced": True/False
                 }
+            include_all_users: Если True, не фильтровать по username.
         
         Returns:
             List[Dict]: Список отчетов
@@ -196,8 +215,12 @@ class ReportsManager:
         conn.row_factory = sqlite3.Row  # Для доступа по именам колонок
         cursor = conn.cursor()
         
-        query = "SELECT * FROM reports WHERE username = ?"
-        params = [self.username]
+        if include_all_users:
+            query = "SELECT * FROM reports WHERE 1=1"
+            params = []
+        else:
+            query = "SELECT * FROM reports WHERE username = ?"
+            params = [self.username]
         
         if filters:
             if 'period_code' in filters:
@@ -220,6 +243,21 @@ class ReportsManager:
         
         cursor.execute(query, params)
         rows = cursor.fetchall()
+        # region agent log
+        debug_log(
+            "H2",
+            "reports_manager.py:226",
+            "reports queried from sqlite",
+            {
+                "db_path": str(self.db_path),
+                "username": self.username,
+                "include_all_users": include_all_users,
+                "filters": filters or {},
+                "row_count": len(rows),
+                "period_codes": sorted({str(row["period_code"]) for row in rows if row["period_code"] is not None})[:8],
+            },
+        )
+        # endregion
         
         reports = []
         for row in rows:
