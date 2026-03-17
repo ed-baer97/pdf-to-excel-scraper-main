@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from flask import Blueprint, current_app, jsonify, redirect, render_template, request, url_for, flash, send_file
 from flask_login import login_required, current_user
 from sqlalchemy import func
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
 
@@ -228,6 +228,129 @@ def create_teacher():
     db.session.commit()
     flash(f"Учитель создан. Пароль: {pw}", "success")
     return _redirect_back(url_for("admin.dashboard"))
+
+
+@bp.post("/teachers/import")
+@login_required
+def import_teachers():
+    if not _require_admin():
+        return redirect(url_for("teacher.dashboard"))
+
+    file = request.files.get("file")
+    if not file or not file.filename:
+        flash("Выберите Excel-файл для импорта.", "danger")
+        return _redirect_back(url_for("admin.dashboard"))
+
+    if not file.filename.lower().endswith(".xlsx"):
+        flash("Поддерживается только формат .xlsx.", "danger")
+        return _redirect_back(url_for("admin.dashboard"))
+
+    try:
+        wb = load_workbook(file, data_only=True)
+        ws = wb.active
+    except Exception:
+        flash("Не удалось прочитать Excel-файл.", "danger")
+        return _redirect_back(url_for("admin.dashboard"))
+
+    header_cells = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)
+    if not header_cells:
+        flash("Файл пустой или не содержит заголовков.", "danger")
+        return _redirect_back(url_for("admin.dashboard"))
+
+    headers = [str(v).strip().lower() if v is not None else "" for v in header_cells]
+    header_map = {name: idx for idx, name in enumerate(headers)}
+
+    required_headers = ("фио", "логин", "пароль")
+    missing = [h for h in required_headers if h not in header_map]
+    if missing:
+        flash(f"Не найдены обязательные столбцы: {', '.join(missing)}.", "danger")
+        return _redirect_back(url_for("admin.dashboard"))
+
+    fio_idx = header_map["фио"]
+    login_idx = header_map["логин"]
+    password_idx = header_map["пароль"]
+
+    max_seq = (
+        db.session.query(func.max(User.fs_teacher_seq))
+        .filter(User.school_id == current_user.school_id, User.role == Role.TEACHER.value)
+        .scalar()
+    )
+    next_seq = int(max_seq or 0) + 1
+
+    created = 0
+    skipped = 0
+    seen_usernames = set()
+
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        full_name_raw = row[fio_idx] if fio_idx < len(row) else None
+        username_raw = row[login_idx] if login_idx < len(row) else None
+        password_raw = row[password_idx] if password_idx < len(row) else None
+
+        full_name = str(full_name_raw).strip() if full_name_raw is not None else ""
+        username = str(username_raw).strip() if username_raw is not None else ""
+        password = str(password_raw).strip() if password_raw is not None else ""
+
+        # Пропускаем полностью пустые строки.
+        if not full_name and not username and not password:
+            continue
+
+        if not username or not password:
+            skipped += 1
+            continue
+
+        username_key = username.lower()
+        if username_key in seen_usernames:
+            skipped += 1
+            continue
+        if User.query.filter_by(username=username).first():
+            skipped += 1
+            continue
+
+        seen_usernames.add(username_key)
+
+        u = User(
+            username=username,
+            full_name=full_name or username,
+            role=Role.TEACHER.value,
+            school_id=current_user.school_id,
+            is_active=True,
+            fs_teacher_seq=next_seq,
+        )
+        next_seq += 1
+        u.set_password(password)
+        u.password_enc = encrypt_password(password, current_app.config.get("PASSWORD_ENC_KEY", ""))
+        db.session.add(u)
+        created += 1
+
+    db.session.commit()
+
+    category = "success" if created else "warning"
+    flash(f"Импорт завершён: добавлено {created}, пропущено {skipped}.", category)
+    return _redirect_back(url_for("admin.dashboard"))
+
+
+@bp.get("/teachers/import/template")
+@login_required
+def download_teachers_import_template():
+    if not _require_admin():
+        return redirect(url_for("teacher.dashboard"))
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Шаблон"
+    ws.append(["ФИО", "логин", "пароль"])
+    ws.append(["Иванов Иван Иванович", "ivanov_i_i", "TempPass123"])
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    return send_file(
+        output,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name="Шаблон_импорта_учителей.xlsx",
+    )
 
 
 @bp.get("/teachers/<int:user_id>/password")

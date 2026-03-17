@@ -75,6 +75,20 @@
               <button class="btn btn-primary w-100">{{ _('add_btn') }}</button>
             </div>
           </form>
+          <form class="row g-2 mb-3" method="post" action="{{ url_for('admin.import_teachers') }}" enctype="multipart/form-data">
+            <input type="hidden" name="next_url">
+            <div class="col-8">
+              <input class="form-control" type="file" name="file" accept=".xlsx" required>
+            </div>
+            <div class="col-4">
+              <button class="btn btn-outline-primary w-100">Импорт учителей из Excel</button>
+            </div>
+          </form>
+          <div class="mb-3">
+            <a class="btn btn-outline-secondary" href="{{ url_for('admin.download_teachers_import_template') }}">
+              Скачать шаблон Excel
+            </a>
+          </div>
 
           <div class="accordion" id="teachersAccordion">
             <div class="accordion-item">
