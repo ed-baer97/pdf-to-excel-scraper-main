@@ -627,6 +627,27 @@ def _text_or_none(locator) -> str | None:
         return None
 
 
+def _has_quarter_grade_header(page, tab_href: str) -> bool:
+    """
+    Проверяет, есть ли в панели заголовок «Расчет оценки за N четверть» / «Бағаны есептеу: N тоқсан».
+    Если заголовок есть — оценка четвертная, добавлять в сводную ведомость.
+    Если нет — структура без четвертной оценки (полугодовая/по разделам), не добавлять.
+    """
+    pane_id = tab_href.lstrip("#")
+    pane = page.locator(f"div#pills-tabContent div.tab-pane#{pane_id}").first
+    try:
+        pane.wait_for(state="visible", timeout=5000)
+    except Exception:
+        return False
+    tds = pane.locator("td")
+    n = tds.count()
+    for i in range(n):
+        txt = (tds.nth(i).inner_text() or "").strip()
+        if "Расчет оценки за" in txt or "Бағаны есептеу:" in txt:
+            return True
+    return False
+
+
 def _extract_students_from_criteria_tab(page, tab_href: str) -> list[dict]:
     pane_id = tab_href.lstrip("#")
     pane = page.locator(f"div#pills-tabContent div.tab-pane#{pane_id}").first
@@ -1550,6 +1571,9 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
                 return
             log_info(f'[{class_name} - {subject_name}] Вкладка выбрана: {selected_tab}')
 
+            has_quarter_grade_header = _has_quarter_grade_header(page, selected_tab)
+            log_info(f'[{class_name} - {subject_name}] Заголовок четвертной оценки: {"да" if has_quarter_grade_header else "нет"}')
+
             log_stage(ScraperLogger.STAGE_STUDENTS, f"Извлечение учащихся: {class_name}", None)
             log_info(f'[{class_name} - {subject_name}] Извлечение данных учащихся...')
             students = _extract_students_from_criteria_tab(page, selected_tab)
@@ -1574,6 +1598,7 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
                 "period_label": period_label,
                 "selected_tab": selected_tab,
                 "criteria_url": page.url,
+                "has_quarter_grade_header": has_quarter_grade_header,
             }
             (batch_subdir / "criteria_context.json").write_text(json.dumps(ctx, ensure_ascii=False, indent=2), encoding="utf-8")
 

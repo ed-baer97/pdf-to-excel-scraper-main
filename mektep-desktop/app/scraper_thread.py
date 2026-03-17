@@ -5,6 +5,17 @@ Scraper Thread - фоновый поток для скрапинга
 """
 import os
 import sys
+import time as _time
+
+# #region agent log
+def _dbg_log(loc: str, msg: str, data: dict, hid: str):
+    try:
+        _p = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "debug-4e9670.log")
+        with open(_p, "a", encoding="utf-8") as _f:
+            _f.write(__import__("json").dumps({"sessionId": "4e9670", "location": loc, "message": msg, "data": data, "timestamp": int(_time.time() * 1000), "hypothesisId": hid}, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+# #endregion
 import json
 import time
 import shutil
@@ -454,9 +465,26 @@ class ScraperThread(QThread):
         # ===== Предварительная проверка: есть ли организация в БД сервера =====
         self._org_upload_allowed = True  # По умолчанию разрешаем загрузку
         self._server_school_name = None
+
+        # #region agent log
+        _dbg_log("scraper_thread:_finalize_reports", "pre-refresh", {"has_org": bool(self._scraped_org_name), "has_api": self.api_client is not None, "is_auth": self.api_client.is_authenticated() if self.api_client else False}, "H1")
+        # #endregion
+
+        # Обновляем токен перед загрузкой, если он невалиден
+        if self._scraped_org_name and self.api_client:
+            if not self.api_client.is_authenticated():
+                refresh_result = self.api_client.refresh_token()
+                if refresh_result.get("success"):
+                    print("[DEBUG] Токен успешно обновлён перед загрузкой.")
+                else:
+                    print(f"[DEBUG] Не удалось обновить токен перед загрузкой: {refresh_result.get('error', '?')}. "
+                          "Отчёты будут сохранены только локально.")
         
         if self._scraped_org_name and self.api_client and self.api_client.is_authenticated():
             lookup_result = self.api_client.lookup_school(self._scraped_org_name)
+            # #region agent log
+            _dbg_log("scraper_thread:_finalize_reports", "lookup_school", {"success": lookup_result.get("success"), "needs_auth": lookup_result.get("needs_auth"), "org_not_found": lookup_result.get("org_not_found"), "error": lookup_result.get("error")}, "H2")
+            # #endregion
             if lookup_result.get("success"):
                 self._server_school_name = lookup_result.get("school_name")
                 print(f"[DEBUG] Организация найдена на сервере: '{self._server_school_name}' "
@@ -573,6 +601,9 @@ class ScraperThread(QThread):
         # Проверяем: организация должна быть в БД сервера для загрузки
         org_upload_allowed = getattr(self, '_org_upload_allowed', True)
         
+        # #region agent log
+        _dbg_log("scraper_thread:_process_batch_subdir", "upload_check", {"class": class_name, "subject": subject_name, "org_upload_allowed": org_upload_allowed, "has_api": self.api_client is not None, "is_auth": self.api_client.is_authenticated() if self.api_client else False}, "H3")
+        # #endregion
         if not org_upload_allowed:
             print(f"[DEBUG] Пропуск загрузки на сервер: организация "
                   f"'{getattr(self, '_scraped_org_name', '?')}' не найдена в БД. "
@@ -581,53 +612,83 @@ class ScraperThread(QThread):
             report_data["upload_skip_reason"] = "org_not_found"
             return report_data
         
-        if self.api_client and self.api_client.is_authenticated():
-            try:
-                grades_data, analytics_data = self._build_grades_and_analytics(subdir)
-                if grades_data:
-                    period_type, period_number, skip = self._resolve_period(subdir)
-                    if skip:
-                        print(f"[DEBUG] Пропуск полугодового предмета для четверти {self.period_code}: "
-                              f"{class_name} {subject_name}")
-                        return report_data
-                    
-                    upload_result = self.api_client.upload_report(
-                        class_name=class_name,
-                        subject_name=subject_name,
-                        period_type=period_type,
-                        period_number=period_number,
-                        grades_data=grades_data,
-                        analytics_data=analytics_data,
-                        org_name=getattr(self, '_scraped_org_name', None)
-                    )
-                    
-                    if upload_result.get("success"):
-                        report_data["server_report_id"] = upload_result.get("report_id")
-                        if final_excel:
-                            self._save_report_metadata(
-                                final_excel,
-                                upload_result.get("report_id"),
-                                class_name,
-                                subject_name,
-                                period_type,
-                                period_number
-                            )
-                        print(f"[DEBUG] Отчёт загружен: {class_name} {subject_name} "
-                              f"-> ID {upload_result.get('report_id')} ({upload_result.get('action')})")
-                    elif upload_result.get("org_not_found"):
-                        print(f"[DEBUG] Сервер: организация не найдена. "
-                              f"Отчёт сохранён только локально: {class_name} {subject_name}")
-                        report_data["upload_skipped"] = True
-                        report_data["upload_skip_reason"] = "org_not_found_server"
-                    elif upload_result.get("org_mismatch"):
-                        print(f"[DEBUG] Сервер: создание отчётов для других школ запрещено. "
-                              f"Включите «Отчёты для других школ» в настройках: {class_name} {subject_name}")
-                        report_data["upload_skipped"] = True
-                        report_data["upload_skip_reason"] = "org_mismatch"
-                    else:
-                        print(f"[DEBUG] Ошибка загрузки: {upload_result.get('error')}")
-            except Exception as e:
-                print(f"[DEBUG] Ошибка при загрузке на сервер: {e}")
+        if not self.api_client or not self.api_client.is_authenticated():
+            print(f"[DEBUG] Пропуск загрузки на сервер: отсутствует авторизация. "
+                  f"Отчёт сохранён только локально: {class_name} {subject_name}")
+            report_data["upload_skipped"] = True
+            report_data["upload_skip_reason"] = "auth_required"
+            return report_data
+        
+        try:
+            grades_data, analytics_data = self._build_grades_and_analytics(subdir)
+            # #region agent log
+            _dbg_log("scraper_thread:_process_batch_subdir", "grades_built", {"class": class_name, "subject": subject_name, "has_grades": bool(grades_data)}, "H5")
+            # #endregion
+            if grades_data:
+                period_type, period_number, skip = self._resolve_period(subdir)
+                # #region agent log
+                _dbg_log("scraper_thread:_process_batch_subdir", "period_resolved", {"class": class_name, "subject": subject_name, "skip": skip, "period_type": period_type, "period_number": period_number}, "H5")
+                # #endregion
+                if skip:
+                    print(f"[DEBUG] Пропуск полугодового предмета для четверти {self.period_code}: "
+                          f"{class_name} {subject_name}")
+                    return report_data
+                
+                upload_result = self.api_client.upload_report(
+                    class_name=class_name,
+                    subject_name=subject_name,
+                    period_type=period_type,
+                    period_number=period_number,
+                    grades_data=grades_data,
+                    analytics_data=analytics_data,
+                    org_name=getattr(self, '_scraped_org_name', None)
+                )
+                # #region agent log
+                _dbg_log("scraper_thread:_process_batch_subdir", "upload_result", {"class": class_name, "subject": subject_name, "success": upload_result.get("success"), "needs_auth": upload_result.get("needs_auth"), "report_id": upload_result.get("report_id"), "action": upload_result.get("action")}, "H4")
+                # #endregion
+                # Повторная попытка при 401 (истёкший токен)
+                if upload_result.get("needs_auth"):
+                    refresh_result = self.api_client.refresh_token()
+                    if refresh_result.get("success"):
+                        upload_result = self.api_client.upload_report(
+                            class_name=class_name,
+                            subject_name=subject_name,
+                            period_type=period_type,
+                            period_number=period_number,
+                            grades_data=grades_data,
+                            analytics_data=analytics_data,
+                            org_name=getattr(self, '_scraped_org_name', None)
+                        )
+                        # #region agent log
+                        _dbg_log("scraper_thread:_process_batch_subdir", "upload_retry", {"class": class_name, "subject": subject_name, "success": upload_result.get("success"), "report_id": upload_result.get("report_id"), "action": upload_result.get("action")}, "H4")
+                        # #endregion
+                if upload_result.get("success"):
+                    report_data["server_report_id"] = upload_result.get("report_id")
+                    if final_excel:
+                        self._save_report_metadata(
+                            final_excel,
+                            upload_result.get("report_id"),
+                            class_name,
+                            subject_name,
+                            period_type,
+                            period_number
+                        )
+                    print(f"[DEBUG] Отчёт загружен: {class_name} {subject_name} "
+                          f"-> ID {upload_result.get('report_id')} ({upload_result.get('action')})")
+                elif upload_result.get("org_not_found"):
+                    print(f"[DEBUG] Сервер: организация не найдена. "
+                          f"Отчёт сохранён только локально: {class_name} {subject_name}")
+                    report_data["upload_skipped"] = True
+                    report_data["upload_skip_reason"] = "org_not_found_server"
+                elif upload_result.get("org_mismatch"):
+                    print(f"[DEBUG] Сервер: создание отчётов для других школ запрещено. "
+                          f"Включите «Отчёты для других школ» в настройках: {class_name} {subject_name}")
+                    report_data["upload_skipped"] = True
+                    report_data["upload_skip_reason"] = "org_mismatch"
+                else:
+                    print(f"[DEBUG] Ошибка загрузки: {upload_result.get('error')}")
+        except Exception as e:
+            print(f"[DEBUG] Ошибка при загрузке на сервер: {e}")
         
         return report_data
     
@@ -759,17 +820,15 @@ class ScraperThread(QThread):
 
         Returns:
             (period_type, period_number, skip):
-            - skip=True  -> предмет полугодовой, а выбрана четверть 1/3 -> пропустить
-            - skip=False -> нормальный режим
+            - skip=False -> загружаем отчёт (четверть или полугодие)
         """
         is_semester = self._is_semester_subject(batch_subdir)
 
         if is_semester:
-            if self.period_code in ("1", "3"):
-                return "semester", 0, True
-            if self.period_code == "2":
+            # Четверти 1,2 → 1-е полугодие; четверти 3,4 → 2-е полугодие
+            if self.period_code in ("1", "2"):
                 return "semester", 1, False
-            if self.period_code == "4":
+            if self.period_code in ("3", "4"):
                 return "semester", 2, False
 
         return "quarter", int(self.period_code), False
@@ -777,12 +836,24 @@ class ScraperThread(QThread):
     @staticmethod
     def _is_semester_subject(batch_subdir: Path) -> bool:
         """
-        Проверяет, является ли предмет полугодовым по данным скрапера.
+        Проверяет, является ли предмет полугодовым (оценка не за четверть).
 
-        Читает criteria_tabs.json (сохраняется скрапером для каждого предмета)
-        и ищет метки «полугод» / «жартыжылдық» в текстах вкладок.
-        Если хотя бы одна вкладка содержит такой текст — предмет полугодовой.
+        Приоритет: criteria_context.json.has_quarter_grade_header —
+        если в панели есть заголовок «Расчет оценки за N четверть» / «Бағаны есептеу: N тоқсан»,
+        то has_quarter_grade_header=True → предмет четвертной (не полугодовой).
+        Если заголовка нет → полугодовой/по разделам.
+
+        Fallback (старые batch): criteria_tabs.json с метками «полугод» / «жартыжылдық».
         """
+        ctx_file = batch_subdir / "criteria_context.json"
+        if ctx_file.exists():
+            try:
+                with open(ctx_file, "r", encoding="utf-8") as f:
+                    ctx = json.load(f)
+                if "has_quarter_grade_header" in ctx:
+                    return not ctx["has_quarter_grade_header"]
+            except Exception:
+                pass
         tabs_file = batch_subdir / "criteria_tabs.json"
         if not tabs_file.exists():
             return False

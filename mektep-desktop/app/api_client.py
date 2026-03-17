@@ -4,6 +4,8 @@ API Client для связи с сервером Mektep Platform
 HTTP клиент для авторизации, проверки подключения,
 загрузки/получения отчётов и аналитики.
 """
+import os
+import time as _time
 import requests
 from typing import Optional, Dict, List
 from datetime import datetime, timedelta
@@ -274,6 +276,19 @@ class MektepAPIClient:
                     "logged_count": data.get("count", len(reports))
                 }
             elif response.status_code == 401:
+                refresh_result = self.refresh_token()
+                if refresh_result.get("success"):
+                    response = self.session.post(
+                        f"{self.base_url}/api/reports/log",
+                        json={"reports": reports},
+                        timeout=15
+                    )
+                    if response.status_code == 200:
+                        data = response.json()
+                        return {
+                            "success": True,
+                            "logged_count": data.get("count", len(reports))
+                        }
                 self.token = None
                 self.token_expires = None
                 return {
@@ -392,6 +407,14 @@ class MektepAPIClient:
             if response.status_code == 200:
                 return response.json()
             elif response.status_code == 401:
+                refresh_result = self.refresh_token()
+                if refresh_result.get("success"):
+                    response = self.session.get(
+                        f"{self.base_url}/api/schools/my",
+                        timeout=10
+                    )
+                    if response.status_code == 200:
+                        return response.json()
                 self.token = None
                 self.token_expires = None
                 return {"success": False, "error": "Токен истек.", "needs_auth": True}
@@ -449,6 +472,34 @@ class MektepAPIClient:
                     "org_not_found": True
                 }
             elif response.status_code == 401:
+                # #region agent log
+                try:
+                    _p = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "debug-4e9670.log")
+                    with open(_p, "a", encoding="utf-8") as _f:
+                        _f.write(__import__("json").dumps({"sessionId": "4e9670", "location": "api_client:lookup_school", "message": "401_received", "data": {"org_name": org_name}, "timestamp": int(_time.time() * 1000), "hypothesisId": "H2"}, ensure_ascii=False) + "\n")
+                except Exception:
+                    pass
+                # #endregion
+                refresh_result = self.refresh_token()
+                if refresh_result.get("success"):
+                    response = self.session.get(
+                        f"{self.base_url}/api/schools/lookup",
+                        params={"org_name": org_name},
+                        timeout=10
+                    )
+                    if response.status_code == 200:
+                        data = response.json()
+                        return {
+                            "success": True,
+                            "school_id": data.get("school_id"),
+                            "school_name": data.get("school_name")
+                        }
+                    elif response.status_code == 404:
+                        return {
+                            "success": False,
+                            "error": response.json().get("error", "Организация не найдена"),
+                            "org_not_found": True
+                        }
                 self.token = None
                 self.token_expires = None
                 return {
@@ -540,6 +591,41 @@ class MektepAPIClient:
                     "action": data.get("action")
                 }
             elif response.status_code == 401:
+                # #region agent log
+                try:
+                    _p = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "debug-4e9670.log")
+                    with open(_p, "a", encoding="utf-8") as _f:
+                        _f.write(__import__("json").dumps({"sessionId": "4e9670", "location": "api_client:upload_report", "message": "401_received", "data": {"class": class_name, "subject": subject_name}, "timestamp": int(_time.time() * 1000), "hypothesisId": "H4"}, ensure_ascii=False) + "\n")
+                except Exception:
+                    pass
+                # #endregion
+                refresh_result = self.refresh_token()
+                if refresh_result.get("success"):
+                    response = self.session.post(
+                        f"{self.base_url}/api/reports/upload",
+                        json=payload,
+                        timeout=30
+                    )
+                    if response.status_code == 200:
+                        data = response.json()
+                        return {
+                            "success": True,
+                            "report_id": data.get("report_id"),
+                            "action": data.get("action")
+                        }
+                    elif response.status_code == 404:
+                        return {
+                            "success": False,
+                            "error": response.json().get("error", "Организация не найдена"),
+                            "org_not_found": response.json().get("org_not_found", True)
+                        }
+                    elif response.status_code == 403:
+                        j = response.json()
+                        return {
+                            "success": False,
+                            "error": j.get("error", "Создание отчётов для других школ запрещено."),
+                            "org_mismatch": j.get("org_mismatch", True)
+                        }
                 self.token = None
                 self.token_expires = None
                 return {
@@ -608,6 +694,19 @@ class MektepAPIClient:
                     "deleted_report_files": data.get("deleted_report_files", 0),
                 }
             elif response.status_code == 401:
+                refresh_result = self.refresh_token()
+                if refresh_result.get("success"):
+                    response = self.session.delete(
+                        f"{self.base_url}/api/reports/all",
+                        timeout=30
+                    )
+                    if response.status_code == 200:
+                        data = response.json()
+                        return {
+                            "success": True,
+                            "deleted_grade_reports": data.get("deleted_grade_reports", 0),
+                            "deleted_report_files": data.get("deleted_report_files", 0),
+                        }
                 self.token = None
                 self.token_expires = None
                 return {
@@ -659,6 +758,24 @@ class MektepAPIClient:
             if response.status_code == 200:
                 return {"success": True}
             elif response.status_code == 401:
+                refresh_result = self.refresh_token()
+                if refresh_result.get("success"):
+                    response = self.session.delete(
+                        f"{self.base_url}/api/reports/{report_id}",
+                        timeout=15
+                    )
+                    if response.status_code == 200:
+                        return {"success": True}
+                    elif response.status_code == 403:
+                        return {
+                            "success": False,
+                            "error": "Нет прав для удаления этого отчёта"
+                        }
+                    elif response.status_code == 404:
+                        return {
+                            "success": False,
+                            "error": "Отчёт не найден"
+                        }
                 self.token = None
                 self.token_expires = None
                 return {
@@ -751,6 +868,19 @@ class MektepAPIClient:
                     "reports": data.get("reports", [])
                 }
             elif response.status_code == 401:
+                refresh_result = self.refresh_token()
+                if refresh_result.get("success"):
+                    response = self.session.get(
+                        f"{self.base_url}/api/reports/my",
+                        params=params,
+                        timeout=15
+                    )
+                    if response.status_code == 200:
+                        data = response.json()
+                        return {
+                            "success": True,
+                            "reports": data.get("reports", [])
+                        }
                 self.token = None
                 self.token_expires = None
                 return {
@@ -799,6 +929,14 @@ class MektepAPIClient:
             if response.status_code == 200:
                 return response.json()
             elif response.status_code == 401:
+                refresh_result = self.refresh_token()
+                if refresh_result.get("success"):
+                    response = self.session.get(
+                        f"{self.base_url}/api/teacher/my-classes",
+                        timeout=15
+                    )
+                    if response.status_code == 200:
+                        return response.json()
                 self.token = None
                 self.token_expires = None
                 return {"success": False, "error": "Токен истек.", "needs_auth": True}
@@ -833,6 +971,15 @@ class MektepAPIClient:
             if response.status_code == 200:
                 return response.json()
             elif response.status_code == 401:
+                refresh_result = self.refresh_token()
+                if refresh_result.get("success"):
+                    response = self.session.get(
+                        f"{self.base_url}/api/teacher/subject-report",
+                        params={"period_number": period_number},
+                        timeout=30
+                    )
+                    if response.status_code == 200:
+                        return response.json()
                 self.token = None
                 self.token_expires = None
                 return {"success": False, "error": "Токен истек.", "needs_auth": True}
@@ -867,6 +1014,15 @@ class MektepAPIClient:
             if response.status_code == 200:
                 return response.json()
             elif response.status_code == 401:
+                refresh_result = self.refresh_token()
+                if refresh_result.get("success"):
+                    response = self.session.get(
+                        f"{self.base_url}/api/teacher/class-teacher-report",
+                        params={"period_number": period_number},
+                        timeout=30
+                    )
+                    if response.status_code == 200:
+                        return response.json()
                 self.token = None
                 self.token_expires = None
                 return {"success": False, "error": "Токен истек.", "needs_auth": True}
@@ -925,6 +1081,15 @@ class MektepAPIClient:
             if response.status_code == 200:
                 return response.json()
             elif response.status_code == 401:
+                refresh_result = self.refresh_token()
+                if refresh_result.get("success"):
+                    response = self.session.get(
+                        f"{self.base_url}/api/grades/class/{encoded_class}",
+                        params={"period_number": period_number},
+                        timeout=30
+                    )
+                    if response.status_code == 200:
+                        return response.json()
                 self.token = None
                 self.token_expires = None
                 return {
