@@ -551,6 +551,8 @@ def api_upload_report():
     subject_name = data["subject_name"]
     period_type = data["period_type"]
     period_number = int(data["period_number"])
+    grades_payload = data.get("grades_json")
+    analytics_payload = data.get("analytics_json")
     
     # Валидация period_type
     if period_type not in ("quarter", "semester"):
@@ -599,9 +601,24 @@ def api_upload_report():
             "error": "Не удалось определить организацию. Укажите org_name или привяжите пользователя к школе."
         }), 400
     
+    # Валидация правила: если нет СОЧ, отчёт с оценками не должен загружаться.
+    has_grades = False
+    if isinstance(grades_payload, dict):
+        for student in grades_payload.get("students", []) or []:
+            grade = student.get("grade")
+            if grade not in (None, "", "0", 0):
+                has_grades = True
+                break
+    has_soch = isinstance(analytics_payload, dict) and isinstance(analytics_payload.get("soch"), dict)
+    if has_grades and not has_soch:
+        return jsonify({
+            "error": "Отчёт не содержит страницу СОЧ. Загрузка оценок по предмету запрещена.",
+            "missing_soch": True
+        }), 422
+
     # Преобразуем JSON данные в строки
-    grades_json = json.dumps(data.get("grades_json"), ensure_ascii=False) if data.get("grades_json") else None
-    analytics_json = json.dumps(data.get("analytics_json"), ensure_ascii=False) if data.get("analytics_json") else None
+    grades_json = json.dumps(grades_payload, ensure_ascii=False) if grades_payload else None
+    analytics_json = json.dumps(analytics_payload, ensure_ascii=False) if analytics_payload else None
     
     # ===== Auto-create Class, Subject, TeacherSubject, TeacherClass =====
     _auto_create_class_and_subject(

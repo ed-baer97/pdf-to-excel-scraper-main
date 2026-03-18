@@ -620,11 +620,18 @@ class ScraperThread(QThread):
             return report_data
         
         try:
-            grades_data, analytics_data = self._build_grades_and_analytics(subdir)
+            grades_data, analytics_data, has_soch_page = self._build_grades_and_analytics(subdir)
             # #region agent log
             _dbg_log("scraper_thread:_process_batch_subdir", "grades_built", {"class": class_name, "subject": subject_name, "has_grades": bool(grades_data)}, "H5")
             # #endregion
             if grades_data:
+                # Без страницы СОЧ не формируем "Оценки" и не отправляем предмет на сервер.
+                if not has_soch_page:
+                    print(f"[DEBUG] Пропуск загрузки на сервер: отсутствует страница СОЧ: {class_name} {subject_name}")
+                    report_data["upload_skipped"] = True
+                    report_data["upload_skip_reason"] = "no_soch"
+                    return report_data
+
                 period_type, period_number, skip = self._resolve_period(subdir)
                 # #region agent log
                 _dbg_log("scraper_thread:_process_batch_subdir", "period_resolved", {"class": class_name, "subject": subject_name, "skip": skip, "period_type": period_type, "period_number": period_number}, "H5")
@@ -883,20 +890,24 @@ class ScraperThread(QThread):
           ≥85% → 5,  65–84% → 4,  40–64% → 3,  <40% → 2
         
         Returns:
-            tuple: (grades_data: dict | None, analytics_data: dict | None)
+            tuple: (
+                grades_data: dict | None,
+                analytics_data: dict | None,
+                has_soch_page: bool
+            )
         """
         try:
             students_file = batch_subdir / "criteria_students.json"
             max_points_file = batch_subdir / "criteria_max_points.json"
             
             if not students_file.exists():
-                return None, None
+                return None, None, False
             
             with open(students_file, "r", encoding="utf-8") as f:
                 students = json.load(f)
             
             if not students:
-                return None, None
+                return None, None, False
             
             # Max points по секциям (0 = СОЧ, 1/2/3 = СОР 1/2/3)
             max_points = {}
@@ -1018,6 +1029,7 @@ class ScraperThread(QThread):
                     entry["name"] = f"СОр {sec}"
                     sor_list.append(entry)
             
+            has_soch_page = 0 in sections_present
             analytics_data = None
             if sor_list or soch_data:
                 analytics_data = {}
@@ -1026,11 +1038,11 @@ class ScraperThread(QThread):
                 if soch_data:
                     analytics_data["soch"] = soch_data
             
-            return grades_data, analytics_data
+            return grades_data, analytics_data, has_soch_page
         
         except Exception as e:
             print(f"[DEBUG] Ошибка формирования данных из JSON: {e}")
-            return None, None
+            return None, None, False
     
     def _save_report_metadata(
         self,
