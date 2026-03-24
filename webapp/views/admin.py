@@ -79,6 +79,27 @@ def _class_accordion_group(class_name: str) -> str:
     return "10-11"
 
 
+def _student_class_summary_category(grades: dict) -> str | None:
+    """Категория ученика для карточек «Качество / Успеваемость / Распределение» на странице класса.
+
+    - отличник: все выставленные оценки — 5;
+    - хорошист: не отличник, нет троек и двоек (только 4 и 5);
+    - троишник: нет двоек, но есть хотя бы одна тройка;
+    - неуспевающий: есть хотя бы одна двойка;
+    - None: нет ни одной оценки (не участвует в долях качества/успеваемости).
+    """
+    vals = [g.get("grade") for g in grades.values() if g.get("grade") is not None]
+    if not vals:
+        return None
+    if all(g == 5 for g in vals):
+        return "excellent"
+    if 2 in vals:
+        return "failing"
+    if 3 not in vals:
+        return "good"
+    return "troishnik"
+
+
 def _teacher_accordion_group(teacher: User, classes: list) -> str:
     """
     Определяет группу аккордеона для учителя-классного руководителя.
@@ -664,29 +685,32 @@ def grades_class(class_name: str):
             "success_percent": success
         }
     
-    # Считаем общую статистику класса
+    # Карточки сверху: по ученикам (отличники / хорошисты / троишники с двойками), не по ячейкам таблицы
     total_students = len(students_data)
     grades_count = {"5": 0, "4": 0, "3": 0, "2": 0}
-    
-    # Считаем по среднему баллу (для карточек сверху)
     for student in students_list:
-        all_grades = [g.get("grade") for g in student["grades"].values() if g.get("grade")]
-        if all_grades:
-            avg = sum(all_grades) / len(all_grades)
-            if avg >= 4.5:
-                grades_count["5"] += 1
-            elif avg >= 3.5:
-                grades_count["4"] += 1
-            elif avg >= 2.5:
-                grades_count["3"] += 1
-            else:
-                grades_count["2"] += 1
-    
+        cat = _student_class_summary_category(student["grades"])
+        if cat == "excellent":
+            grades_count["5"] += 1
+        elif cat == "good":
+            grades_count["4"] += 1
+        elif cat == "troishnik":
+            grades_count["3"] += 1
+        elif cat == "failing":
+            grades_count["2"] += 1
+
     quality_percent = 0
     success_percent = 0
     if total_students > 0:
-        quality_percent = round((grades_count["5"] + grades_count["4"]) / total_students * 100, 1)
-        success_percent = round((grades_count["5"] + grades_count["4"] + grades_count["3"]) / total_students * 100, 1)
+        quality_percent = round(
+            (grades_count["5"] + grades_count["4"]) / total_students * 100, 1
+        )
+        success_percent = round(
+            (grades_count["5"] + grades_count["4"] + grades_count["3"])
+            / total_students
+            * 100,
+            1,
+        )
     
     return render_template(
         "admin/grades_class.html",

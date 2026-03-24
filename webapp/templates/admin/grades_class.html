@@ -73,8 +73,8 @@
                 <th class="sticky-col" style="left: 30px;">{{ _('student_fio') }}</th>
                 {% for subject in subjects %}
                   <th class="text-center subject-col">
-                    <div class="d-flex justify-content-between align-items-start gap-1">
-                      <span>{{ subject }}</span>
+                    <div class="d-flex justify-content-between align-items-start gap-1 subject-col-inner">
+                      <span class="subject-name text-break">{{ subject }}</span>
                       <button
                         type="button"
                         class="btn btn-sm btn-outline-danger subject-delete-btn"
@@ -217,11 +217,28 @@
   #gradesTable td {
     white-space: nowrap;
   }
-  /* Заголовки предметов — перенос слов */
+  /* Заголовки предметов: перенос + шрифт уменьшается при узких столбцах */
   #gradesTable th.subject-col {
     white-space: normal;
     word-break: break-word;
-    min-width: 70px;
+    hyphens: auto;
+    min-width: 52px;
+    max-width: 96px;
+    vertical-align: bottom;
+    font-size: clamp(0.5rem, 0.65rem + 0.35vw, 0.8125rem);
+    line-height: 1.15;
+  }
+  #gradesTable th.subject-col .subject-col-inner {
+    min-height: 4.5rem;
+  }
+  #gradesTable th.subject-col .subject-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    text-align: center;
+  }
+  #gradesTable th.subject-col .subject-delete-btn {
+    flex-shrink: 0;
+    align-self: flex-start;
   }
   .subject-delete-btn {
     padding: 0.1rem 0.35rem;
