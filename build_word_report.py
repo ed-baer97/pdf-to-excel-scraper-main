@@ -1,3 +1,4 @@
+"""Сборка Word-отчёта по готовому Excel: шаблон .docx, таблицы анализа, уровни, цели."""
 import argparse
 import json
 import re
@@ -10,6 +11,7 @@ from docx.shared import Pt
 
 
 def _sanitize_filename(s: str) -> str:
+    """Очищает строку для имени выходного .docx (недопустимые символы Windows)."""
     s = " ".join((s or "").split()).strip()
     s = re.sub(r"[<>:\"/\\\\|?*]+", "_", s)
     s = s.strip(" .")
@@ -17,17 +19,7 @@ def _sanitize_filename(s: str) -> str:
 
 
 def _normalize_text(s: str, replace_yo: bool = False, remove_spaces: bool = False) -> str:
-    """
-    Normalize text for comparison.
-    
-    Args:
-        s: Input string
-        replace_yo: Replace 'ё' with 'е' (default: False)
-        remove_spaces: Remove all spaces (default: False)
-    
-    Returns:
-        Normalized lowercase string
-    """
+    """Нормализует текст для сравнения: нижний регистр, опционально ё→е и сжатие пробелов."""
     s = (s or "").lower().strip()
     if replace_yo:
         s = s.replace("ё", "е")
@@ -39,6 +31,7 @@ def _normalize_text(s: str, replace_yo: bool = False, remove_spaces: bool = Fals
 
 
 def _read_text(path: Path) -> str | None:
+    """Читает текстовый файл UTF-8; при ошибке возвращает None."""
     try:
         return path.read_text(encoding="utf-8", errors="ignore").strip() or None
     except Exception:
@@ -46,6 +39,7 @@ def _read_text(path: Path) -> str | None:
 
 
 def _normalize_name(s: str) -> str:
+    """Убирает «ёлочки» и лишние пробелы для сопоставления имён файлов."""
     s = (s or "").lower()
     s = s.replace("«", "").replace("»", "")
     s = re.sub(r"\s+", " ", s).strip()
@@ -53,10 +47,7 @@ def _normalize_name(s: str) -> str:
 
 
 def _resolve_xlsx(path: Path) -> Path:
-    """
-    If the xlsx path doesn't exist (often due to missing « » in class names),
-    try to find the closest match in the same directory by normalized stem.
-    """
+    """Если путь к xlsx не существует, ищет в той же папке файл с похожим нормализованным именем."""
     if path.exists():
         return path
     parent = path.parent if path.parent else Path(".")
@@ -83,6 +74,7 @@ def _resolve_xlsx(path: Path) -> Path:
 
 
 def _iter_paragraphs(doc: Document):
+    """Обходит все абзацы документа, включая ячейки таблиц."""
     for p in doc.paragraphs:
         yield p
     for t in doc.tables:
@@ -93,11 +85,7 @@ def _iter_paragraphs(doc: Document):
 
 
 def _replace_in_doc(doc: Document, mapping: dict[str, str]) -> int:
-    """
-    Best-effort placeholder replacement in paragraphs and table cells.
-    Supports: {{KEY}}, <<KEY>>, [KEY], {KEY}.
-    Note: If placeholders are split across runs, this may not catch all cases.
-    """
+    """Подставляет плейсхолдеры {{KEY}}, <<KEY>>, [KEY], {KEY} в абзацах и ячейках (best-effort)."""
     replaced = 0
     patterns = []
     for k, v in mapping.items():
@@ -123,23 +111,7 @@ def _replace_in_doc(doc: Document, mapping: dict[str, str]) -> int:
 
 
 def _fill_goals_table(doc: Document, goals_data: dict) -> bool:
-    """
-    Find and fill the goals table with structure:
-    - First table (index 0)
-    - Header row 7 (index 6): "Достигнутые цели" | "Цели, вызвавшие затруднения"
-    - Data rows 8-11 (indices 7-10): СОР1, СОР2, СОР3, СОЧ
-    
-    Russian headers: "Достигнутые цели", "Цели, вызвавшие затруднения"
-    Kazakh headers: "Қол жеткізілген мақсаттар", "Қиындық тудырған мақсаттар"
-    
-    goals_data format:
-    {
-        "sor1": {"achieved": "...", "difficulties": "..."},
-        "sor2": {"achieved": "...", "difficulties": "..."},
-        "sor3": {"achieved": "...", "difficulties": "..."},
-        "soch": {"achieved": "...", "difficulties": "..."}
-    }
-    """
+    """Находит таблицу «цели» (RU/KK по заголовкам) и заполняет строки СОР1–3 и СОЧ полями achieved/difficulties."""
     # Keywords for Russian and Kazakh
     # Russian: достигнутые цели, цели вызвавшие затруднения
     # Kazakh: қол жеткізілген мақсаттар, қиындық тудырған мақсаттар
@@ -236,9 +208,7 @@ def _fill_goals_table(doc: Document, goals_data: dict) -> bool:
 
 
 def _fill_goals_table_legacy(doc: Document, goals_data: dict) -> bool:
-    """
-    Legacy version - kept for reference. Uses fixed first table and row 7.
-    """
+    """Устаревший вариант: первая таблица, фиксированная строка заголовка (индекс 6)."""
     # Check if we have at least one table
     if not doc.tables or len(doc.tables) == 0:
         return False
@@ -318,24 +288,7 @@ def _fill_goals_table_legacy(doc: Document, goals_data: dict) -> bool:
 
 
 def _fill_difficulties_table(doc: Document, goals_data: dict) -> bool:
-    """
-    Find and fill the third table with structure:
-    - Table 3 (index 2)
-    - Column 2: Row labels
-      - "Перечень затруднений, которые возникли у обучающихся при выполнении заданий"
-      - "Причины, указанных выше затруднений у обучающихся при выполнении заданий"
-      - "Планируемая коррекционная работа:"
-    - Columns 3-5: СОР1, СОР2, СОР3
-    - Column 6: СОЧ
-    
-    goals_data format:
-    {
-        "sor1": {"difficulties_list": "...", "reasons": "...", "correction": "..."},
-        "sor2": {...},
-        "sor3": {...},
-        "soch": {...}
-    }
-    """
+    """Заполняет третью таблицу шаблона: перечень затруднений, причины, коррекция по колонкам СОР1–3 и СОЧ."""
     # Check if we have at least 3 tables
     if not doc.tables or len(doc.tables) < 3:
         return False
@@ -432,12 +385,14 @@ def _fill_difficulties_table(doc: Document, goals_data: dict) -> bool:
 
 
 def _apply_font(run) -> None:
+    """Задаёт вставляемому тексту шрифт Times New Roman 12 pt."""
     # Enforce Times New Roman 12 for inserted text.
     run.font.name = "Times New Roman"
     run.font.size = Pt(12)
 
 
 def _set_paragraph_text(p, text: str) -> None:
+    """Полностью заменяет текст абзаца одним прогоном с нужным шрифтом."""
     for r in p.runs:
         r.text = ""
     run = p.add_run(text)
@@ -445,9 +400,7 @@ def _set_paragraph_text(p, text: str) -> None:
 
 
 def _set_cell_text(cell, text: str) -> None:
-    """
-    Replace text in the first paragraph of a docx table cell without destroying the cell object.
-    """
+    """Заменяет текст в первом абзаце ячейки таблицы, не ломая объект ячейки."""
     if not cell.paragraphs:
         cell.text = str(text)
         # Best-effort apply font to the generated run(s)
@@ -463,10 +416,7 @@ def _set_cell_text(cell, text: str) -> None:
 
 
 def _extract_subject_from_filename(report_xlsx: Path, class_text: str) -> str:
-    """
-    Heuristic: report filename is usually "<class> <subject>.xlsx"
-    Example: "5 «В» Математика.xlsx" -> subject "Математика"
-    """
+    """Эвристика: из имени файла «класс + предмет» выделяет название предмета."""
     stem = report_xlsx.stem
     # 1) Strong regex: strip "<num><letter>" (with/without « ») from the beginning.
     #    Works for both "5В Математика" and "5 «В» Математика".
@@ -492,6 +442,7 @@ def _extract_subject_from_filename(report_xlsx: Path, class_text: str) -> str:
 
 
 def _build_goal_from_sheets(sheetnames: list[str]) -> str:
+    """Формирует строку цели («Анализ результатов СОР …») по списку имён листов Excel."""
     present = []
     # Normalize names used in our excel generator
     for name in sheetnames:
@@ -515,16 +466,14 @@ def _build_goal_from_sheets(sheetnames: list[str]) -> str:
 
 
 def _is_sor_or_soch_sheet(name: str) -> bool:
+    """True, если лист относится к СОР/СОЧ (не «Оценки» и не формативное оценивание)."""
     n = (name or "").lower()
     # Only include SOR 1..3 and SOCH sheets; exclude "Оценки" and "Формативное..."
     return ("сор" in n) or ("соч" in n)
 
 
 def _fill_template_lines(doc: Document, *, org: str, period: str | None, subject: str, class_text: str, teacher: str, goal: str, lang: str = "ru") -> int:
-    """
-    Replace known lines in the provided template by matching their text patterns.
-    Supports both Russian (Шаблон.docx) and Kazakh (Шаблон_каз.docx) templates.
-    """
+    """Подставляет организацию, период, предмет, класс, педагога и цель по шаблонным строкам (RU/KK)."""
     changed = 0
     org_replaced = False
     
@@ -635,14 +584,7 @@ def _fill_template_lines(doc: Document, *, org: str, period: str | None, subject
 
 
 def _fill_existing_analysis_table(doc: Document, blocks: list[dict], lang: str = "ru") -> bool:
-    """
-    Best-effort: if the template already has a table intended for analysis,
-    try to fill it. Otherwise, caller may append a new table.
-    
-    Supports both Russian and Kazakh templates:
-    - Russian: "Класс", "Писали", "Макс", "Кач", "Успев", "5", "4", "3", "2"
-    - Kazakh: "БЖБ", "Орындағаны", "Макс балл", "% Сапа", "% Үлгерім", "Ең төмен", "Орта", "Жоғары"
-    """
+    """Заполняет готовую сводную таблицу анализа по блокам СОР1–3/СОЧ из Excel (RU/KK заголовки)."""
     is_kazakh = lang.lower() in ("kk", "kaz", "kazakh")
     
     def norm(s: str) -> str:
@@ -652,11 +594,7 @@ def _fill_existing_analysis_table(doc: Document, blocks: list[dict], lang: str =
         return s
 
     def norm_kind(s: str) -> str:
-        """
-        Convert titles like "СОр 1" / "СОР 1" / "СОч" / "БЖБ 1" / "ТЖБ" to canonical keys:
-          sor1, sor2, sor3, soch
-        Kazakh: БЖБ = СОР (Бөлім бойынша жиынтық бағалау), ТЖБ = СОЧ (Тоқсандық жиынтық бағалау)
-        """
+        """Приводит заголовок вида «СОр 1»/«БЖБ 1»/«ТЖБ» к ключам sor1…sor3/soch."""
         ns = _normalize_text(s, replace_yo=True)
         # Russian: СОЧ, Kazakh: ТЖБ (Тоқсандық жиынтық бағалау)
         if "соч" in ns or "тжб" in ns:
@@ -689,7 +627,7 @@ def _fill_existing_analysis_table(doc: Document, blocks: list[dict], lang: str =
             continue
 
         def find_col(*substrs: str) -> int | None:
-            """Find column by any of the given substrings."""
+            """Индекс колонки по любой из подстрок в заголовке."""
             for i, h in enumerate(header):
                 for substr in substrs:
                     if substr in h:
@@ -770,6 +708,7 @@ def _fill_existing_analysis_table(doc: Document, blocks: list[dict], lang: str =
 
 
 def _extract_names_from_excel_column(ws, col: str, start_row: int = 8, end_row: int = 39) -> list[str]:
+    """Собирает непустые ФИО из колонки листа (диапазон строк шаблона)."""
     names: list[str] = []
     for r in range(start_row, end_row + 1):
         v = ws[f"{col}{r}"].value
@@ -782,21 +721,7 @@ def _extract_names_from_excel_column(ws, col: str, start_row: int = 8, end_row: 
 
 
 def _fill_level_table(doc: Document, wb, lang: str = "ru") -> bool:
-    """
-    Fill the 2nd table:
-    Russian: "Уровень", "Баллы", "СОР1", "СОР2", "СОР3", "СОЧ"
-    Kazakh: "Деңгей", "Балл", "БЖБ1", "БЖБ2", "БЖБ3", "ТЖБ"
-    
-    Rows:
-    Russian: "Высокий", "Средний", "Низкий"
-    Kazakh: "Жоғары", "Орта", "Төмен"
-
-    For each SOR/SOCH sheet in Excel, take names from columns:
-      - High   : L
-      - Medium : M
-      - Low    : N
-    and paste into corresponding cell (joined by newlines).
-    """
+    """Заполняет таблицу «уровень × СОР/СОЧ»: ФИО из колонок L/M/N листов Excel (высокий/средний/низкий)."""
     is_kazakh = lang.lower() in ("kk", "kaz", "kazakh")
     
     # Build mapping from kind -> {level -> names}
@@ -895,6 +820,7 @@ def _fill_level_table(doc: Document, wb, lang: str = "ru") -> bool:
 
 
 def _extract_sheet_block(ws) -> dict:
+    """Сводка по одному листу отчёта: организация, класс, учитель, сводные счётчики и J8/K8."""
     # Template conventions from your Excel pages:
     org = ws["B1"].value
     class_val = ws["C3"].value
@@ -949,6 +875,7 @@ def build_word_report(
     context_json: Path | None = None,
     lang: str = "ru",
 ) -> Path:
+    """Строит .docx из шаблона и Excel-отчёта: текстовые поля, таблицы, при необходимости — сводная таблица."""
     report_xlsx = _resolve_xlsx(report_xlsx)
     if not report_xlsx.exists():
         raise FileNotFoundError(f"Excel report not found: {report_xlsx}")
@@ -1060,6 +987,7 @@ def build_word_report(
 
 
 def main() -> int:
+    """CLI: шаблон Word, путь к xlsx, период/предмет из файлов или context JSON, язык ru/kk."""
     p = argparse.ArgumentParser()
     p.add_argument("--template", default=None, help="Path to Word template (auto-selects based on --lang if not specified)")
     p.add_argument("--xlsx", required=True, help='Path to Excel report, e.g. "out/mektep/reports/5 В Математика.xlsx"')

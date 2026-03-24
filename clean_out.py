@@ -4,6 +4,7 @@ from pathlib import Path
 
 
 def main() -> int:
+    """Удаляет каталог с выходами скрапера и создаёт заново подкаталоги reports и batch."""
     p = argparse.ArgumentParser(description="Clean generated outputs (out/mektep).")
     p.add_argument("--path", default="out/mektep", help="Directory to remove and recreate")
     p.add_argument("--yes", action="store_true", help="Do not ask for confirmation")

@@ -82,6 +82,12 @@ a = Analysis(
         'dotenv',
         
         # App modules
+        'app.report_pipeline',
+        'app.report_pipeline.period_map',
+        'app.report_pipeline.progress_monitor',
+        'app.report_pipeline.report_finalization',
+        'app.report_pipeline.report_utils',
+        'app.report_pipeline.run_environment',
         'app.reports_manager',
         'app.history_widget',
         'app.grades_widget',

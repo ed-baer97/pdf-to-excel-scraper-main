@@ -12,10 +12,10 @@ celery_app = None
 
 def create_app(config_object=None) -> Flask:
     """
-    Application factory.
-    
+    Фабрика Flask-приложения: конфигурация, БД, логин, blueprints, лёгкие миграции, восстановление задач.
+
     Args:
-        config_object: Configuration class. If None, auto-detect from FLASK_ENV.
+        config_object: класс конфигурации; если None — выбирается по FLASK_ENV.
     """
     if config_object is None:
         config_object = get_config()
@@ -34,14 +34,14 @@ def create_app(config_object=None) -> Flask:
     migrate.init_app(app, db)
     login_manager.init_app(app)
     
-    # Функция выбора локали
     def get_locale():
-        # Проверяем сохраненный язык в сессии
+        """Возвращает код текущей локали из сессии (по умолчанию ru)."""
         return session.get('language', 'ru')
     
     # Добавляем get_locale и gettext в контекст шаблонов
     @app.context_processor
     def inject_locale():
+        """Прокидывает в шаблоны get_locale и функцию перевода _()."""
         current_lang = get_locale()
         return dict(
             get_locale=lambda: current_lang,
@@ -50,6 +50,7 @@ def create_app(config_object=None) -> Flask:
 
     @login_manager.user_loader
     def load_user(user_id: str):
+        """Загружает пользователя по id для Flask-Login."""
         return db.session.get(User, int(user_id))
 
     # Blueprints
@@ -86,7 +87,7 @@ def create_app(config_object=None) -> Flask:
             inspector = inspect(db.engine)
             
             def _has_column(table: str, col: str) -> bool:
-                """Check if column exists in table (works with SQLite and PostgreSQL)."""
+                """Проверяет наличие колонки в таблице (SQLite и PostgreSQL)."""
                 try:
                     columns = [c["name"] for c in inspector.get_columns(table)]
                     return col in columns
@@ -212,7 +213,7 @@ def create_app(config_object=None) -> Flask:
 
 
 def _parse_class_subject(stem: str) -> tuple[str, str]:
-    """Parse class and subject from filename stem."""
+    """Разбирает имя файла без расширения на класс и предмет (по «» или по пробелам)."""
     s = (stem or "").strip()
     if "»" in s and "«" in s:
         i = s.find("»")
@@ -227,7 +228,7 @@ def _parse_class_subject(stem: str) -> tuple[str, str]:
 
 
 def _recover_interrupted_jobs(app):
-    """Recover reports from jobs interrupted by app restart."""
+    """Восстанавливает ReportFile и статус задач для прерванных скрапингов после перезапуска приложения."""
     try:
         # Find jobs that are still "running" but have output directories with reports
         running_jobs = ScrapeJob.query.filter_by(status=ScrapeJobStatus.RUNNING.value).all()

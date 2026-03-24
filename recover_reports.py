@@ -1,4 +1,4 @@
-"""Script to recover reports from existing job directories and save them to database."""
+"""Восстановление записей отчётов в БД из файлов в каталогах задач скрапинга."""
 from webapp import create_app
 from webapp.extensions import db
 from webapp.models import ReportFile, ScrapeJob, ScrapeJobStatus
@@ -8,7 +8,7 @@ import re
 app = create_app()
 
 def _parse_class_subject(stem: str) -> tuple[str, str]:
-    """Parse class and subject from filename stem."""
+    """Разбирает имя файла без расширения на класс и предмет (по «» или по первому пробелу)."""
     s = (stem or "").strip()
     if "»" in s and "«" in s:
         i = s.find("»")
@@ -24,7 +24,7 @@ def _parse_class_subject(stem: str) -> tuple[str, str]:
 
 
 def recover_reports_for_job(job_id: int):
-    """Recover reports for a specific job."""
+    """Сканирует `output_dir/reports` задачи и создаёт или обновляет `ReportFile` для пары .xlsx/.docx."""
     with app.app_context():
         job = db.session.get(ScrapeJob, job_id)
         if not job:
@@ -96,7 +96,7 @@ def recover_reports_for_job(job_id: int):
 
 
 def recover_all_jobs():
-    """Recover reports for all jobs that have output directories."""
+    """Проходит все задачи со статусом успех/выполняется и каталогом вывода; для каждой вызывает восстановление."""
     with app.app_context():
         jobs = ScrapeJob.query.filter(
             ScrapeJob.output_dir.isnot(None),

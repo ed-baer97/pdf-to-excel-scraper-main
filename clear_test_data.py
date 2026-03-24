@@ -13,6 +13,7 @@ from webapp.models import GradeReport, ReportFile, Class, User
 
 
 def main():
+    """Показывает тестовые GradeReport, ReportFile и Class; с флагом --delete удаляет отчёты и сбрасывает привязки классов."""
     parser = argparse.ArgumentParser(description="Clear test data")
     parser.add_argument("--delete", action="store_true", help="Delete all data")
     args = parser.parse_args()

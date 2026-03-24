@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""SQLAlchemy-модели веб-платформы: школы, пользователи, файлы отчётов, задачи скрапинга, оценки."""
+
 from datetime import datetime
 from enum import Enum
 
@@ -10,12 +12,16 @@ from .extensions import db
 
 
 class Role(str, Enum):
+    """Роли пользователей в системе."""
+
     SUPERADMIN = "superadmin"
     SCHOOL_ADMIN = "school_admin"
     TEACHER = "teacher"
 
 
 class School(db.Model):
+    """Школа (организация): имя, AI-ключ, флаг отчётов для других школ."""
+
     __tablename__ = "schools"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -34,6 +40,8 @@ class School(db.Model):
 
 
 class User(db.Model, UserMixin):
+    """Пользователь: логин, роль, школа, порядковый номер для путей fs_teacher_seq."""
+
     __tablename__ = "users"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -56,13 +64,17 @@ class User(db.Model, UserMixin):
     school = db.relationship("School", back_populates="users")
 
     def set_password(self, password: str) -> None:
+        """Хеширует пароль и сохраняет в password_hash."""
         self.password_hash = generate_password_hash(password)
 
     def check_password(self, password: str) -> bool:
+        """Проверяет пароль против сохранённого хеша."""
         return check_password_hash(self.password_hash, password)
 
 
 class ReportFile(db.Model):
+    """Локальные пути к Excel/Word отчёту учителя по классу, предмету и четверти."""
+
     __tablename__ = "report_files"
     
     # Composite indexes for common queries
@@ -86,6 +98,8 @@ class ReportFile(db.Model):
 
 
 class ScrapeJobStatus(str, Enum):
+    """Состояния фоновой задачи скрапинга на сервере."""
+
     QUEUED = "queued"
     RUNNING = "running"
     SUCCEEDED = "succeeded"
@@ -94,6 +108,8 @@ class ScrapeJobStatus(str, Enum):
 
 
 class ScrapeJob(db.Model):
+    """Задача скрапинга: статус, каталог вывода, прогресс, привязка к Celery."""
+
     __tablename__ = "scrape_jobs"
     
     # Composite indexes for common queries
@@ -155,6 +171,7 @@ class Class(db.Model):
     class_teacher = db.relationship("User", foreign_keys=[class_teacher_id], backref="managed_classes")
 
     def __repr__(self):
+        """Строковое представление для отладки."""
         return f"<Class {self.name}>"
 
 
@@ -176,6 +193,7 @@ class Subject(db.Model):
     school = db.relationship("School", backref="subjects")
 
     def __repr__(self):
+        """Строковое представление для отладки."""
         return f"<Subject {self.name}>"
 
 
@@ -198,6 +216,7 @@ class TeacherSubject(db.Model):
     subject = db.relationship("Subject", backref="teacher_subjects")
 
     def __repr__(self):
+        """Строковое представление для отладки."""
         return f"<TeacherSubject {self.teacher_id}-{self.subject_id}>"
 
 
@@ -217,6 +236,7 @@ class TeacherClass(db.Model):
     class_obj = db.relationship("Class", backref="teacher_classes")
 
     def __repr__(self):
+        """Строковое представление для отладки."""
         return f"<TeacherClass {self.teacher_subject_id}-{self.class_id}>"
 
 
@@ -276,5 +296,6 @@ class GradeReport(db.Model):
     school = db.relationship("School", backref="grade_reports")
 
     def __repr__(self):
+        """Строковое представление для отладки."""
         return f"<GradeReport {self.class_name} {self.subject_name} {self.period_type}/{self.period_number}>"
 

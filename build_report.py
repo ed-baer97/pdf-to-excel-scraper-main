@@ -1,3 +1,4 @@
+"""Сборка Excel-отчёта из JSON по шаблону: формативное оценивание, СОР, СОЧ, лист «Оценки»."""
 import argparse
 import json
 import re
@@ -7,6 +8,7 @@ from openpyxl import load_workbook
 
 
 def _sanitize_filename(s: str) -> str:
+    """Очищает строку для имени файла: убирает недопустимые символы Windows."""
     s = " ".join((s or "").split()).strip()
     s = re.sub(r"[<>:\"/\\\\|?*]+", "_", s)
     s = s.strip(" .")
@@ -14,10 +16,12 @@ def _sanitize_filename(s: str) -> str:
 
 
 def _load_json(path: Path):
+    """Читает JSON-файл в UTF-8 и возвращает объект Python."""
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _points_by_section(points: dict, quarter_num: int) -> dict[int, str]:
+    """Из словаря баллов по ключам `chetvert_{q}_razdel_{k}_...` берёт значения по номеру раздела k."""
     out: dict[int, str] = {}
     prefix = f"chetvert_{quarter_num}_razdel_"
     for pid, val in (points or {}).items():
@@ -35,9 +39,7 @@ def _points_by_section(points: dict, quarter_num: int) -> dict[int, str]:
 
 
 def _parse_class_liter(class_text: str) -> str:
-    """
-    From values like '5 «В»' -> '5В'
-    """
+    """Преобразует текст класса («5 «В»») в короткий вид для листа (например «5В»)."""
     s = (class_text or "").replace("«", " ").replace("»", " ").strip()
     m = re.search(r"(\d+)\s*([A-Za-zА-ЯЁӘҒҚҢӨҰҮҺа-яёәғқңөұүһ])?", s)
     if not m:
@@ -48,6 +50,7 @@ def _parse_class_liter(class_text: str) -> str:
 
 
 def _to_number(val):
+    """Приводит значение к float (проценты, запятые, пустые строки → 0)."""
     if val is None:
         return 0.0
     if isinstance(val, (int, float)):
@@ -60,10 +63,7 @@ def _to_number(val):
 
 
 def _extract_max_points_from_criteria_html(criteria_html: Path, quarter_num: int) -> dict[int, int]:
-    """
-    Fallback: parse max points from saved criteria.html:
-      id="chetvert_{q}_razdel_{k}_max" value="NN"
-    """
+    """Запасной вариант: парсит макс. баллы по разделам из сохранённого criteria.html (атрибуты max)."""
     if not criteria_html.exists():
         return {}
     html = criteria_html.read_text(encoding="utf-8", errors="ignore")
@@ -80,6 +80,7 @@ def _extract_max_points_from_criteria_html(criteria_html: Path, quarter_num: int
 
 
 def _clear_rows(ws, start_row: int, end_row: int, cols: list[str]):
+    """Обнуляет ячейки в диапазоне строк по указанным колонкам."""
     for r in range(start_row, end_row + 1):
         for col in cols:
             ws[f"{col}{r}"].value = None
@@ -97,13 +98,9 @@ def _fill_template_page(
     max_value,
     mode: str,
 ):
-    """
-    Fills a single copied template sheet similarly to the provided extract_to_template.py example.
+    """Заполняет один лист-копию шаблона: заголовок, ФИО, результат/проценты, флаги по уровням.
 
-    mode:
-      - 'percent' -> result_list values treated as percent 0..100
-      - 'points'  -> percent computed as result/max_value
-      - 'grade'   -> result_list values treated as grade (2..5)
+    mode: «percent» — значения как проценты 0–100; «points» — доля от max_value; «grade» — оценки 2–5.
     """
     # Header cells (as in example)
     if organization_name:
@@ -248,11 +245,7 @@ def _fill_grades_page(
     grades: list,
     percents: list,
 ):
-    """
-    Custom simplified page for "Оценки":
-    columns: №, ФИО, Оценка, %, кач-ва, успев
-    and remove/clear any "Высокий/..." extra blocks.
-    """
+    """Заполняет упрощённый лист «Оценки»: №, ФИО, оценка, %, итоговые качество/успеваемость в J8/K8."""
     if organization_name:
         ws["B1"].value = organization_name
     if class_liter:
@@ -352,6 +345,7 @@ def build_report(
     criteria_html_path: Path | None = None,
     org_name_path: Path | None = None,
 ) -> Path:
+    """Собирает xlsx из шаблона и JSON учеников/контекста; добавляет листы по данным и сохраняет в out_dir."""
     students = _load_json(students_path)
     ctx = _load_json(context_path)
     max_points = {}
@@ -491,6 +485,7 @@ def build_report(
 
 
 def main() -> int:
+    """Точка входа CLI: пути к шаблону, JSON и выходной каталог."""
     p = argparse.ArgumentParser()
     p.add_argument("--template", default="Шаблон.xlsx")
     p.add_argument("--students", default="out/mektep/criteria_students.json")

@@ -20,8 +20,7 @@ bp = Blueprint("health", __name__, url_prefix="/health")
 @bp.get("/live")
 def liveness():
     """
-    Liveness probe - is the application running?
-    Used by Kubernetes/load balancers to determine if app should be restarted.
+    Проверка «жив ли процесс» (GET /health, /health/live): для балансировщиков и Kubernetes.
     """
     return jsonify({
         "status": "ok",
@@ -32,8 +31,7 @@ def liveness():
 @bp.get("/ready")
 def readiness():
     """
-    Readiness probe - is the application ready to serve traffic?
-    Checks database connectivity and other dependencies.
+    Проверка готовности (GET /health/ready): доступность БД и общий статус ответа 200/503.
     """
     checks = {
         "database": False,
@@ -58,8 +56,7 @@ def readiness():
 @bp.get("/stats")
 def stats():
     """
-    Application statistics.
-    In production, this should be protected or return limited info.
+    Сводная статистика по задачам, школам и пользователям (GET /health/stats).
     """
     try:
         # Get job statistics

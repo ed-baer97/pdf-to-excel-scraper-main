@@ -1,4 +1,4 @@
-"""Common constants used across the application."""
+"""Общие константы и утилиты для названий предметов и сортировки (веб и API)."""
 
 import re
 
@@ -19,15 +19,7 @@ _KAZAKH_ORDER = {char: idx for idx, char in enumerate(_KAZAKH_ALPHABET)}
 
 
 def normalize_subject_name(raw: str) -> str:
-    """Normalize subject name: strip subgroup suffix and deduplicate repeated base name.
-
-    Examples:
-        "Иностранный язык Иностранный язык (1)" -> "Иностранный язык"
-        "Иностранный язык Иностранный язык (2)" -> "Иностранный язык"
-        "Математика"                             -> "Математика"
-        "Казахский язык (1)"                     -> "Казахский язык"
-        "Физика Физика"                          -> "Физика"
-    """
+    """Приводит название предмета к каноническому виду: убирает суффикс (N) и дублирование строки."""
     name = _SUBGROUP_RE.sub("", raw).strip()
 
     half = len(name) // 2
@@ -48,10 +40,7 @@ def normalize_subject_name(raw: str) -> str:
 
 def kazakh_sort_key(raw: str | None) -> tuple:
     """
-    Locale-like sort key for Kazakh Cyrillic text.
-
-    Unknown symbols are placed after alphabet characters and then ordered by
-    Unicode code point.
+    Ключ сортировки для казахского кириллического текста (порядок алфавита, неизвестные символы в конец).
     """
     text = str(raw or "").strip().lower()
     order = tuple(_KAZAKH_ORDER.get(char, 1000 + ord(char)) for char in text)

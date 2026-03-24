@@ -5,8 +5,9 @@ HTTP клиент для авторизации, проверки подключ
 загрузки/получения отчётов и аналитики.
 """
 import os
-import time as _time
 import requests
+
+from .debug_log import dbg_log
 from typing import Optional, Dict, List
 from datetime import datetime, timedelta
 
@@ -472,14 +473,7 @@ class MektepAPIClient:
                     "org_not_found": True
                 }
             elif response.status_code == 401:
-                # #region agent log
-                try:
-                    _p = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "debug-4e9670.log")
-                    with open(_p, "a", encoding="utf-8") as _f:
-                        _f.write(__import__("json").dumps({"sessionId": "4e9670", "location": "api_client:lookup_school", "message": "401_received", "data": {"org_name": org_name}, "timestamp": int(_time.time() * 1000), "hypothesisId": "H2"}, ensure_ascii=False) + "\n")
-                except Exception:
-                    pass
-                # #endregion
+                dbg_log("api_client:lookup_school", "401_received", {"org_name": org_name}, "H2")
                 refresh_result = self.refresh_token()
                 if refresh_result.get("success"):
                     response = self.session.get(
@@ -591,14 +585,12 @@ class MektepAPIClient:
                     "action": data.get("action")
                 }
             elif response.status_code == 401:
-                # #region agent log
-                try:
-                    _p = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "debug-4e9670.log")
-                    with open(_p, "a", encoding="utf-8") as _f:
-                        _f.write(__import__("json").dumps({"sessionId": "4e9670", "location": "api_client:upload_report", "message": "401_received", "data": {"class": class_name, "subject": subject_name}, "timestamp": int(_time.time() * 1000), "hypothesisId": "H4"}, ensure_ascii=False) + "\n")
-                except Exception:
-                    pass
-                # #endregion
+                dbg_log(
+                    "api_client:upload_report",
+                    "401_received",
+                    {"class": class_name, "subject": subject_name},
+                    "H4",
+                )
                 refresh_result = self.refresh_token()
                 if refresh_result.get("success"):
                     response = self.session.post(

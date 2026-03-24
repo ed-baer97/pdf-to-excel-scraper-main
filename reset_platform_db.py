@@ -3,6 +3,7 @@ from pathlib import Path
 
 
 def main() -> int:
+    """Удаляет локальный SQLite-файл платформы и при необходимости чистит папку миграций Alembic."""
     p = argparse.ArgumentParser(description="Reset local SQLite platform DB (instance/mektep_platform.db).")
     p.add_argument("--yes", action="store_true", help="Do not ask for confirmation")
     p.add_argument("--path", default="instance/mektep_platform.db", help="DB path to delete")

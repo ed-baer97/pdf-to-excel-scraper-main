@@ -22,7 +22,7 @@ load_dotenv()
 
 
 def run_gunicorn():
-    """Run with Gunicorn (Unix only)."""
+    """Запускает production-сервер через Gunicorn с конфигом gunicorn_config.py (только Unix)."""
     import subprocess
     
     bind = os.getenv("GUNICORN_BIND", "0.0.0.0:5000")
@@ -44,7 +44,7 @@ def run_gunicorn():
 
 
 def run_waitress():
-    """Run with Waitress (Windows compatible)."""
+    """Запускает Waitress на Windows (или когда нужен совместимый с Windows WSGI-сервер)."""
     from waitress import serve
     from webapp import create_app
     
@@ -68,7 +68,7 @@ def run_waitress():
 
 
 def main():
-    """Select and run production server."""
+    """Выбирает сервер по ОС (Windows → Waitress, иначе Gunicorn) и запускает приложение."""
     # Check environment
     flask_env = os.getenv("FLASK_ENV", "production")
     if flask_env == "development":

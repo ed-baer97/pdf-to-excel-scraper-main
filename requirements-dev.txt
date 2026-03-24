@@ -1,0 +1,2 @@
+# Optional dev / CI (install: pip install -r requirements-dev.txt)
+pytest>=7,<9

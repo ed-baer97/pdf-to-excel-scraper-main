@@ -23,13 +23,33 @@ try:
     )
 except ImportError:
     # Fallback если логгер недоступен
-    def init_logger(*args, **kwargs): return None
-    def get_logger(): return None
-    def log_stage(*args, **kwargs): pass
-    def log_info(msg): print(f"[INFO] {msg}")
-    def log_success(msg): print(f"[SUCCESS] {msg}")
-    def log_warning(msg): print(f"[WARNING] {msg}")
-    def log_error(msg, exc=None): print(f"[ERROR] {msg}")
+    def init_logger(*args, **kwargs):
+        """Заглушка инициализации логгера при отсутствии scraper_logger."""
+        return None
+
+    def get_logger():
+        """Заглушка: возвращает None вместо объекта логгера."""
+        return None
+
+    def log_stage(*args, **kwargs):
+        """Заглушка: этап скрапинга не логируется."""
+        pass
+
+    def log_info(msg):
+        """Заглушка: печатает информационное сообщение в консоль."""
+        print(f"[INFO] {msg}")
+
+    def log_success(msg):
+        """Заглушка: печатает сообщение об успехе в консоль."""
+        print(f"[SUCCESS] {msg}")
+
+    def log_warning(msg):
+        """Заглушка: печатает предупреждение в консоль."""
+        print(f"[WARNING] {msg}")
+
+    def log_error(msg, exc=None):
+        """Заглушка: печатает ошибку в консоль."""
+        print(f"[ERROR] {msg}")
     class ScraperLogger:
         STAGE_INIT = "INIT"
         STAGE_BROWSER = "BROWSER"
@@ -107,6 +127,7 @@ except ImportError:
     }
 
 def _safe_slug(s: str) -> str:
+    """Делает строку безопасной для имён файлов: пробелы, запрещённые символы."""
     s = " ".join((s or "").split()).strip()
     s = re.sub(r"[<>:\"/\\\\|?*]+", "_", s)
     s = s.strip(" .")
@@ -114,7 +135,7 @@ def _safe_slug(s: str) -> str:
 
 
 def _update_progress(percent: int, message: str, total_reports: int | None = None, processed_reports: int = 0):
-    """Update progress file if PROGRESS_FILE environment variable is set."""
+    """Пишет JSON прогресса в файл из переменной окружения PROGRESS_FILE (для десктопа/UI)."""
     progress_file = os.getenv("PROGRESS_FILE")
     if progress_file:
         try:
@@ -132,9 +153,12 @@ def _update_progress(percent: int, message: str, total_reports: int | None = Non
 
 
 def _ensure_dir(p: Path) -> None:
+    """Создаёт каталог и родителей, если их ещё нет."""
     p.mkdir(parents=True, exist_ok=True)
 
+
 def _resolve_template_path(name: str) -> Path:
+    """Ищет шаблон Excel/Word по MEKTEP_TEMPLATES_DIR, PyInstaller, cwd и корню проекта."""
     candidates: list[Path] = []
     env_dir = os.getenv("MEKTEP_TEMPLATES_DIR")
     if env_dir:
@@ -161,6 +185,7 @@ def _resolve_template_path(name: str) -> Path:
     return candidates[0] if candidates else Path(name)
 
 def _try_click(locator, timeout_ms: int = 1500) -> None:
+    """Пытается один раз кликнуть по локатору Playwright; ошибки игнорируются."""
     try:
         locator.first.click(timeout=timeout_ms)
     except Exception:
@@ -169,8 +194,8 @@ def _try_click(locator, timeout_ms: int = 1500) -> None:
 
 def _dismiss_announcement_modal(page: Page, timeout_ms: int = 600) -> bool:
     """
-    Best-effort close of the optional "Объявление" modal that may block UI.
-    Returns True if the modal was detected (and close was attempted).
+    Закрывает модальное окно «Объявление», если оно перекрывает интерфейс.
+    Возвращает True, если модалка была найдена (попытка закрытия выполнена).
     """
     try:
         title = page.locator("#jurnalCloseWarningModal h5.modal-title:has-text('Объявление')").first
@@ -196,6 +221,7 @@ def _dismiss_announcement_modal(page: Page, timeout_ms: int = 600) -> bool:
 
 
 def _dismiss_blocking_ui(page: Page) -> None:
+    """Снимает мешающие модалки: общие кнопки закрытия и окно объявления."""
     # Generic close buttons (Bootstrap/modal patterns)
     _try_click(page.locator("button:has-text('×')"))
     _try_click(page.locator("[aria-label='Close']"))
@@ -204,6 +230,7 @@ def _dismiss_blocking_ui(page: Page) -> None:
 
 
 def _click_login_button(page) -> None:
+    """Нажимает кнопку «Вход в систему» в шапке по нескольким возможным селекторам."""
     # Prefer stable attributes from the provided HTML:
     # <button ... data-toggle="collapse" href="#collapseThree" aria-controls="collapseThree">Вход в систему</button>
     candidates = [
@@ -229,6 +256,7 @@ def _click_login_button(page) -> None:
 
 
 def _get_current_language(page) -> str | None:
+    """Читает подпись текущего языка из выпадающего списка в шапке (Қазақша/Русский/…)."""
     # На некоторых страницах модальные окна могут перекрывать переключатель языка.
     _dismiss_blocking_ui(page)
     btn = page.locator("div.topline .btn-group button.btn.btn-default.dropdown-toggle").first
@@ -245,6 +273,7 @@ def _get_current_language(page) -> str | None:
 
 
 def _ensure_language(page, lang_code: str) -> None:
+    """Переключает язык интерфейса на нужный (desktop dropdown или мобильная ссылка)."""
     desired = LANG_MAP[lang_code]["label"]
     current = _get_current_language(page)
     if current and desired in current:
@@ -274,6 +303,7 @@ def _ensure_language(page, lang_code: str) -> None:
 
 
 def _get_profile_name(page) -> str | None:
+    """Возвращает ФИО учителя из блока nav .profile после входа."""
     # Example HTML:
     # <div class="profile"> ... <p>Баер<br>Эдуард</p>
     loc = page.locator("nav .profile p").first
@@ -288,6 +318,7 @@ def _get_profile_name(page) -> str | None:
 
 
 def _get_org_name(page) -> str | None:
+    """Возвращает название организации (школы) из шапки сайта."""
     # Example HTML:
     # <div class="orgname">...<strong>Специализированный IT лицей</strong>
     loc = page.locator(".topline .orgname strong").first
@@ -302,9 +333,8 @@ def _get_org_name(page) -> str | None:
 
 def _choose_period() -> tuple[str, str]:
     """
-    Returns (period_code, period_label).
-    Business rule from user: "2 четверть = 1 полугодие (если нет 2 четверти)".
-    We store the choice now; later steps may map it to the site's actual UI.
+    Возвращает (код периода, подпись): из MEKTEP_PERIOD или интерактивный ввод 1–4.
+    Правило: 2-я четверть соответствует 1 полугодию в подписи PERIOD_MAP.
     """
     chosen = os.getenv("MEKTEP_PERIOD", "").strip()
     if chosen in PERIOD_MAP:
@@ -322,6 +352,7 @@ def _choose_period() -> tuple[str, str]:
 
 
 def _go_to_grades(page) -> None:
+    """Переходит на страницу «Оценки» (/office/?action=semester) по ссылке или через goto."""
     # Nav item:
     # <a class="nav-link" href="/office/?action=semester">Оценки</a>
     _dismiss_blocking_ui(page)
@@ -337,8 +368,7 @@ def _go_to_grades(page) -> None:
 
 def _extract_grades_table(page) -> list[dict]:
     """
-    Extract rows from the "Успеваемость" table on /office/?action=semester
-    We care about: class, subject, criteria_link.
+    Собирает строки таблицы успеваемости: класс, предмет, ссылка на критерии (semester2).
     """
     table = page.locator("table.table.table-hover").first
     table.wait_for(state="visible", timeout=15000)
@@ -420,6 +450,7 @@ def _extract_grades_table(page) -> list[dict]:
 
 
 def _save_grades_table(rows: list[dict], out_dir: Path) -> None:
+    """Сохраняет таблицу успеваемости в grades_table.json и grades_table.csv."""
     (out_dir / "grades_table.json").write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
 
     csv_path = out_dir / "grades_table.csv"
@@ -431,6 +462,7 @@ def _save_grades_table(rows: list[dict], out_dir: Path) -> None:
 
 
 def _choose_row(rows: list[dict]) -> dict:
+    """Выбирает строку таблицы по MEKTEP_PICK или запрашивает номер у пользователя в консоли."""
     pick = os.getenv("MEKTEP_PICK", "").strip()
     if pick.isdigit():
         idx = int(pick)
@@ -450,6 +482,7 @@ def _choose_row(rows: list[dict]) -> dict:
 
 
 def _open_criteria(page, href: str) -> None:
+    """Открывает страницу критериев по ссылке (клик или page.goto)."""
     if not href:
         raise ValueError("Empty criteria link.")
     # Use navigation by click if possible; fallback to goto.
@@ -464,8 +497,8 @@ def _open_criteria(page, href: str) -> None:
 
 def _check_criteria_warning(page) -> bool:
     """
-    Check if criteria page shows warning about missing evaluation data.
-    Returns True if warning is found (page should be skipped), False otherwise.
+    Проверяет предупреждение «необходимо установить данные оценивания» на странице критериев.
+    Возвращает True, если страницу нужно пропустить.
     """
     try:
         # Look for alert warning with text about missing evaluation data
@@ -494,6 +527,7 @@ def _check_criteria_warning(page) -> bool:
 
 
 def _list_criteria_tabs(page) -> list[dict]:
+    """Возвращает список вкладок критериев (текст и href якоря #chetvert_N)."""
     tabs = page.locator("ul#pills-tab a[data-toggle='pill']")
     out: list[dict] = []
     n = tabs.count()
@@ -506,6 +540,7 @@ def _list_criteria_tabs(page) -> list[dict]:
 
 
 def _click_criteria_tab(page, href: str) -> None:
+    """Переключает вкладку критериев по href и ждёт видимости соответствующей панели."""
     # href like "#chetvert_2"
     loc = page.locator(f'ul#pills-tab a[data-toggle="pill"][href="{href}"]').first
     try:
@@ -525,6 +560,7 @@ def _click_criteria_tab(page, href: str) -> None:
 
 
 def _count_tab_rows(page, href: str) -> int:
+    """Считает число строк данных в первой таблице внутри вкладки с данным href."""
     pane_id = href.lstrip("#")
     pane = page.locator(f"div.tab-content div.tab-pane#{pane_id}").first
     # Count data rows in the first table inside the pane.
@@ -538,8 +574,7 @@ def _count_tab_rows(page, href: str) -> int:
 
 def _pick_tab_href_for_period(period_code: str, tabs: list[dict]) -> str | None:
     """
-    Map our period selection to an existing tab.
-    Special rule: if period_code == '2' and '#chetvert_2' doesn't exist, fall back to '1 полугодие' tab (if present).
+    Сопоставляет выбранную четверть с href вкладки на сайте (с запасными правилами для полугодий).
     """
     hrefs = {t["href"] for t in tabs}
     texts = {t["href"]: t["text"] for t in tabs}
@@ -576,6 +611,7 @@ def _pick_tab_href_for_period(period_code: str, tabs: list[dict]) -> str | None:
 
 
 def _analyze_and_select_criteria_tabs(page, out_dir: Path, period_code: str) -> str | None:
+    """Обходит вкладки, пишет criteria_tabs.json и активирует вкладку, соответствующую периоду."""
     tabs = _list_criteria_tabs(page)
     if not tabs:
         (out_dir / "criteria_tabs.json").write_text(json.dumps([], ensure_ascii=False, indent=2), encoding="utf-8")
@@ -606,6 +642,7 @@ def _analyze_and_select_criteria_tabs(page, out_dir: Path, period_code: str) -> 
 
 
 def _get_active_criteria_tab_href(page) -> str | None:
+    """Возвращает href активной вкладки критериев или None."""
     a = page.locator('ul#pills-tab a[data-toggle="pill"].active').first
     try:
         if a.count() == 0:
@@ -617,6 +654,7 @@ def _get_active_criteria_tab_href(page) -> str | None:
 
 
 def _text_or_none(locator) -> str | None:
+    """Безопасно читает inner_text первого элемента локатора или возвращает None."""
     try:
         if locator.count() == 0:
             return None
@@ -649,6 +687,7 @@ def _has_quarter_grade_header(page, tab_href: str) -> bool:
 
 
 def _extract_students_from_criteria_tab(page, tab_href: str) -> list[dict]:
+    """Извлекает список учеников с оценками и баллами по секциям для выбранной вкладки критериев."""
     pane_id = tab_href.lstrip("#")
     pane = page.locator(f"div#pills-tabContent div.tab-pane#{pane_id}").first
     pane.wait_for(state="visible", timeout=15000)
@@ -850,8 +889,7 @@ def _extract_students_from_criteria_tab(page, tab_href: str) -> list[dict]:
 
 def _extract_quarter_max_points(page: Page, tab_href: str) -> dict[int, int]:
     """
-    Extract max points for each section (razdel) from the header inputs:
-    input id="chetvert_{q}_razdel_{k}_max" value="..."
+    Читает максимальные баллы по секциям (СОч/СОр) из полей chetvert_*_razdel_*_max.
     """
     pane_id = tab_href.lstrip("#")
     pane = page.locator(f"div#pills-tabContent div.tab-pane#{pane_id}").first
@@ -893,7 +931,7 @@ def _extract_quarter_max_points(page: Page, tab_href: str) -> dict[int, int]:
 
 def _parse_points_by_section(points: dict[str, str], quarter_num: int) -> dict[int, str]:
     """
-    From ids like chetvert_{q}_razdel_{k}_{rowIndex} -> {k: value}
+    Группирует значения input по номеру секции razdel из id chetvert_q_razdel_k_...
     """
     out: dict[int, str] = {}
     prefix = f"chetvert_{quarter_num}_razdel_"
@@ -917,6 +955,7 @@ def _export_students_xlsx(
     ctx: dict,
     max_points: dict[int, int],
 ) -> None:
+    """Формирует criteria_students.xlsx (лист students + context) через openpyxl."""
     if Workbook is None:
         print("openpyxl not installed; skipping XLSX export.")
         return
@@ -939,6 +978,7 @@ def _export_students_xlsx(
     section_list = sorted(sections)
 
     def section_label(sec: int) -> str:
+        """Возвращает заголовок колонки для секции: СОч (0) или СОр N."""
         if sec == 0:
             return "СОч"
         return f"СОр {sec}"
@@ -1107,6 +1147,7 @@ def _launch_browser(p, headless: bool, slow_mo_ms: int):
 
 
 def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
+    """Основной сценарий скрапинга Mektep: вход, оценки, критерии, отчёты; код выхода для десктопа."""
     _ensure_dir(out_dir)
     
     # Инициализация логгера
@@ -1526,6 +1567,7 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
         log_info("Сохранён скриншот: grades.png")
 
         def process_one(selected: dict, batch_subdir: Path) -> None:
+            """Строит отчёт по одной паре класс/предмет: критерии, JSON учеников, Excel/Word в batch_subdir."""
             _ensure_dir(batch_subdir)
             legacy = os.getenv("MEKTEP_LEGACY_FILES", "") == "1"
             (batch_subdir / "selected_row.json").write_text(json.dumps(selected, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1751,6 +1793,7 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
 
 
 def main() -> int:
+    """Разбирает аргументы CLI, выставляет MEKTEP_* в окружении и вызывает run()."""
     parser = argparse.ArgumentParser(description="Login automation for mektep.edu.kz")
     parser.add_argument("--headless", type=int, default=1, help="1=headless, 0=show browser")
     parser.add_argument("--out", type=str, default="out/mektep", help="Output directory")

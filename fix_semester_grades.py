@@ -27,6 +27,7 @@ from webapp.constants import normalize_subject_name
 
 
 def main():
+    """Находит и при необходимости удаляет четвертные GradeReport для полугодовых предметов (dry-run или --apply)."""
     apply = "--apply" in sys.argv
 
     app = create_app()
