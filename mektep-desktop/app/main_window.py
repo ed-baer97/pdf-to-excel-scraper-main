@@ -174,6 +174,10 @@ class MektepMainWindow(QMainWindow):
         user_label = QLabel(f"{username}")
         user_label.setStyleSheet("font-weight: bold; color: #212529;")
         info_layout.addWidget(user_label)
+
+        version_label = QLabel(f"v{app_version.APP_VERSION}")
+        version_label.setStyleSheet("color: #adb5bd; font-size: 11px; margin-left: 6px;")
+        info_layout.addWidget(version_label)
         
         # Индикатор подключения к серверу
         server_url = self.settings.value("server/url", DEFAULT_SERVER_URL)

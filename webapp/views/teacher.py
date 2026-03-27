@@ -7,7 +7,7 @@ import io
 from datetime import datetime, timedelta
 
 from flask import Blueprint, current_app, jsonify, redirect, render_template, request, url_for, flash, send_file
-from flask_login import login_required, current_user
+from flask_login import current_user, login_required
 from pathlib import Path
 from sqlalchemy import func
 
@@ -16,6 +16,7 @@ from ..models import Role, ReportFile, ScrapeJob, ScrapeJobStatus, School, User
 from ..scraper_runner import run_scrape_job
 from ..constants import PERIOD_MAP
 from ..redis_utils import ai_rate_limiter
+from ..services.auth_guards import can_access_report_file, teacher_required
 
 
 # =============================================================================
@@ -43,12 +44,21 @@ def _get_rate_limit_reset_time(user_id: int) -> int:
 bp = Blueprint("teacher", __name__, url_prefix="/teacher")
 
 
+@bp.before_request
+@login_required
+def _require_teacher_or_superadmin():
+    """Block school admins from the teacher blueprint.
+
+    SUPERADMIN is allowed (can act on behalf of teachers).
+    Actual role enforcement per-endpoint is done by @teacher_required.
+    """
+    if current_user.role == Role.SCHOOL_ADMIN.value:
+        return redirect(url_for("admin.dashboard"))
+
+
 @bp.get("/")
 @login_required
 def dashboard():
-    # Супер-админ может зайти в кабинет учителя (создание отчётов)
-    if current_user.role == Role.SCHOOL_ADMIN.value:
-        return redirect(url_for("admin.dashboard"))
     files = (
         ReportFile.query.filter_by(teacher_id=current_user.id)
         .order_by(ReportFile.period_code, ReportFile.created_at.desc())
@@ -108,10 +118,8 @@ def dashboard():
 
 
 @bp.post("/scrape")
-@login_required
+@teacher_required
 def start_scrape():
-    if current_user.role != Role.TEACHER.value:
-        return redirect(url_for("teacher.dashboard"))
 
     mektep_login = request.form.get("mektep_login", "").strip()
     mektep_password = request.form.get("mektep_password", "")
@@ -127,6 +135,13 @@ def start_scrape():
     school: School | None = current_user.school
     if not school or not school.is_active:
         flash("Доступ школы закрыт.", "danger")
+        return redirect(url_for("teacher.dashboard"))
+
+    # Apply AI rate limit gate before creating a new scraping job.
+    allowed, remaining = _check_rate_limit(current_user.id)
+    if not allowed:
+        reset_in = _get_rate_limit_reset_time(current_user.id)
+        flash(f"Превышен лимит запросов. Попробуйте через {reset_in} сек.", "danger")
         return redirect(url_for("teacher.dashboard"))
 
     # Ensure teacher has per-school filesystem sequence (teacher_1, teacher_2, ...)
@@ -212,11 +227,9 @@ def start_scrape():
 
 
 @bp.get("/jobs/latest/status")
-@login_required
+@teacher_required
 def get_latest_job_status():
     """AJAX endpoint: return status of latest job."""
-    if current_user.role != Role.TEACHER.value:
-        return jsonify({"error": "Unauthorized"}), 403
     
     latest_job = (
         ScrapeJob.query.filter_by(teacher_id=current_user.id)
@@ -256,12 +269,7 @@ def get_latest_job_status():
     })
 
 
-def _can_access_file(rf: ReportFile) -> bool:
-    if current_user.role == Role.SUPERADMIN.value:
-        return True
-    if current_user.role == Role.SCHOOL_ADMIN.value:
-        return rf.school_id == current_user.school_id
-    return rf.teacher_id == current_user.id
+_can_access_file = can_access_report_file
 
 
 @bp.get("/files/<int:file_id>/excel")
@@ -293,12 +301,9 @@ def download_word(file_id: int):
 
 
 @bp.get("/files/download-all")
-@login_required
+@teacher_required
 def download_all_files():
     """Download all report files for the selected period as a ZIP archive."""
-    if current_user.role != Role.TEACHER.value:
-        flash("Доступ запрещен.", "danger")
-        return redirect(url_for("teacher.dashboard"))
     
     period_code = request.args.get("period_code", "").strip()
     if not period_code:
@@ -367,11 +372,9 @@ def download_all_files():
 
 
 @bp.post("/jobs/<int:job_id>/cancel")
-@login_required
+@teacher_required
 def cancel_job(job_id: int):
     """Cancel a running or queued job."""
-    if current_user.role != Role.TEACHER.value:
-        return redirect(url_for("teacher.dashboard"))
     job = db.session.get(ScrapeJob, job_id)
     if not job or job.teacher_id != current_user.id:
         flash("Задача не найдена.", "danger")
@@ -405,11 +408,9 @@ def cancel_job(job_id: int):
 
 
 @bp.post("/jobs/<int:job_id>/select-school")
-@login_required
+@teacher_required
 def select_school_for_job(job_id: int):
     """Record user's school selection for a running job."""
-    if current_user.role != Role.TEACHER.value:
-        return jsonify({"error": "Unauthorized"}), 403
     
     job = db.session.get(ScrapeJob, job_id)
     if not job or job.teacher_id != current_user.id:
@@ -441,12 +442,9 @@ def select_school_for_job(job_id: int):
 
 
 @bp.post("/files/delete-all")
-@login_required
+@teacher_required
 def delete_all_files():
     """Delete all report files and related jobs for the current teacher."""
-    if current_user.role != Role.TEACHER.value:
-        flash("Доступ запрещен.", "danger")
-        return redirect(url_for("teacher.dashboard"))
     
     files = ReportFile.query.filter_by(teacher_id=current_user.id).all()
     deleted_files_count = 0
@@ -501,11 +499,9 @@ def delete_all_files():
 
 
 @bp.post("/goals/apply")
-@login_required
+@teacher_required
 def apply_goals():
     """Apply goals to selected reports."""
-    if current_user.role != Role.TEACHER.value:
-        return jsonify({"success": False, "error": "Доступ запрещен"}), 403
     
     try:
         data = request.get_json()
@@ -606,11 +602,9 @@ def apply_goals():
 
 
 @bp.post("/goals/generate")
-@login_required
+@teacher_required
 def generate_goals_analysis():
     """Generate analysis text using Qwen AI based on achieved goals and difficulties."""
-    if current_user.role != Role.TEACHER.value:
-        return jsonify({"success": False, "error": "Доступ запрещен"}), 403
     
     # Rate Limiting проверка
     allowed, remaining = _check_rate_limit(current_user.id)

@@ -1517,7 +1517,13 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
                     logger.finish(success=False)
                 return 5  # Код ошибки: несовпадение организации
         elif expected_school and not org_name_ru:
-            log_warning("Не удалось прочитать название организации — проверка пропущена")
+            log_error("Не удалось прочитать название организации — скрапинг отклонён.")
+            _update_progress(0, "Не удалось прочитать название организации с mektep.edu.kz.")
+            context.close()
+            browser.close()
+            if logger:
+                logger.finish(success=False)
+            return 5  # Код ошибки: не удалось прочитать организацию
 
         # Save profile (teacher) name
         profile_name = _get_profile_name(page)
@@ -1526,6 +1532,36 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
             log_info(f"Профиль: {profile_name}")
         else:
             log_warning("Имя профиля не найдено")
+
+        # ===== Проверка имени профиля (защита от передачи аккаунта) =====
+        # MEKTEP_EXPECTED_PROFILE_NAME передаётся из scraper_runner.py / десктоп-приложения
+        # и содержит full_name пользователя в БД.
+        expected_profile = os.getenv("MEKTEP_EXPECTED_PROFILE_NAME", "").strip()
+        if expected_profile and profile_name:
+            a = " ".join(profile_name.lower().split())
+            b = " ".join(expected_profile.lower().split())
+            # Проверяем прямой и обратный порядок (Фамилия Имя vs Имя Фамилия)
+            parts = b.split()
+            b_reversed = f"{parts[1]} {parts[0]}" if len(parts) == 2 else b
+            if a != b and a != b_reversed:
+                log_error(
+                    f"Имя профиля «{profile_name}» не совпадает с «{expected_profile}». "
+                    f"Вход под чужим аккаунтом запрещён."
+                )
+                _update_progress(0, f"Имя профиля «{profile_name}» не совпадает с «{expected_profile}».")
+                context.close()
+                browser.close()
+                if logger:
+                    logger.finish(success=False)
+                return 6  # Код ошибки: несовпадение имени профиля
+        elif expected_profile and not profile_name:
+            log_error("Не удалось прочитать имя профиля — скрапинг отклонён.")
+            _update_progress(0, "Не удалось прочитать имя профиля с mektep.edu.kz.")
+            context.close()
+            browser.close()
+            if logger:
+                logger.finish(success=False)
+            return 6  # Код ошибки: не удалось прочитать имя профиля
 
         # Переключаем на целевой язык отчётов
         log_info(f"Установка языка отчётов: {LANG_MAP[chosen]['label']}")

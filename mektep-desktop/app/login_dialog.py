@@ -15,11 +15,26 @@ from PyQt6.QtGui import QFont
 from .api_client import MektepAPIClient, DEFAULT_SERVER_URL
 from .translator import get_translator
 
+try:
+    from .. import version as _app_version
+except (ImportError, SystemError):
+    import sys as _sys
+    import importlib as _importlib
+    from pathlib import Path as _Path
+    _parent = str(_Path(__file__).resolve().parent.parent)
+    if _parent not in _sys.path:
+        _sys.path.insert(0, _parent)
+    _app_version = _importlib.import_module("version")
+
+_DESKTOP_VERSION: str = getattr(_app_version, "APP_VERSION", "0.0.0")
+
 
 class TokenRestoreThread(QThread):
     """Поток для восстановления токена (не блокирует UI)"""
-    finished = pyqtSignal(bool)
-    
+    # success=True, update_required=False → нормальный вход
+    # success=False, update_required=True  → устаревшая версия
+    finished = pyqtSignal(bool, bool, str)  # success, update_required, min_version
+
     def __init__(self, api_client: MektepAPIClient, token: str, expires: str, user_data: dict):
         super().__init__()
         self.api_client = api_client
@@ -29,7 +44,7 @@ class TokenRestoreThread(QThread):
     
     def run(self):
         ok = self.api_client.restore_token(self.token, self.expires, self.user_data)
-        self.finished.emit(ok)
+        self.finished.emit(ok, False, "")
 
 
 class LoginDialog(QDialog):
@@ -180,6 +195,12 @@ class LoginDialog(QDialog):
         
         layout.addWidget(card)
         layout.addStretch()
+
+        # Метка версии в самом низу диалога
+        version_label = QLabel(f"v{_DESKTOP_VERSION}")
+        version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        version_label.setStyleSheet("color: #adb5bd; font-size: 11px; margin-bottom: 8px;")
+        layout.addWidget(version_label)
         
         # Применение стилей
         self.apply_styles()
@@ -311,8 +332,15 @@ class LoginDialog(QDialog):
         self._restore_thread.finished.connect(self._on_token_restored)
         self._restore_thread.start()
     
-    def _on_token_restored(self, success: bool):
+    def _on_token_restored(self, success: bool, update_required: bool, min_version: str):
         """Обработка результата восстановления токена"""
+        if update_required:
+            self.login_btn.setEnabled(True)
+            self.status_label.setText(f"❌ {self.translator.tr('update_required')}")
+            self.status_label.setStyleSheet("color: #dc3545; font-size: 12px;")
+            self._show_update_required_dialog(min_version)
+            return
+
         if success:
             self.user_data = self.api_client.user_data
             self.authenticated = True
@@ -386,6 +414,14 @@ class LoginDialog(QDialog):
             
             QTimer.singleShot(500, self.accept)
             
+        elif result.get("update_required"):
+            # Версия приложения устарела
+            self.login_btn.setEnabled(True)
+            self.login_btn.setText(self.translator.tr('login_button'))
+            self.status_label.setText(f"❌ {self.translator.tr('update_required')}")
+            self.status_label.setStyleSheet("color: #dc3545; font-size: 12px;")
+            self._show_update_required_dialog(result.get("min_version", ""))
+
         elif result.get("offline"):
             # Сервер недоступен
             self.login_btn.setEnabled(True)
@@ -410,6 +446,12 @@ class LoginDialog(QDialog):
             self.password_input.clear()
             self.password_input.setFocus()
     
+    def _show_update_required_dialog(self, min_version: str):
+        """Показать диалог с требованием обновить приложение"""
+        title = self.translator.tr('update_required_title')
+        msg = self.translator.tr('update_required_msg', min_version or "?")
+        QMessageBox.critical(self, title, msg)
+
     def _save_token(self):
         """Сохранить токен в QSettings для автоматического входа"""
         import json

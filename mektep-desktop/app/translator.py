@@ -52,6 +52,13 @@ class Translator(QObject):
                 'check_connection': 'Проверьте подключение к интернету и URL сервера',
                 'server_url': 'URL сервера',
                 'default_server': 'По умолчанию: https://mektep-analyzer.kz',
+                'update_required': 'Требуется обновление',
+                'update_required_title': 'Обновите приложение',
+                'update_required_msg': (
+                    'Ваша версия Mektep Desktop устарела.\n\n'
+                    'Минимальная версия: {}\n\n'
+                    'Пожалуйста, скачайте и установите новую версию приложения.'
+                ),
                 
                 # Main Window
                 'main_window_title': 'Mektep Desktop - {}',
@@ -217,6 +224,13 @@ class Translator(QObject):
                 'check_connection': 'Интернет қосылымы мен сервер URL мекенжайын тексеріңіз',
                 'server_url': 'Сервер URL мекенжайы',
                 'default_server': 'Әдепкі: https://mektep-analyzer.kz',
+                'update_required': 'Жаңарту қажет',
+                'update_required_title': 'Қолданбаны жаңартыңыз',
+                'update_required_msg': (
+                    'Mektep Desktop нұсқасы ескірген.\n\n'
+                    'Ең төменгі нұсқа: {}\n\n'
+                    'Жаңа нұсқаны жүктеп, орнатыңыз.'
+                ),
                 
                 # Main Window
                 'main_window_title': 'Mektep Desktop - {}',

@@ -11,6 +11,7 @@ from app.report_pipeline.progress_monitor import (
 )
 from app.report_pipeline.report_utils import (
     is_semester_subject,
+    normalize_period_code,
     parse_class_liter,
     parse_number,
     resolve_period,
@@ -72,6 +73,30 @@ def test_resolve_period_semester_from_tabs(tmp_path):
     assert ptype == "semester"
     assert pnum == 1
     assert skip is False
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("1", "1"),
+        (" 4 ", "4"),
+        (2, "2"),
+        ("0", None),
+        ("q1", None),
+        (None, None),
+    ],
+)
+def test_normalize_period_code(raw, expected):
+    """Нормализация period_code в допустимый диапазон 1..4."""
+    assert normalize_period_code(raw) == expected
+
+
+def test_resolve_period_invalid_code(tmp_path):
+    """Невалидный period_code должен приводить к skip=True."""
+    ptype, pnum, skip = resolve_period("q1", tmp_path)
+    assert ptype == "quarter"
+    assert pnum == 1
+    assert skip is True
 
 
 def test_is_semester_from_context(tmp_path):

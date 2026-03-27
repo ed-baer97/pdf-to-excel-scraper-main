@@ -1,28 +1,21 @@
 import secrets
 
 from flask import Blueprint, current_app, jsonify, redirect, render_template, request, url_for, flash
-from flask_login import login_required, current_user
+from flask_login import current_user
 from sqlalchemy import func
 
 from ..extensions import db
 from ..models import Role, School, User, Class, GradeReport, ReportFile, TeacherSubject, TeacherClass, Subject
 from ..security import decrypt_password, encrypt_password
 from ..constants import kazakh_sort_key
+from ..services.auth_guards import superadmin_required
 
 bp = Blueprint("superadmin", __name__, url_prefix="/superadmin")
 
 
-def _require_superadmin():
-    if current_user.role != Role.SUPERADMIN.value:
-        return False
-    return True
-
-
 @bp.get("/")
-@login_required
+@superadmin_required
 def dashboard():
-    if not _require_superadmin():
-        return redirect(url_for("teacher.dashboard"))
     schools = School.query.order_by(School.created_at.desc()).all()
     admins = User.query.filter_by(role=Role.SCHOOL_ADMIN.value).order_by(User.created_at.desc()).all()
     return render_template(
@@ -34,10 +27,8 @@ def dashboard():
 
 
 @bp.post("/schools/create")
-@login_required
+@superadmin_required
 def create_school():
-    if not _require_superadmin():
-        return redirect(url_for("teacher.dashboard"))
     name = request.form.get("name", "").strip()
     if not name:
         flash("Название школы обязательно.", "danger")
@@ -50,10 +41,8 @@ def create_school():
 
 
 @bp.post("/schools/<int:school_id>/toggle")
-@login_required
+@superadmin_required
 def toggle_school(school_id: int):
-    if not _require_superadmin():
-        return redirect(url_for("teacher.dashboard"))
     s = db.session.get(School, school_id)
     if not s:
         return redirect(url_for("superadmin.dashboard"))
@@ -64,11 +53,9 @@ def toggle_school(school_id: int):
 
 
 @bp.post("/schools/<int:school_id>/delete")
-@login_required
+@superadmin_required
 def delete_school(school_id: int):
     """Удаление школы и всех связанных данных."""
-    if not _require_superadmin():
-        return redirect(url_for("teacher.dashboard"))
     s = db.session.get(School, school_id)
     if not s:
         flash("Школа не найдена.", "danger")
@@ -114,11 +101,9 @@ AI_MODEL_CHOICES = [
 
 
 @bp.post("/schools/<int:school_id>/ai_api_key")
-@login_required
+@superadmin_required
 def update_ai_api_key(school_id: int):
     """Обновить AI API ключ школы"""
-    if not _require_superadmin():
-        return redirect(url_for("teacher.dashboard"))
     s = db.session.get(School, school_id)
     if not s:
         return redirect(url_for("superadmin.dashboard"))
@@ -130,11 +115,9 @@ def update_ai_api_key(school_id: int):
 
 
 @bp.post("/schools/<int:school_id>/ai_model")
-@login_required
+@superadmin_required
 def update_ai_model(school_id: int):
     """Обновить модель AI для школы (выбор супер-админа)"""
-    if not _require_superadmin():
-        return redirect(url_for("teacher.dashboard"))
     s = db.session.get(School, school_id)
     if not s:
         return redirect(url_for("superadmin.dashboard"))
@@ -147,11 +130,9 @@ def update_ai_model(school_id: int):
 
 
 @bp.post("/schools/<int:school_id>/toggle_cross_school")
-@login_required
+@superadmin_required
 def toggle_cross_school(school_id: int):
     """Переключить разрешение на создание отчётов для других школ."""
-    if not _require_superadmin():
-        return redirect(url_for("teacher.dashboard"))
     s = db.session.get(School, school_id)
     if not s:
         return redirect(url_for("superadmin.dashboard"))
@@ -163,10 +144,8 @@ def toggle_cross_school(school_id: int):
 
 
 @bp.post("/admins/create")
-@login_required
+@superadmin_required
 def create_admin():
-    if not _require_superadmin():
-        return redirect(url_for("teacher.dashboard"))
     school_id = int(request.form.get("school_id", "0") or "0")
     username = request.form.get("username", "").strip()
     full_name = request.form.get("full_name", "").strip()
@@ -192,11 +171,9 @@ def create_admin():
 
 
 @bp.get("/admins/<int:user_id>/password")
-@login_required
+@superadmin_required
 def get_admin_password(user_id: int):
     """AJAX endpoint: return password as JSON."""
-    if not _require_superadmin():
-        return jsonify({"error": "Unauthorized"}), 403
     u = db.session.get(User, user_id)
     if not u or u.role != Role.SCHOOL_ADMIN.value:
         return jsonify({"error": "Not found"}), 404
@@ -205,12 +182,9 @@ def get_admin_password(user_id: int):
 
 
 @bp.post("/admins/<int:user_id>/password")
-@login_required
+@superadmin_required
 def update_admin_password(user_id: int):
     """Update admin password."""
-    if not _require_superadmin():
-        flash("Доступ запрещен.", "danger")
-        return redirect(url_for("superadmin.dashboard"))
     u = db.session.get(User, user_id)
     if not u or u.role != Role.SCHOOL_ADMIN.value:
         flash("Пользователь не найден.", "danger")
@@ -227,11 +201,9 @@ def update_admin_password(user_id: int):
 
 
 @bp.post("/admins/<int:user_id>/edit")
-@login_required
+@superadmin_required
 def edit_admin(user_id: int):
     """Редактирование ФИО администратора."""
-    if not _require_superadmin():
-        return redirect(url_for("teacher.dashboard"))
     u = db.session.get(User, user_id)
     if not u or u.role != Role.SCHOOL_ADMIN.value:
         flash("Администратор не найден.", "danger")
@@ -247,11 +219,9 @@ def edit_admin(user_id: int):
 
 
 @bp.post("/admins/<int:user_id>/delete")
-@login_required
+@superadmin_required
 def delete_admin(user_id: int):
     """Удаление администратора школы."""
-    if not _require_superadmin():
-        return redirect(url_for("teacher.dashboard"))
     u = db.session.get(User, user_id)
     if not u or u.role != Role.SCHOOL_ADMIN.value:
         flash("Администратор не найден.", "danger")
@@ -265,11 +235,9 @@ def delete_admin(user_id: int):
 
 
 @bp.get("/schools/<int:school_id>")
-@login_required
+@superadmin_required
 def school_detail(school_id: int):
     """Детальная страница школы: учителя, админы, классы, предметы"""
-    if not _require_superadmin():
-        return redirect(url_for("main.index"))
     school = db.session.get(School, school_id)
     if not school:
         flash("Школа не найдена.", "danger")

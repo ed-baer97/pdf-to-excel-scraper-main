@@ -95,12 +95,24 @@ def resolve_period(period_code: str, batch_subdir: Path) -> Tuple[str, int, bool
 
     Возвращает кортеж (period_type, period_number, skip).
     """
+    normalized_period = normalize_period_code(period_code)
+    if normalized_period is None:
+        return "quarter", 1, True
+
     is_sem = is_semester_subject(batch_subdir)
 
     if is_sem:
-        if period_code in ("1", "2"):
+        if normalized_period in ("1", "2"):
             return "semester", 1, False
-        if period_code in ("3", "4"):
+        if normalized_period in ("3", "4"):
             return "semester", 2, False
 
-    return "quarter", int(period_code), False
+    return "quarter", int(normalized_period), False
+
+
+def normalize_period_code(period_code: Any) -> Optional[str]:
+    """Normalize period code to one of '1'..'4'."""
+    if period_code is None:
+        return None
+    value = str(period_code).strip()
+    return value if value in {"1", "2", "3", "4"} else None

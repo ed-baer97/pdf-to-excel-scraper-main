@@ -5,12 +5,25 @@ HTTP клиент для авторизации, проверки подключ
 загрузки/получения отчётов и аналитики.
 """
 import os
+import sys
+import importlib
+from pathlib import Path
 import requests
 
 from .debug_log import dbg_log
 from typing import Optional, Dict, List
 from datetime import datetime, timedelta
 
+# Загружаем версию из version.py (работает и в dev-режиме, и в frozen EXE)
+try:
+    from .. import version as _app_version
+except (ImportError, SystemError):
+    _parent = str(Path(__file__).resolve().parent.parent)
+    if _parent not in sys.path:
+        sys.path.insert(0, _parent)
+    _app_version = importlib.import_module("version")
+
+_DESKTOP_VERSION: str = getattr(_app_version, "APP_VERSION", "0.0.0")
 
 # Адрес сервера по умолчанию
 DEFAULT_SERVER_URL = "https://mektep-analyzer.kz"
@@ -32,7 +45,8 @@ class MektepAPIClient:
         self.user_data: Optional[Dict] = None
         self.session = requests.Session()
         self.session.headers.update({
-            "User-Agent": "Mektep-Desktop/1.0",
+            "User-Agent": f"Mektep-Desktop/{_DESKTOP_VERSION}",
+            "X-Desktop-Version": _DESKTOP_VERSION,
             "Content-Type": "application/json"
         })
     
@@ -211,6 +225,14 @@ class MektepAPIClient:
                     "token": self.token,
                     "expires_in": expires_in,
                     "user": self.user_data
+                }
+            elif response.status_code == 426:
+                data = response.json()
+                return {
+                    "success": False,
+                    "error": data.get("error", "Версия приложения устарела"),
+                    "update_required": True,
+                    "min_version": data.get("min_version", ""),
                 }
             else:
                 return {

@@ -5,217 +5,35 @@ API endpoints for Mektep Desktop integration
 - Authentication (JWT tokens)
 - Reports logging
 """
-from datetime import datetime, timedelta
-from functools import wraps
+from datetime import datetime
 
-import jwt
 from flask import Blueprint, current_app, jsonify, request
 from werkzeug.security import check_password_hash
 
 from ..extensions import db
 from ..models import (
     User, Role, ReportFile, GradeReport,
-    Class, Subject, TeacherSubject, TeacherClass, School,
+    Class, School,
 )
-from ..constants import normalize_subject_name
 import json
+from ..services.api_helpers import (
+    auto_create_class_and_subject,
+    find_school_by_org_name,
+    generate_jwt_token,
+    get_quarter_reports_api,
+    require_jwt,
+)
+from ..constants import MIN_DESKTOP_VERSION, normalize_subject_name
 
 bp = Blueprint("api", __name__, url_prefix="/api")
 
 
-def _get_quarter_reports_api(school_id: int, period_number: int, **extra_filters):
-    """
-    Quarter-aware query: for quarters 2/4, also include semester 1/2 reports.
-    For quarters 1/3, semester subjects are excluded.
-    """
-    reports = GradeReport.query.filter_by(
-        school_id=school_id,
-        period_type="quarter",
-        period_number=period_number,
-        **extra_filters,
-    ).all()
-
-    if period_number == 2:
-        reports += GradeReport.query.filter_by(
-            school_id=school_id,
-            period_type="semester",
-            period_number=1,
-            **extra_filters,
-        ).all()
-    elif period_number == 4:
-        reports += GradeReport.query.filter_by(
-            school_id=school_id,
-            period_type="semester",
-            period_number=2,
-            **extra_filters,
-        ).all()
-    else:
-        semester_rows = (
-            db.session.query(GradeReport.class_name, GradeReport.subject_name)
-            .filter_by(school_id=school_id, period_type="semester")
-            .distinct()
-            .all()
-        )
-        semester_pairs = {
-            (r.class_name, normalize_subject_name(r.subject_name))
-            for r in semester_rows
-        }
-        if semester_pairs:
-            reports = [
-                r for r in reports
-                if (r.class_name, normalize_subject_name(r.subject_name)) not in semester_pairs
-            ]
-
-    return reports
-
-
-def _find_school_by_org_name(org_name: str):
-    """
-    Поиск школы по названию организации (Python-side сравнение).
-    
-    SQLite lower() не поддерживает Unicode/кириллицу, поэтому
-    сравнение регистронезависимо выполняется в Python, а не в SQL.
-    
-    Returns:
-        School или None
-    """
-    if not org_name:
-        return None
-    
-    all_active = School.query.filter(School.is_active == True).all()
-    org_lower = org_name.lower()
-    
-    # 1. Точное совпадение (case-insensitive)
-    for s in all_active:
-        if s.name.lower() == org_lower:
-            return s
-    
-    # 2. Частичное: org_name содержится в school.name или наоборот
-    for s in all_active:
-        sn = s.name.lower()
-        if org_lower in sn or sn in org_lower:
-            return s
-    
-    return None
-
-
-def _auto_create_class_and_subject(school_id: int, class_name: str, subject_name: str, teacher_id: int):
-    """
-    Автоматически создаёт Class, Subject, TeacherSubject, TeacherClass
-    при загрузке оценок, если они ещё не существуют. Дублей не создаёт.
-    """
-    # --- Class ---
-    cls = Class.query.filter_by(school_id=school_id, name=class_name).first()
-    if not cls:
-        cls = Class(school_id=school_id, name=class_name)
-        db.session.add(cls)
-        db.session.flush()
-
-    # --- Subject ---
-    subj = Subject.query.filter_by(school_id=school_id, name=subject_name).first()
-    if not subj:
-        subj = Subject(school_id=school_id, name=subject_name)
-        db.session.add(subj)
-        db.session.flush()
-
-    # --- TeacherSubject ---
-    ts = TeacherSubject.query.filter_by(teacher_id=teacher_id, subject_id=subj.id).first()
-    if not ts:
-        ts = TeacherSubject(teacher_id=teacher_id, subject_id=subj.id)
-        db.session.add(ts)
-        db.session.flush()
-
-    # --- TeacherClass ---
-    tc = TeacherClass.query.filter_by(teacher_subject_id=ts.id, class_id=cls.id).first()
-    if not tc:
-        tc = TeacherClass(teacher_subject_id=ts.id, class_id=cls.id, subgroup=None)
-        db.session.add(tc)
-        db.session.flush()
-
-
-# ==============================================================================
-# JWT Helper Functions
-# ==============================================================================
-
-def generate_jwt_token(user: User, expires_in: int = 2592000) -> str:
-    """
-    Генерация JWT токена
-    
-    Args:
-        user: Пользователь
-        expires_in: Срок действия в секундах (по умолчанию 30 дней)
-    
-    Returns:
-        JWT токен
-    """
-    payload = {
-        "user_id": user.id,
-        "username": user.username,
-        "role": user.role,
-        "exp": datetime.utcnow() + timedelta(seconds=expires_in),
-        "iat": datetime.utcnow()
-    }
-    
-    return jwt.encode(
-        payload,
-        current_app.config["SECRET_KEY"],
-        algorithm="HS256"
-    )
-
-
-def verify_jwt_token(token: str) -> dict:
-    """
-    Проверка и декодирование JWT токена
-    
-    Args:
-        token: JWT токен
-    
-    Returns:
-        Декодированный payload или None если невалиден
-    """
+def _parse_desktop_version(v: str) -> tuple:
+    """Разбирает строку версии в кортеж целых чисел. При ошибке возвращает (0, 0, 0)."""
     try:
-        payload = jwt.decode(
-            token,
-            current_app.config["SECRET_KEY"],
-            algorithms=["HS256"]
-        )
-        return payload
-    except jwt.ExpiredSignatureError:
-        return None
-    except jwt.InvalidTokenError:
-        return None
-
-
-def require_jwt(f):
-    """Декоратор для проверки JWT токена"""
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        auth_header = request.headers.get("Authorization")
-        
-        if not auth_header:
-            return jsonify({"error": "Отсутствует токен авторизации"}), 401
-        
-        # Формат: "Bearer <token>"
-        parts = auth_header.split()
-        if len(parts) != 2 or parts[0].lower() != "bearer":
-            return jsonify({"error": "Неверный формат токена"}), 401
-        
-        token = parts[1]
-        payload = verify_jwt_token(token)
-        
-        if not payload:
-            return jsonify({"error": "Токен недействителен или истек"}), 401
-        
-        # Получаем пользователя
-        user = db.session.get(User, payload["user_id"])
-        if not user or not user.is_active:
-            return jsonify({"error": "Пользователь не найден или неактивен"}), 401
-        
-        # Передаем пользователя в функцию
-        request.current_user = user
-        return f(*args, **kwargs)
-    
-    return decorated_function
+        return tuple(int(x) for x in v.strip().split(".")[:3])
+    except Exception:
+        return (0, 0, 0)
 
 
 # ==============================================================================
@@ -265,7 +83,21 @@ def api_login():
     
     if not user.is_active:
         return jsonify({"error": "Учетная запись отключена"}), 403
-    
+
+    # Проверка версии десктоп-приложения
+    desktop_ver_str = request.headers.get("X-Desktop-Version", "").strip()
+    parsed_ver = _parse_desktop_version(desktop_ver_str) if desktop_ver_str else (0, 0, 0)
+    if parsed_ver < MIN_DESKTOP_VERSION:
+        min_ver_str = ".".join(str(x) for x in MIN_DESKTOP_VERSION)
+        return jsonify({
+            "error": (
+                f"Версия приложения устарела (у вас: {desktop_ver_str or 'не указана'}, "
+                f"требуется: {min_ver_str}). Пожалуйста, обновите Mektep Desktop."
+            ),
+            "update_required": True,
+            "min_version": min_ver_str,
+        }), 426
+
     # Генерируем токен
     expires_in = 2592000  # 30 дней
     token = generate_jwt_token(user, expires_in)
@@ -479,7 +311,7 @@ def api_lookup_school():
         return jsonify({"error": "Не указано название организации"}), 400
     
     # Python-side сравнение (SQLite lower() не поддерживает кириллицу)
-    school = _find_school_by_org_name(org_name)
+    school = find_school_by_org_name(org_name)
     
     if school:
         return jsonify({
@@ -568,7 +400,7 @@ def api_upload_report():
     
     if org_name:
         # Python-side сравнение (SQLite lower() не поддерживает кириллицу)
-        school = _find_school_by_org_name(org_name)
+        school = find_school_by_org_name(org_name)
         
         if not school:
             return jsonify({
@@ -621,7 +453,7 @@ def api_upload_report():
     analytics_json = json.dumps(analytics_payload, ensure_ascii=False) if analytics_payload else None
     
     # ===== Auto-create Class, Subject, TeacherSubject, TeacherClass =====
-    _auto_create_class_and_subject(
+    auto_create_class_and_subject(
         school_id=school_id,
         class_name=class_name,
         subject_name=subject_name,
@@ -839,7 +671,7 @@ def api_get_class_grades(class_name: str):
     period_number = int(request.args.get("period_number", 2))
     
     # Получаем все отчёты для этого класса (включая полугодовые для 2/4)
-    reports = _get_quarter_reports_api(user.school_id, period_number, class_name=class_name)
+    reports = get_quarter_reports_api(user.school_id, period_number, class_name=class_name)
     
     if not reports:
         return jsonify({
@@ -1037,7 +869,7 @@ def api_teacher_subject_report():
     period_number = int(request.args.get("period_number", 2))
     
     # Получаем отчёты текущего учителя за период (включая полугодовые для 2/4)
-    reports = _get_quarter_reports_api(user.school_id, period_number, teacher_id=user.id)
+    reports = get_quarter_reports_api(user.school_id, period_number, teacher_id=user.id)
     
     # Группируем по предмету → классу
     subjects_map = {}  # subject_name -> {class_name -> report}
@@ -1163,7 +995,7 @@ def api_teacher_class_teacher_report():
         cls_name = cls_obj.name
         
         # Все отчёты по этому классу за период (включая полугодовые для 2/4)
-        reports = _get_quarter_reports_api(user.school_id, period_number, class_name=cls_name)
+        reports = get_quarter_reports_api(user.school_id, period_number, class_name=cls_name)
         
         if not reports:
             continue
