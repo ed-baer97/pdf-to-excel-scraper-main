@@ -1,4 +1,4 @@
-# Project Structure
+![1774713216880](image/STRUCTURE/1774713216880.png)![1774713219344](image/STRUCTURE/1774713219344.png)![1774713229094](image/STRUCTURE/1774713229094.png)![1774713270645](image/STRUCTURE/1774713270645.png)# Project Structure
 
 Этот файл фиксирует текущую структуру целевых директорий для итерационного рефакторинга.
 

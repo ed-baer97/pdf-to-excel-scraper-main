@@ -8,5 +8,5 @@
 APP_NAME = "mektep-desktop"
 
 # TODO: обновляйте номер версии при каждом релизе.
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 

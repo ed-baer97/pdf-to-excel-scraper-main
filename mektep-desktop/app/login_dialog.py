@@ -69,7 +69,7 @@ class LoginDialog(QDialog):
     def init_ui(self):
         """Инициализация интерфейса"""
         self.setWindowTitle(self.translator.tr('login_title'))
-        self.setFixedSize(480, 550)
+        self.setFixedSize(480, 600)
         self.setModal(True)
         
         # Устанавливаем иконку окна
@@ -123,10 +123,10 @@ class LoginDialog(QDialog):
         title_label.setStyleSheet("color: #0d6efd; margin-bottom: 10px;")
         layout.addWidget(title_label)
         
-        subtitle_label = QLabel(self.translator.tr('login_subtitle'))
-        subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        subtitle_label.setStyleSheet("color: #6c757d; font-size: 13px;")
-        layout.addWidget(subtitle_label)
+        self.subtitle_label = QLabel(self.translator.tr('login_subtitle'))
+        self.subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.subtitle_label.setStyleSheet("color: #6c757d; font-size: 13px;")
+        layout.addWidget(self.subtitle_label)
         
         layout.addSpacing(20)
         
@@ -202,9 +202,35 @@ class LoginDialog(QDialog):
         version_label.setStyleSheet("color: #adb5bd; font-size: 11px; margin-bottom: 8px;")
         layout.addWidget(version_label)
         
+        # region agent log layout
+        self._card_ref = card
+        from PyQt6.QtCore import QTimer as _QT
+        _QT.singleShot(300, self._log_layout_sizes)
+        # endregion
+
         # Применение стилей
         self.apply_styles()
     
+    def _log_layout_sizes(self):
+        # region agent log layout
+        import json, time as _t
+        _data = {
+            "dialog_h": self.height(), "dialog_w": self.width(),
+            "card_actual_h": self._card_ref.height(),
+            "card_sizeHint_h": self._card_ref.sizeHint().height(),
+            "card_minSizeHint_h": self._card_ref.minimumSizeHint().height(),
+            "username_input_h": self.username_input.height(),
+            "password_input_h": self.password_input.height(),
+            "login_btn_h": self.login_btn.height(),
+            "status_label_h": self.status_label.height(),
+            "remember_h": self.remember_checkbox.height(),
+        }
+        _p = {"sessionId":"2263ed","hypothesisId":"E,F,G","location":"login_dialog.py:_log_layout_sizes","message":"layout sizes POST-FIX","data":_data,"timestamp":int(_t.time()*1000)}
+        try:
+            with open("debug-2263ed.log","a",encoding="utf-8") as _f: _f.write(json.dumps(_p,ensure_ascii=False)+"\n")
+        except Exception: pass
+        # endregion
+
     def apply_styles(self):
         """Применение стилей к диалогу"""
         self.setStyleSheet("""
@@ -489,10 +515,26 @@ class LoginDialog(QDialog):
         
         # Обновляем интерфейс
         self.setWindowTitle(self.translator.tr('login_title'))
-        
+        self.subtitle_label.setText(self.translator.tr('login_subtitle'))
+
+        # region agent log
+        import json, time as _time
+        _all_labels = [(lbl.text(), lbl.objectName()) for lbl in self.findChildren(QLabel)]
+        _payload = {"sessionId":"2263ed","hypothesisId":"A,D","location":"login_dialog.py:switch_language","message":"switch_language called POST-FIX","data":{"new_lang":lang,"window_title":self.translator.tr('login_title'),"subtitle_text":self.subtitle_label.text(),"all_labels_found":_all_labels},"timestamp":int(_time.time()*1000)}
+        try:
+            with open("debug-2263ed.log","a",encoding="utf-8") as _f: _f.write(json.dumps(_payload,ensure_ascii=False)+"\n")
+        except Exception: pass
+        # endregion
+
         # Обновляем метки
         for label in self.findChildren(QLabel):
             text = label.text()
+            # region agent log
+            _upd = {"sessionId":"2263ed","hypothesisId":"A,D","location":"login_dialog.py:switch_language_loop","message":"label checked in loop","data":{"text":text,"ends_with_colon":text.endswith(":"),"lang":lang},"timestamp":int(_time.time()*1000)}
+            try:
+                with open("debug-2263ed.log","a",encoding="utf-8") as _f: _f.write(json.dumps(_upd,ensure_ascii=False)+"\n")
+            except Exception: pass
+            # endregion
             if text.endswith(":"):
                 key_text = text[:-1].strip()
                 if "Логин" in key_text or "Login" in key_text:
