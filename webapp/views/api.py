@@ -253,28 +253,58 @@ def api_my_school():
     user = request.current_user
     
     if not user.school_id:
-        return jsonify({
+        out = {
             "success": True,
             "school_id": None,
             "school_name": None,
-            "allow_cross_school_reports": True  # Без школы — не ограничиваем
-        }), 200
-    
+            "allow_cross_school_reports": True,
+        }
+        if user.role == Role.TEACHER.value:
+            tiin = (getattr(user, "iin", None) or "").strip()
+            out["expected_iin"] = tiin if tiin else None
+            out["iin_missing"] = not bool(tiin)
+        else:
+            out["expected_iin"] = None
+            out["iin_missing"] = False
+        return jsonify(out), 200
+
     school = db.session.get(School, user.school_id)
     if not school:
-        return jsonify({
+        out = {
             "success": True,
             "school_id": None,
             "school_name": None,
-            "allow_cross_school_reports": True
-        }), 200
+            "allow_cross_school_reports": True,
+        }
+        if user.role == Role.TEACHER.value:
+            tiin = (getattr(user, "iin", None) or "").strip()
+            out["expected_iin"] = tiin if tiin else None
+            out["iin_missing"] = not bool(tiin)
+        else:
+            out["expected_iin"] = None
+            out["iin_missing"] = False
+        return jsonify(out), 200
     
-    return jsonify({
+    payload = {
         "success": True,
         "school_id": school.id,
         "school_name": school.name,
-        "allow_cross_school_reports": school.allow_cross_school_reports
-    }), 200
+        "allow_cross_school_reports": school.allow_cross_school_reports,
+    }
+    # ИИН учителя для проверки логина mektep.edu.kz в десктопе
+    if user.role == Role.TEACHER.value:
+        tiin = (getattr(user, "iin", None) or "").strip()
+        if tiin:
+            payload["expected_iin"] = tiin
+            payload["iin_missing"] = False
+        else:
+            payload["expected_iin"] = None
+            payload["iin_missing"] = True
+    else:
+        payload["expected_iin"] = None
+        payload["iin_missing"] = False
+
+    return jsonify(payload), 200
 
 
 # ==============================================================================

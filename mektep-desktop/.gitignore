@@ -58,6 +58,7 @@ tmp/
 
 # Модули скрапера (копируются из корня при сборке через build.py)
 scrape_mektep.py
+iin_utils.py
 build_report.py
 build_word_report.py
 scraper_logger.py

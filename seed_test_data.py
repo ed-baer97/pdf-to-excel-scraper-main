@@ -33,8 +33,8 @@ SCHOOL_NAME = "Test"
 
 # Два демо-учителя (идемпотентно: при повторном запуске не дублируются)
 TEACHER_SEEDS = [
-    {"username": "test_teacher_math", "full_name": "Иванов Иван Иванович"},
-    {"username": "test_teacher_lang", "full_name": "Сидорова Мария Петровна"},
+    {"username": "test_teacher_math", "full_name": "Иванов Иван Иванович", "iin": "850101301234"},
+    {"username": "test_teacher_lang", "full_name": "Сидорова Мария Петровна", "iin": "900215401234"},
 ]
 TEACHER_PASSWORD = "TestDemo123!"
 
@@ -69,12 +69,17 @@ with app.app_context():
             if existing.role != Role.TEACHER.value:
                 print(f"ОШИБКА: {spec['username']} не учитель.")
                 sys.exit(1)
+            if not getattr(existing, "iin", None) and spec.get("iin"):
+                existing.iin = spec["iin"]
+                db.session.commit()
+                print(f"  ИИН обновлён для: {spec['username']}")
             teachers.append(existing)
             print(f"  Учитель уже есть: {spec['username']}")
             continue
         u = User(
             username=spec["username"],
             full_name=spec["full_name"],
+            iin=spec.get("iin"),
             role=Role.TEACHER.value,
             school_id=school.id,
             is_active=True,

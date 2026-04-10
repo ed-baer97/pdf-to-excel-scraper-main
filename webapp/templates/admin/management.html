@@ -69,13 +69,16 @@
           <h5>{{ _('teachers') }}</h5>
           <form class="row g-2 mb-3" method="post" action="{{ url_for('admin.create_teacher') }}">
             <input type="hidden" name="next_url">
-            <div class="col-4">
+            <div class="col-md-3">
               <input class="form-control" name="full_name" placeholder="{{ _('teacher_fio') }}" required>
             </div>
-            <div class="col-4">
+            <div class="col-md-3">
+              <input class="form-control" name="iin" inputmode="numeric" autocomplete="off" placeholder="{{ _('teacher_iin_placeholder') }}" maxlength="14" required title="{{ _('teacher_iin_title') }}">
+            </div>
+            <div class="col-md-3">
               <input class="form-control" name="username" placeholder="{{ _('teacher_login') }}" required>
             </div>
-            <div class="col-2">
+            <div class="col-md-2">
               <button class="btn btn-primary w-100">{{ _('add_btn') }}</button>
             </div>
           </form>
@@ -104,20 +107,21 @@
               <div id="acc-1-4" class="accordion-collapse collapse show" data-bs-parent="#teachersAccordion">
                 <div class="accordion-body p-0">
                   <table class="table table-sm table-hover mb-0">
-                    <thead class="table-light"><tr><th>{{ _('fio') }}</th><th>{{ _('login_col') }}</th><th class="text-end">{{ _('actions') }}</th></tr></thead>
+                    <thead class="table-light"><tr><th>{{ _('fio') }}</th><th>{{ _('teacher_iin_col') }}</th><th>{{ _('login_col') }}</th><th class="text-end">{{ _('actions') }}</th></tr></thead>
                     <tbody>
                       {% for t in teachers_by_accordion['1-4'] %}
                       <tr>
                         <td>{{ t.full_name or t.username }}</td>
+                        <td class="text-muted small">{% if t.iin %}****{{ t.iin[-4:] }}{% else %}—{% endif %}</td>
                         <td class="text-muted">{{ t.username }}</td>
                         <td class="text-end">
-                          <button class="btn btn-sm btn-outline-secondary me-1" onclick='editTeacherModal({{ t.id }}, {{ (t.full_name or t.username)|tojson }})'><i class="bi bi-pencil"></i></button>
+                          <button class="btn btn-sm btn-outline-secondary me-1" onclick='editTeacherModal({{ t.id }}, {{ (t.full_name or t.username)|tojson }}, {{ (t.iin or "")|tojson }})'><i class="bi bi-pencil"></i></button>
                           <button class="btn btn-sm btn-outline-dark me-1" onclick='showPasswordModal({{ t.id }}, {{ t.username|tojson }})'><i class="bi bi-key"></i> {{ _('password_btn') }}</button>
                           <button class="btn btn-sm btn-outline-danger" onclick='confirmDeleteTeacher({{ t.id }}, {{ (t.full_name or t.username)|tojson }})'><i class="bi bi-trash"></i></button>
                         </td>
                       </tr>
                       {% else %}
-                      <tr><td colspan="3" class="text-muted">{{ _('not_assigned') }}</td></tr>
+                      <tr><td colspan="4" class="text-muted">{{ _('not_assigned') }}</td></tr>
                       {% endfor %}
                     </tbody>
                   </table>
@@ -133,20 +137,21 @@
               <div id="acc-5-9" class="accordion-collapse collapse" data-bs-parent="#teachersAccordion">
                 <div class="accordion-body p-0">
                   <table class="table table-sm table-hover mb-0">
-                    <thead class="table-light"><tr><th>{{ _('fio') }}</th><th>{{ _('login_col') }}</th><th class="text-end">{{ _('actions') }}</th></tr></thead>
+                    <thead class="table-light"><tr><th>{{ _('fio') }}</th><th>{{ _('teacher_iin_col') }}</th><th>{{ _('login_col') }}</th><th class="text-end">{{ _('actions') }}</th></tr></thead>
                     <tbody>
                       {% for t in teachers_by_accordion['5-9'] %}
                       <tr>
                         <td>{{ t.full_name or t.username }}</td>
+                        <td class="text-muted small">{% if t.iin %}****{{ t.iin[-4:] }}{% else %}—{% endif %}</td>
                         <td class="text-muted">{{ t.username }}</td>
                         <td class="text-end">
-                          <button class="btn btn-sm btn-outline-secondary me-1" onclick='editTeacherModal({{ t.id }}, {{ (t.full_name or t.username)|tojson }})'><i class="bi bi-pencil"></i></button>
+                          <button class="btn btn-sm btn-outline-secondary me-1" onclick='editTeacherModal({{ t.id }}, {{ (t.full_name or t.username)|tojson }}, {{ (t.iin or "")|tojson }})'><i class="bi bi-pencil"></i></button>
                           <button class="btn btn-sm btn-outline-dark me-1" onclick='showPasswordModal({{ t.id }}, {{ t.username|tojson }})'><i class="bi bi-key"></i> {{ _('password_btn') }}</button>
                           <button class="btn btn-sm btn-outline-danger" onclick='confirmDeleteTeacher({{ t.id }}, {{ (t.full_name or t.username)|tojson }})'><i class="bi bi-trash"></i></button>
                         </td>
                       </tr>
                       {% else %}
-                      <tr><td colspan="3" class="text-muted">{{ _('not_assigned') }}</td></tr>
+                      <tr><td colspan="4" class="text-muted">{{ _('not_assigned') }}</td></tr>
                       {% endfor %}
                     </tbody>
                   </table>
@@ -162,20 +167,21 @@
               <div id="acc-10-11" class="accordion-collapse collapse" data-bs-parent="#teachersAccordion">
                 <div class="accordion-body p-0">
                   <table class="table table-sm table-hover mb-0">
-                    <thead class="table-light"><tr><th>{{ _('fio') }}</th><th>{{ _('login_col') }}</th><th class="text-end">{{ _('actions') }}</th></tr></thead>
+                    <thead class="table-light"><tr><th>{{ _('fio') }}</th><th>{{ _('teacher_iin_col') }}</th><th>{{ _('login_col') }}</th><th class="text-end">{{ _('actions') }}</th></tr></thead>
                     <tbody>
                       {% for t in teachers_by_accordion['10-11'] %}
                       <tr>
                         <td>{{ t.full_name or t.username }}</td>
+                        <td class="text-muted small">{% if t.iin %}****{{ t.iin[-4:] }}{% else %}—{% endif %}</td>
                         <td class="text-muted">{{ t.username }}</td>
                         <td class="text-end">
-                          <button class="btn btn-sm btn-outline-secondary me-1" onclick='editTeacherModal({{ t.id }}, {{ (t.full_name or t.username)|tojson }})'><i class="bi bi-pencil"></i></button>
+                          <button class="btn btn-sm btn-outline-secondary me-1" onclick='editTeacherModal({{ t.id }}, {{ (t.full_name or t.username)|tojson }}, {{ (t.iin or "")|tojson }})'><i class="bi bi-pencil"></i></button>
                           <button class="btn btn-sm btn-outline-dark me-1" onclick='showPasswordModal({{ t.id }}, {{ t.username|tojson }})'><i class="bi bi-key"></i> {{ _('password_btn') }}</button>
                           <button class="btn btn-sm btn-outline-danger" onclick='confirmDeleteTeacher({{ t.id }}, {{ (t.full_name or t.username)|tojson }})'><i class="bi bi-trash"></i></button>
                         </td>
                       </tr>
                       {% else %}
-                      <tr><td colspan="3" class="text-muted">{{ _('not_assigned') }}</td></tr>
+                      <tr><td colspan="4" class="text-muted">{{ _('not_assigned') }}</td></tr>
                       {% endfor %}
                     </tbody>
                   </table>
@@ -191,20 +197,21 @@
               <div id="acc-no-leadership" class="accordion-collapse collapse" data-bs-parent="#teachersAccordion">
                 <div class="accordion-body p-0">
                   <table class="table table-sm table-hover mb-0">
-                    <thead class="table-light"><tr><th>{{ _('fio') }}</th><th>{{ _('login_col') }}</th><th class="text-end">{{ _('actions') }}</th></tr></thead>
+                    <thead class="table-light"><tr><th>{{ _('fio') }}</th><th>{{ _('teacher_iin_col') }}</th><th>{{ _('login_col') }}</th><th class="text-end">{{ _('actions') }}</th></tr></thead>
                     <tbody>
                       {% for t in teachers_by_accordion['no_leadership'] %}
                       <tr>
                         <td>{{ t.full_name or t.username }}</td>
+                        <td class="text-muted small">{% if t.iin %}****{{ t.iin[-4:] }}{% else %}—{% endif %}</td>
                         <td class="text-muted">{{ t.username }}</td>
                         <td class="text-end">
-                          <button class="btn btn-sm btn-outline-secondary me-1" onclick='editTeacherModal({{ t.id }}, {{ (t.full_name or t.username)|tojson }})'><i class="bi bi-pencil"></i></button>
+                          <button class="btn btn-sm btn-outline-secondary me-1" onclick='editTeacherModal({{ t.id }}, {{ (t.full_name or t.username)|tojson }}, {{ (t.iin or "")|tojson }})'><i class="bi bi-pencil"></i></button>
                           <button class="btn btn-sm btn-outline-dark me-1" onclick='showPasswordModal({{ t.id }}, {{ t.username|tojson }})'><i class="bi bi-key"></i> {{ _('password_btn') }}</button>
                           <button class="btn btn-sm btn-outline-danger" onclick='confirmDeleteTeacher({{ t.id }}, {{ (t.full_name or t.username)|tojson }})'><i class="bi bi-trash"></i></button>
                         </td>
                       </tr>
                       {% else %}
-                      <tr><td colspan="3" class="text-muted">—</td></tr>
+                      <tr><td colspan="4" class="text-muted">—</td></tr>
                       {% endfor %}
                     </tbody>
                   </table>
@@ -402,7 +409,7 @@
     <div class="modal-dialog">
       <div class="modal-content">
         <div class="modal-header">
-          <h5 class="modal-title">{{ _('edit_teacher_fio') }}</h5>
+          <h5 class="modal-title">{{ _('edit_teacher_title') }}</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <form id="editTeacherForm" method="post">
@@ -411,6 +418,10 @@
             <div class="mb-3">
               <label class="form-label">{{ _('fio_label') }}</label>
               <input type="text" class="form-control" name="full_name" id="editTeacherFullName" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">{{ _('teacher_iin_label') }}</label>
+              <input type="text" class="form-control" name="iin" id="editTeacherIin" inputmode="numeric" maxlength="14" required title="{{ _('teacher_iin_title') }}">
             </div>
           </div>
           <div class="modal-footer">
@@ -470,9 +481,10 @@
     }
 
     // Edit Teacher modal
-    function editTeacherModal(teacherId, fullName) {
+    function editTeacherModal(teacherId, fullName, iin) {
       document.getElementById('editTeacherForm').action = `/admin/teachers/${teacherId}/edit`;
       document.getElementById('editTeacherFullName').value = fullName;
+      document.getElementById('editTeacherIin').value = iin || '';
       const modal = new bootstrap.Modal(document.getElementById('editTeacherModal'));
       modal.show();
     }

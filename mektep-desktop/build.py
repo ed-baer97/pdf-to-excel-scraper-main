@@ -27,6 +27,7 @@ SPEC_ONEFILE = SCRIPT_DIR / "mektep_desktop_onefile.spec"
 # Модули скрапера, которые живут в корне проекта и нужны десктопу
 SCRAPER_MODULES = [
     "scrape_mektep.py",
+    "iin_utils.py",
     "build_report.py",
     "build_word_report.py",
     "scraper_logger.py",

@@ -1,5 +1,12 @@
-from flask import Flask, request, session
+import sys
 from pathlib import Path
+
+# Корень репозитория в sys.path — для импорта iin_utils из корня.
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from flask import Flask, request, session
 
 from .config import get_config
 from .extensions import db, login_manager, migrate
@@ -93,6 +100,15 @@ def create_app(config_object=None) -> Flask:
                     return col in columns
                 except Exception:
                     return False
+
+            # users.iin (ИИН для mektep.edu.kz)
+            if not _has_column("users", "iin"):
+                db.session.execute(text("ALTER TABLE users ADD COLUMN iin VARCHAR(12)"))
+                try:
+                    db.session.execute(text("CREATE INDEX ix_users_iin ON users (iin)"))
+                except Exception:
+                    pass
+                db.session.commit()
 
             # users.fs_teacher_seq
             if not _has_column("users", "fs_teacher_seq"):

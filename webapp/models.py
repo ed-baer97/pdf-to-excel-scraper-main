@@ -57,6 +57,8 @@ class User(db.Model, UserMixin):
     # Some older DBs in this repo already have full_name as NOT NULL.
     # Keep it required in the model, but we auto-fill it when creating users.
     full_name = db.Column(db.String(255), nullable=False, default="")
+    # ИИН (ЖСН) для проверки логина mektep.edu.kz; 12 цифр, хранится нормализованно.
+    iin = db.Column(db.String(12), nullable=True, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
     # For “admin can see password” requirement: store encrypted initial password.
     password_enc = db.Column(db.LargeBinary, nullable=True)

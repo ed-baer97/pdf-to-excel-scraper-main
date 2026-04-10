@@ -19,7 +19,7 @@ from celery import shared_task
 from celery.utils.log import get_task_logger
 
 from .extensions import db
-from .models import ReportFile, ScrapeJob, ScrapeJobStatus
+from .models import ReportFile, Role, ScrapeJob, ScrapeJobStatus, School, User
 
 logger = get_task_logger(__name__)
 
@@ -87,40 +87,88 @@ def run_scrape_task(
         dict with success status and report count
     """
     from flask import current_app
-    
+
+    project_root = Path(__file__).parent.parent
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+    from iin_utils import normalize_kz_iin
+
     job: ScrapeJob | None = db.session.get(ScrapeJob, job_id)
     if not job:
         logger.error(f"Job {job_id} not found")
         return {"success": False, "error": "Job not found"}
-    
+
+    teacher_u: User | None = db.session.get(User, job.teacher_id)
+    if not teacher_u:
+        job.status = ScrapeJobStatus.FAILED.value
+        job.error = "Учитель не найден"
+        job.finished_at = datetime.utcnow()
+        db.session.commit()
+        return {"success": False, "error": "Teacher not found"}
+    tiin = (getattr(teacher_u, "iin", None) or "").strip()
+    if not tiin:
+        job.status = ScrapeJobStatus.FAILED.value
+        job.error = "В карточке учителя не указан ИИН"
+        job.finished_at = datetime.utcnow()
+        db.session.commit()
+        return {"success": False, "error": job.error}
+    login_digits = normalize_kz_iin(login)
+    if not login_digits or login_digits != tiin:
+        msg = "Логин mektep.edu.kz должен совпадать с ИИН учителя (12 цифр)."
+        job.status = ScrapeJobStatus.FAILED.value
+        job.error = msg
+        job.finished_at = datetime.utcnow()
+        db.session.commit()
+        return {"success": False, "error": msg}
+
     try:
         # Mark as running
         job.status = ScrapeJobStatus.RUNNING.value
         job.started_at = datetime.utcnow()
         job.celery_task_id = self.request.id
         db.session.commit()
-        
+
         logger.info(f"Starting scrape job {job_id} (task {self.request.id})")
-        
-        # Build command
-        project_root = Path(__file__).parent.parent
+
         scraper_path = project_root / "scrape_mektep.py"
-        
-        env = os.environ.copy()
+        out_path = Path(output_dir)
+        progress_file = out_path / "progress.json"
+        pc = period_code or job.period_code or "2"
+
+        env = dict(os.environ)
         env["MEKTEP_LOGIN"] = login
         env["MEKTEP_PASSWORD"] = password
-        env["MEKTEP_OUTPUT_DIR"] = output_dir
         env["MEKTEP_LANG"] = lang
+        env["MEKTEP_PERIOD"] = str(pc).strip()
+        env["MEKTEP_ALL"] = "1"
         env["PYTHONUNBUFFERED"] = "1"
-        
-        if period_code:
-            env["MEKTEP_PERIOD"] = period_code
-        
+        env["PROGRESS_FILE"] = str(progress_file)
+
         if school_index:
             env["MEKTEP_SCHOOL_INDEX"] = school_index
-        
-        # Run scraper
-        cmd = [sys.executable, str(scraper_path)]
+
+        school_obj = db.session.get(School, job.school_id)
+        if school_obj and not school_obj.allow_cross_school_reports:
+            env["MEKTEP_EXPECTED_SCHOOL"] = school_obj.name
+            if getattr(teacher_u, "iin", None) and str(teacher_u.iin).strip():
+                env["MEKTEP_EXPECTED_IIN"] = str(teacher_u.iin).strip()
+
+        cmd = [
+            sys.executable,
+            str(scraper_path),
+            "--headless",
+            "1",
+            "--slowmo",
+            "0",
+            "--lang",
+            lang,
+            "--period",
+            str(pc).strip(),
+            "--all",
+            "1",
+            "--out",
+            str(out_path),
+        ]
         
         process = subprocess.Popen(
             cmd,
@@ -174,7 +222,20 @@ def run_scrape_task(
             db.session.commit()
             
             return {"success": False, "error": error_msg}
-        
+
+        from .scraper_runner import _check_org_name_allowed
+
+        app = current_app._get_current_object()
+        out_p = Path(output_dir)
+        org_err = _check_org_name_allowed(app, job, out_p)
+        if org_err:
+            job.status = ScrapeJobStatus.FAILED.value
+            job.error = org_err
+            job.finished_at = datetime.utcnow()
+            job.progress_message = org_err
+            db.session.commit()
+            return {"success": False, "error": org_err}
+
         # Collect reports
         reports_dir = Path(output_dir) / "reports"
         if not reports_dir.exists():

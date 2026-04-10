@@ -25,7 +25,16 @@ from ..services.admin_dashboard import (
 )
 from ..services.auth_guards import admin_or_superadmin_required as admin_required
 
+from iin_utils import normalize_kz_iin
+
 bp = Blueprint("admin", __name__, url_prefix="/admin")
+
+
+def _iin_taken_by_other_teacher(school_id: int, iin_norm: str, exclude_id: int | None = None) -> bool:
+    q = User.query.filter_by(role=Role.TEACHER.value, school_id=school_id, iin=iin_norm)
+    if exclude_id is not None:
+        q = q.filter(User.id != exclude_id)
+    return q.first() is not None
 
 
 def _redirect_back(fallback_url: str):
@@ -124,6 +133,7 @@ def class_metrics_charts():
 def create_teacher():
     username = request.form.get("username", "").strip()
     full_name = request.form.get("full_name", "").strip()
+    iin_raw = request.form.get("iin", "").strip()
     if not username:
         flash("Логин учителя обязателен.", "danger")
         return redirect_back(url_for("admin.management") + "#teachers-tab")
@@ -131,8 +141,23 @@ def create_teacher():
         flash("Такой логин уже существует.", "danger")
         return redirect_back(url_for("admin.management") + "#teachers-tab")
 
+    iin_norm = normalize_kz_iin(iin_raw) if iin_raw else None
+    if not iin_norm:
+        flash("Укажите корректный ИИН (ЖСН): 12 цифр — тот же номер, что для входа на mektep.edu.kz.", "danger")
+        return redirect_back(url_for("admin.management") + "#teachers-tab")
+    if _iin_taken_by_other_teacher(current_user.school_id, iin_norm):
+        flash("Этот ИИН уже привязан к другому учителю в школе.", "danger")
+        return redirect_back(url_for("admin.management") + "#teachers-tab")
+
     pw = secrets.token_urlsafe(8)
-    u = User(username=username, full_name=full_name or username, role=Role.TEACHER.value, school_id=current_user.school_id, is_active=True)
+    u = User(
+        username=username,
+        full_name=full_name or username,
+        iin=iin_norm,
+        role=Role.TEACHER.value,
+        school_id=current_user.school_id,
+        is_active=True,
+    )
     # Assign per-school sequential number for filesystem paths (teacher_1, teacher_2, ...)
     max_seq = (
         db.session.query(func.max(User.fs_teacher_seq))
@@ -185,6 +210,12 @@ def import_teachers():
     fio_idx = header_map["фио"]
     login_idx = header_map["логин"]
     password_idx = header_map["пароль"]
+    iin_idx = header_map.get("иин")
+    if iin_idx is None:
+        iin_idx = header_map.get("жсн")
+    if iin_idx is None:
+        flash("В Excel нужен столбец «ИИН» или «ЖСН» (12 цифр).", "danger")
+        return _redirect_back(url_for("admin.management") + "#teachers-tab")
 
     max_seq = (
         db.session.query(func.max(User.fs_teacher_seq))
@@ -201,16 +232,28 @@ def import_teachers():
         full_name_raw = row[fio_idx] if fio_idx < len(row) else None
         username_raw = row[login_idx] if login_idx < len(row) else None
         password_raw = row[password_idx] if password_idx < len(row) else None
+        iin_raw = None
+        if iin_idx is not None and iin_idx < len(row):
+            iin_raw = row[iin_idx]
 
         full_name = str(full_name_raw).strip() if full_name_raw is not None else ""
         username = str(username_raw).strip() if username_raw is not None else ""
         password = str(password_raw).strip() if password_raw is not None else ""
+        iin_norm = normalize_kz_iin(str(iin_raw).strip() if iin_raw is not None else "") if iin_raw is not None else None
 
         # Пропускаем полностью пустые строки.
         if not full_name and not username and not password:
             continue
 
         if not username or not password:
+            skipped += 1
+            continue
+
+        if not iin_norm:
+            skipped += 1
+            continue
+
+        if _iin_taken_by_other_teacher(current_user.school_id, iin_norm):
             skipped += 1
             continue
 
@@ -227,6 +270,7 @@ def import_teachers():
         u = User(
             username=username,
             full_name=full_name or username,
+            iin=iin_norm,
             role=Role.TEACHER.value,
             school_id=current_user.school_id,
             is_active=True,
@@ -252,8 +296,8 @@ def download_teachers_import_template():
     wb = Workbook()
     ws = wb.active
     ws.title = "Шаблон"
-    ws.append(["ФИО", "логин", "пароль"])
-    ws.append(["Иванов Иван Иванович", "ivanov_i_i", "TempPass123"])
+    ws.append(["ФИО", "ИИН", "логин", "пароль"])
+    ws.append(["Иванов Иван Иванович", "850101300123", "ivanov_i_i", "TempPass123"])
 
     output = BytesIO()
     wb.save(output)
@@ -300,7 +344,7 @@ def update_teacher_password(user_id: int):
 @bp.post("/teachers/<int:user_id>/edit")
 @admin_required
 def edit_teacher(user_id: int):
-    """Редактирование ФИО учителя."""
+    """Редактирование ФИО и ИИН учителя."""
     u = db.session.get(User, user_id)
     if not u or u.role != Role.TEACHER.value or u.school_id != current_user.school_id:
         flash("Учитель не найден.", "danger")
@@ -309,9 +353,18 @@ def edit_teacher(user_id: int):
     if not full_name:
         flash("ФИО не может быть пустым.", "danger")
         return _redirect_back(url_for("admin.management") + "#teachers-tab")
+    iin_raw = request.form.get("iin", "").strip()
+    iin_norm = normalize_kz_iin(iin_raw) if iin_raw else None
+    if not iin_norm:
+        flash("Укажите корректный ИИН (ЖСН): 12 цифр.", "danger")
+        return _redirect_back(url_for("admin.management") + "#teachers-tab")
+    if _iin_taken_by_other_teacher(current_user.school_id, iin_norm, exclude_id=u.id):
+        flash("Этот ИИН уже привязан к другому учителю.", "danger")
+        return _redirect_back(url_for("admin.management") + "#teachers-tab")
     u.full_name = full_name
+    u.iin = iin_norm
     db.session.commit()
-    flash(f'ФИО обновлено: "{full_name}".', "success")
+    flash(f'Данные учителя обновлены: «{full_name}».', "success")
     return _redirect_back(url_for("admin.management") + "#teachers-tab")
 
 

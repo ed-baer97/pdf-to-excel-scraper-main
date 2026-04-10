@@ -21,6 +21,7 @@ from .report_pipeline.progress_monitor import (
 )
 from .report_pipeline.report_finalization import ReportFinalizer
 from .report_pipeline.run_environment import (
+    apply_expected_iin_policy,
     apply_expected_school_policy,
     apply_scraper_env,
     cleanup_stale_output_artifacts,
@@ -116,6 +117,11 @@ class ScraperThread(QThread):
                 templates_dir,
             )
             apply_expected_school_policy(self.api_client)
+            iin_err = apply_expected_iin_policy(self.api_client, self.login)
+            if iin_err:
+                self.error.emit(iin_err)
+                self.finished.emit(False, [])
+                return
 
             self.progress.emit(5, "Инициализация...")
             setup_playwright_browsers_path_if_frozen()
@@ -206,6 +212,12 @@ class ScraperThread(QThread):
                 self.error.emit(
                     "Организация на mektep.edu.kz не совпадает с вашей школой. "
                     "Создание отчётов для других школ запрещено администратором."
+                )
+                self.finished.emit(False, [])
+            elif self._scraper_result == 6:
+                self.error.emit(
+                    "Логин для mektep.edu.kz должен совпадать с вашим ИИН (12 цифр), "
+                    "указанным администратором в системе."
                 )
                 self.finished.emit(False, [])
             else:

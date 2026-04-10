@@ -94,6 +94,43 @@ def apply_scraper_env(
     os.environ["MEKTEP_TEMPLATES_DIR"] = str(templates_dir)
 
 
+def apply_expected_iin_policy(api_client: Optional["MektepAPIClient"], login: str) -> str | None:
+    """
+    Задаёт MEKTEP_EXPECTED_IIN из API. Возвращает текст ошибки, если логин не совпадает с ИИН.
+    """
+    if "MEKTEP_EXPECTED_IIN" in os.environ:
+        del os.environ["MEKTEP_EXPECTED_IIN"]
+
+    if not api_client or not api_client.is_authenticated():
+        return None
+
+    try:
+        school_info = api_client.get_my_school()
+        if not school_info.get("success"):
+            return None
+        if school_info.get("iin_missing"):
+            return (
+                "Администратор школы должен указать ваш ИИН (ЖСН) в карточке учителя — "
+                "тот же номер, что для входа на mektep.edu.kz."
+            )
+        expected = school_info.get("expected_iin")
+        if not expected or not str(expected).strip():
+            return None
+        digits = "".join(c for c in str(login) if c.isdigit())
+        exp = str(expected).strip()
+        if len(digits) != 12 or digits != exp:
+            return (
+                "Логин для mektep.edu.kz должен совпадать с вашим ИИН (12 цифр), "
+                "указанным администратором в системе."
+            )
+        os.environ["MEKTEP_EXPECTED_IIN"] = exp
+        print(f"[DEBUG] Защита: ожидаемый ИИН задан (проверка логина пройдена)")
+        return None
+    except Exception as e:
+        print(f"[DEBUG] Ошибка при проверке ИИН: {e}")
+        return None
+
+
 def apply_expected_school_policy(api_client: Optional["MektepAPIClient"]) -> None:
     """Защита от передачи аккаунта: MEKTEP_EXPECTED_SCHOOL из API при необходимости."""
     if "MEKTEP_EXPECTED_SCHOOL" in os.environ:

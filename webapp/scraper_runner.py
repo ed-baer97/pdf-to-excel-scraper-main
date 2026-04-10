@@ -1,16 +1,22 @@
 from __future__ import annotations
 
+import json
+import os
 import re
+import shutil
+import stat
 import subprocess
 import sys
 import threading
 import time
-import json
-import shutil
 from datetime import datetime
 from pathlib import Path
-import os
-import stat
+
+# Импорт iin_utils из корня репозитория
+_sr_root = Path(__file__).resolve().parent.parent
+if str(_sr_root) not in sys.path:
+    sys.path.insert(0, str(_sr_root))
+from iin_utils import normalize_kz_iin
 
 from flask import Flask
 
@@ -259,81 +265,6 @@ def _check_org_name_allowed(app: Flask, job: ScrapeJob, output_dir: Path) -> str
     return error_msg
 
 
-def _profile_names_match(scraped_name: str, user_full_name: str) -> bool:
-    """
-    Сравнение ФИО с mektep.edu.kz и full_name пользователя в БД.
-
-    Учитывает разницу в регистре, пробелах и обратный порядок слов
-    (например «Баер Эдуард» == «Эдуард Баер»).
-    """
-    a = " ".join(scraped_name.lower().split())
-    b = " ".join(user_full_name.lower().split())
-    if not a or not b:
-        return False
-    if a == b:
-        return True
-    # Проверка обратного порядка для двусловных имён (Фамилия Имя vs Имя Фамилия)
-    parts = b.split()
-    if len(parts) == 2:
-        b_reversed = f"{parts[1]} {parts[0]}"
-        if a == b_reversed:
-            return True
-    return False
-
-
-def _check_profile_name_allowed(app: Flask, job: ScrapeJob, output_dir: Path) -> str | None:
-    """
-    Проверка совпадения ФИО профиля на mektep.edu.kz и full_name учителя в БД.
-
-    Читает profile_name.txt (сохранён скрапером) и сравнивает с user.full_name.
-
-    Returns:
-        None если всё ок, строка с ошибкой если имена не совпадают.
-    """
-    teacher = db.session.get(User, job.teacher_id)
-    if not teacher:
-        app.logger.warning(f"Job {job.id}: teacher {job.teacher_id} not found, skipping profile check")
-        return None
-
-    if not teacher.full_name or not teacher.full_name.strip():
-        app.logger.warning(f"Job {job.id}: teacher full_name is empty, skipping profile check")
-        return None
-
-    profile_name_file = output_dir / "profile_name.txt"
-    if not profile_name_file.exists():
-        app.logger.error(f"Job {job.id}: profile_name.txt not found in {output_dir}, blocking job")
-        return (
-            "Не удалось прочитать имя профиля с mektep.edu.kz. "
-            "Скрапинг отклонён в целях безопасности."
-        )
-
-    scraped_profile = profile_name_file.read_text(encoding="utf-8").strip()
-    if not scraped_profile:
-        app.logger.error(f"Job {job.id}: profile_name.txt is empty, blocking job")
-        return (
-            "Имя профиля на mektep.edu.kz оказалось пустым. "
-            "Скрапинг отклонён в целях безопасности."
-        )
-
-    if _profile_names_match(scraped_profile, teacher.full_name):
-        app.logger.info(
-            f"Job {job.id}: profile name match OK — "
-            f"scraped='{scraped_profile}', user='{teacher.full_name}'"
-        )
-        return None
-
-    error_msg = (
-        f"Имя профиля на mektep.edu.kz «{scraped_profile}» "
-        f"не совпадает с вашим именем «{teacher.full_name}» в системе. "
-        f"Вход под чужим аккаунтом запрещён."
-    )
-    app.logger.warning(
-        f"Job {job.id}: profile name MISMATCH — "
-        f"scraped='{scraped_profile}', user='{teacher.full_name}'."
-    )
-    return error_msg
-
-
 def _monitor_progress(app: Flask, job_id: int, progress_file: Path):
     """Monitor progress file and update job progress in database."""
     with app.app_context():
@@ -460,6 +391,25 @@ def _run_scrape_job_internal(
             db.session.commit()
             return
 
+        login_digits = normalize_kz_iin(mektep_login)
+        tiin = (teacher.iin or "").strip() if getattr(teacher, "iin", None) else ""
+        if not tiin:
+            job.status = ScrapeJobStatus.FAILED.value
+            job.error = (
+                "В карточке учителя не указан ИИН. Обратитесь к администратору школы."
+            )
+            job.finished_at = datetime.utcnow()
+            db.session.commit()
+            return
+        if not login_digits or login_digits != tiin:
+            job.status = ScrapeJobStatus.FAILED.value
+            job.error = (
+                "Логин mektep.edu.kz должен совпадать с ИИН (12 цифр), указанным администратором."
+            )
+            job.finished_at = datetime.utcnow()
+            db.session.commit()
+            return
+
         # Filesystem layout (user requirement):
         # out/platform_uploads/
         #   school_{school_id}/
@@ -543,17 +493,17 @@ def _run_scrape_job_internal(
         if school_index:
             env["MEKTEP_SCHOOL_INDEX"] = school_index
 
-        # Защита от передачи аккаунта: передаём название школы и ФИО для проверки
+        # Защита от передачи аккаунта: школа + ИИН
         school_obj = db.session.get(School, job.school_id)
         teacher_obj = db.session.get(User, job.teacher_id)
         if school_obj and not school_obj.allow_cross_school_reports:
             env["MEKTEP_EXPECTED_SCHOOL"] = school_obj.name
             app.logger.info(f"Job {job_id}: org check enabled, expected school='{school_obj.name}'")
-            if teacher_obj and teacher_obj.full_name and teacher_obj.full_name.strip():
-                env["MEKTEP_EXPECTED_PROFILE_NAME"] = teacher_obj.full_name.strip()
-                app.logger.info(f"Job {job_id}: profile check enabled, expected name='{teacher_obj.full_name}'")
+            if teacher_obj and getattr(teacher_obj, "iin", None) and str(teacher_obj.iin).strip():
+                env["MEKTEP_EXPECTED_IIN"] = str(teacher_obj.iin).strip()
+                app.logger.info(f"Job {job_id}: IIN check enabled for teacher {teacher_obj.id}")
         else:
-            app.logger.info(f"Job {job_id}: cross-school reports allowed, org/profile check disabled")
+            app.logger.info(f"Job {job_id}: cross-school reports allowed, org/IIN check relaxed")
 
         cmd = [
             sys.executable,
@@ -834,20 +784,6 @@ def _run_scrape_job_internal(
             db.session.commit()
             # Удаляем файлы — отчёты для чужой школы не сохраняем
             _safe_rmtree(app, output_dir, job_id=job_id, reason="org_mismatch")
-            return
-
-        # ===== Проверка имени профиля (защита от передачи аккаунта) =====
-        # Сравнивает ФИО профиля на mektep.edu.kz с full_name учителя в БД.
-        profile_error = _check_profile_name_allowed(app, job, output_dir)
-        if profile_error:
-            job.status = ScrapeJobStatus.FAILED.value
-            job.error = profile_error
-            job.finished_at = datetime.utcnow()
-            job.progress_percent = 0
-            job.progress_message = profile_error
-            db.session.commit()
-            # Удаляем файлы — данные чужого аккаунта не сохраняем
-            _safe_rmtree(app, output_dir, job_id=job_id, reason="profile_mismatch")
             return
 
         # Collect and save reports - this is critical and must complete!

@@ -13,6 +13,8 @@ from sqlalchemy import func
 
 from ..extensions import db
 from ..models import Role, ReportFile, ScrapeJob, ScrapeJobStatus, School, User
+from iin_utils import normalize_kz_iin
+
 from ..scraper_runner import run_scrape_job
 from ..constants import PERIOD_MAP
 from ..redis_utils import ai_rate_limiter
@@ -132,6 +134,22 @@ def start_scrape():
         flash("Введите логин/пароль от mektep.edu.kz.", "danger")
         return redirect(url_for("teacher.dashboard"))
 
+    teacher_row: User | None = db.session.get(User, current_user.id)
+    if not teacher_row or not getattr(teacher_row, "iin", None) or not str(teacher_row.iin).strip():
+        flash(
+            "Администратор школы должен указать ваш ИИН (ЖСН) в карточке учителя — "
+            "тот же номер, что для входа на mektep.edu.kz.",
+            "danger",
+        )
+        return redirect(url_for("teacher.dashboard"))
+    login_digits = normalize_kz_iin(mektep_login)
+    if not login_digits or login_digits != teacher_row.iin.strip():
+        flash(
+            "Логин для mektep.edu.kz должен совпадать с вашим ИИН (12 цифр), указанным администратором.",
+            "danger",
+        )
+        return redirect(url_for("teacher.dashboard"))
+
     school: School | None = current_user.school
     if not school or not school.is_active:
         flash("Доступ школы закрыт.", "danger")
@@ -145,14 +163,13 @@ def start_scrape():
         return redirect(url_for("teacher.dashboard"))
 
     # Ensure teacher has per-school filesystem sequence (teacher_1, teacher_2, ...)
-    teacher: User | None = db.session.get(User, current_user.id)
-    if teacher and teacher.fs_teacher_seq is None:
+    if teacher_row and teacher_row.fs_teacher_seq is None:
         max_seq = (
             db.session.query(func.max(User.fs_teacher_seq))
             .filter(User.school_id == school.id, User.role == Role.TEACHER.value)
             .scalar()
         )
-        teacher.fs_teacher_seq = int(max_seq or 0) + 1
+        teacher_row.fs_teacher_seq = int(max_seq or 0) + 1
         db.session.commit()
 
     job = ScrapeJob(

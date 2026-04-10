@@ -411,7 +411,9 @@ class MektepAPIClient:
             dict: {
                 "success": bool,
                 "school_name": str | None,
-                "allow_cross_school_reports": bool
+                "allow_cross_school_reports": bool,
+                "expected_iin": str | None,  # 12 цифр для учителя
+                "iin_missing": bool,  # True если учителю не задан ИИН в БД
             }
         """
         if not self._is_token_valid():
