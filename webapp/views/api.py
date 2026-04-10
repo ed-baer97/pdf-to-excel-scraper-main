@@ -14,6 +14,7 @@ from ..extensions import db
 from ..models import (
     User, Role, ReportFile, GradeReport,
     Class, School,
+    Subject, TeacherClass, TeacherSubject,
 )
 import json
 from ..services.api_helpers import (

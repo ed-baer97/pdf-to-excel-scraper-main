@@ -34,6 +34,8 @@ class School(db.Model):
     # Разрешить создание отчётов для других школ (защита от распространения аккаунта)
     # False = только своя организация, True = любая организация
     allow_cross_school_reports = db.Column(db.Boolean, nullable=False, default=False)
+    # Лимит отчётов на период (четверть) для школы; 0 = без лимита, пока не задана бизнес-логика
+    reports_quota_per_period = db.Column(db.Integer, nullable=False, default=0)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
     users = db.relationship("User", back_populates="school")

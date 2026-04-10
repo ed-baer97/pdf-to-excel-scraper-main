@@ -111,6 +111,27 @@
                   </tr>
                 </thead>
                 <tbody>
+                  {% set ns = namespace(sum_5=0, sum_4=0, sum_3=0, sum_2=0, sum_total=0, quality_sum=0, quality_count=0, success_sum=0, success_count=0) %}
+                  {% for data in analytics_data %}
+                    {% if data.sor_list %}
+                      {% for sor in data.sor_list %}
+                        {% set ns.sum_5 = ns.sum_5 + (sor.count_5 or 0) %}
+                        {% set ns.sum_4 = ns.sum_4 + (sor.count_4 or 0) %}
+                        {% set ns.sum_3 = ns.sum_3 + (sor.count_3 or 0) %}
+                        {% set ns.sum_2 = ns.sum_2 + (sor.count_2 or 0) %}
+                        {% set ns.sum_total = ns.sum_total + (sor.total or 0) %}
+                        {% if sor.quality is not none %}
+                          {% set ns.quality_sum = ns.quality_sum + sor.quality %}
+                          {% set ns.quality_count = ns.quality_count + 1 %}
+                        {% endif %}
+                        {% if sor.success_rate is not none %}
+                          {% set ns.success_sum = ns.success_sum + sor.success_rate %}
+                          {% set ns.success_count = ns.success_count + 1 %}
+                        {% endif %}
+                      {% endfor %}
+                    {% endif %}
+                  {% endfor %}
+
                   {% for data in analytics_data %}
                     {% if data.sor_list %}
                       {% for sor in data.sor_list %}
@@ -122,8 +143,8 @@
                         <td class="text-center">{{ sor.count_3 }}</td>
                         <td class="text-center">{{ sor.count_2 }}</td>
                         <td class="text-center">{{ sor.total }}</td>
-                        <td class="text-center">{% if sor.quality is not none %}{{ sor.quality }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
-                        <td class="text-center">{% if sor.success_rate is not none %}{{ sor.success_rate }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+                        <td class="text-center metric-quality">{% if sor.quality is not none %}{{ sor.quality }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+                        <td class="text-center metric-success">{% if sor.success_rate is not none %}{{ sor.success_rate }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
                         {% if loop.first %}<td rowspan="{{ data.sor_list|length }}" class="align-middle">{{ data.teacher or '-' }}</td>{% endif %}
                       </tr>
                       {% endfor %}
@@ -132,11 +153,31 @@
                         <td><strong>{{ data.class_name }}</strong></td>
                         <td class="text-muted">-</td>
                         <td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td>
-                        <td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td>
+                        <td class="text-center">-</td><td class="text-center metric-quality">-</td><td class="text-center metric-success">-</td>
                         <td>{{ data.teacher or '-' }}</td>
                       </tr>
                     {% endif %}
                   {% endfor %}
+                  {% if ns.sum_total > 0 %}
+                    <tr class="table-primary fw-semibold analytics-total-row">
+                      <td colspan="7">Итого</td>
+                      <td class="text-center total-quality">
+                        {% if ns.quality_count > 0 %}
+                          {{ '%.1f'|format(ns.quality_sum / ns.quality_count) }}
+                        {% else %}
+                          <span class="text-muted">-</span>
+                        {% endif %}
+                      </td>
+                      <td class="text-center total-success">
+                        {% if ns.success_count > 0 %}
+                          {{ '%.1f'|format(ns.success_sum / ns.success_count) }}
+                        {% else %}
+                          <span class="text-muted">-</span>
+                        {% endif %}
+                      </td>
+                      <td></td>
+                    </tr>
+                  {% endif %}
                 </tbody>
               </table>
             </div>
@@ -153,7 +194,7 @@
       {% if subjects_data_soch %}
         {% for subject_name, analytics_data in subjects_data_soch.items() %}
         <div class="card shadow-sm mb-4 analytics-card" data-subject="{{ subject_name }}">
-          <div class="card-header bg-success text-white">
+          <div class="card-header bg-primary text-white">
             <h5 class="mb-0">{{ subject_name }}</h5>
           </div>
           <div class="card-body">
@@ -173,7 +214,16 @@
                   </tr>
                 </thead>
                 <tbody>
+                  {% set ns = namespace(quality_sum=0, quality_count=0, success_sum=0, success_count=0) %}
                   {% for data in analytics_data %}
+                  {% if data.quality is not none %}
+                    {% set ns.quality_sum = ns.quality_sum + data.quality %}
+                    {% set ns.quality_count = ns.quality_count + 1 %}
+                  {% endif %}
+                  {% if data.success_rate is not none %}
+                    {% set ns.success_sum = ns.success_sum + data.success_rate %}
+                    {% set ns.success_count = ns.success_count + 1 %}
+                  {% endif %}
                   <tr class="{% if not data.has_data %}table-secondary{% endif %} analytics-row" data-subject="{{ subject_name }}" data-class="{{ data.class_name }}" data-teacher="{{ data.teacher }}">
                     <td><strong>{{ data.class_name }}</strong></td>
                     <td class="text-center">{{ data.count_5 }}</td>
@@ -181,11 +231,31 @@
                     <td class="text-center">{{ data.count_3 }}</td>
                     <td class="text-center">{{ data.count_2 }}</td>
                     <td class="text-center">{{ data.total }}</td>
-                    <td class="text-center">{% if data.quality is not none %}{{ data.quality }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
-                    <td class="text-center">{% if data.success_rate is not none %}{{ data.success_rate }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+                    <td class="text-center metric-quality">{% if data.quality is not none %}{{ data.quality }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+                    <td class="text-center metric-success">{% if data.success_rate is not none %}{{ data.success_rate }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
                     <td>{{ data.teacher or '-' }}</td>
                   </tr>
                   {% endfor %}
+                  {% if ns.quality_count > 0 or ns.success_count > 0 %}
+                  <tr class="table-primary fw-semibold analytics-total-row">
+                    <td colspan="6">Итого</td>
+                    <td class="text-center total-quality">
+                      {% if ns.quality_count > 0 %}
+                        {{ '%.1f'|format(ns.quality_sum / ns.quality_count) }}
+                      {% else %}
+                        <span class="text-muted">-</span>
+                      {% endif %}
+                    </td>
+                    <td class="text-center total-success">
+                      {% if ns.success_count > 0 %}
+                        {{ '%.1f'|format(ns.success_sum / ns.success_count) }}
+                      {% else %}
+                        <span class="text-muted">-</span>
+                      {% endif %}
+                    </td>
+                    <td></td>
+                  </tr>
+                  {% endif %}
                 </tbody>
               </table>
             </div>
@@ -202,7 +272,7 @@
       {% if subjects_data_grades %}
         {% for subject_name, analytics_data in subjects_data_grades.items() %}
         <div class="card shadow-sm mb-4 analytics-card" data-subject="{{ subject_name }}">
-          <div class="card-header bg-warning text-dark">
+          <div class="card-header bg-primary text-white">
             <h5 class="mb-0">{{ subject_name }}</h5>
           </div>
           <div class="card-body">
@@ -222,7 +292,16 @@
                   </tr>
                 </thead>
                 <tbody>
+                  {% set ns = namespace(quality_sum=0, quality_count=0, success_sum=0, success_count=0) %}
                   {% for data in analytics_data %}
+                  {% if data.quality is not none %}
+                    {% set ns.quality_sum = ns.quality_sum + data.quality %}
+                    {% set ns.quality_count = ns.quality_count + 1 %}
+                  {% endif %}
+                  {% if data.success_rate is not none %}
+                    {% set ns.success_sum = ns.success_sum + data.success_rate %}
+                    {% set ns.success_count = ns.success_count + 1 %}
+                  {% endif %}
                   <tr class="{% if not data.has_data %}table-secondary{% endif %} analytics-row" data-subject="{{ subject_name }}" data-class="{{ data.class_name }}" data-teacher="{{ data.teacher }}">
                     <td><strong>{{ data.class_name }}</strong></td>
                     <td class="text-center">{{ data.count_5 }}</td>
@@ -230,11 +309,31 @@
                     <td class="text-center">{{ data.count_3 }}</td>
                     <td class="text-center">{{ data.count_2 }}</td>
                     <td class="text-center">{{ data.total }}</td>
-                    <td class="text-center">{% if data.quality is not none %}{{ data.quality }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
-                    <td class="text-center">{% if data.success_rate is not none %}{{ data.success_rate }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+                    <td class="text-center metric-quality">{% if data.quality is not none %}{{ data.quality }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+                    <td class="text-center metric-success">{% if data.success_rate is not none %}{{ data.success_rate }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
                     <td>{{ data.teacher or '-' }}</td>
                   </tr>
                   {% endfor %}
+                  {% if ns.quality_count > 0 or ns.success_count > 0 %}
+                  <tr class="table-primary fw-semibold analytics-total-row">
+                    <td colspan="6">Итого</td>
+                    <td class="text-center total-quality">
+                      {% if ns.quality_count > 0 %}
+                        {{ '%.1f'|format(ns.quality_sum / ns.quality_count) }}
+                      {% else %}
+                        <span class="text-muted">-</span>
+                      {% endif %}
+                    </td>
+                    <td class="text-center total-success">
+                      {% if ns.success_count > 0 %}
+                        {{ '%.1f'|format(ns.success_sum / ns.success_count) }}
+                      {% else %}
+                        <span class="text-muted">-</span>
+                      {% endif %}
+                    </td>
+                    <td></td>
+                  </tr>
+                  {% endif %}
                 </tbody>
               </table>
             </div>
@@ -310,6 +409,60 @@ document.addEventListener('DOMContentLoaded', function() {
         populateSelect(teacherSel, teachers, '{{ _("all_teachers") }}');
     }
 
+    function parseMetricValue(cell) {
+        if (!cell) return null;
+        const raw = (cell.textContent || '').trim().replace(',', '.');
+        if (!raw || raw === '-') return null;
+        const value = Number.parseFloat(raw);
+        return Number.isFinite(value) ? value : null;
+    }
+
+    function formatMetricValue(value) {
+        return value.toFixed(1);
+    }
+
+    function recalcCardTotal(card) {
+        const totalRow = card.querySelector('.analytics-total-row');
+        if (!totalRow) return;
+
+        const visibleRows = Array.from(card.querySelectorAll('.analytics-row'))
+            .filter(row => row.style.display !== 'none');
+
+        if (!visibleRows.length) {
+            totalRow.style.display = 'none';
+            return;
+        }
+
+        totalRow.style.display = '';
+
+        let qualitySum = 0, qualityCount = 0;
+        let successSum = 0, successCount = 0;
+
+        visibleRows.forEach(row => {
+            const qualityValue = parseMetricValue(row.querySelector('.metric-quality'));
+            if (qualityValue !== null) {
+                qualitySum += qualityValue;
+                qualityCount += 1;
+            }
+
+            const successValue = parseMetricValue(row.querySelector('.metric-success'));
+            if (successValue !== null) {
+                successSum += successValue;
+                successCount += 1;
+            }
+        });
+
+        const totalQualityCell = totalRow.querySelector('.total-quality');
+        if (totalQualityCell) {
+            totalQualityCell.textContent = qualityCount ? formatMetricValue(qualitySum / qualityCount) : '-';
+        }
+
+        const totalSuccessCell = totalRow.querySelector('.total-success');
+        if (totalSuccessCell) {
+            totalSuccessCell.textContent = successCount ? formatMetricValue(successSum / successCount) : '-';
+        }
+    }
+
     function applyFilters() {
         const ss = subjectSel.value, sc = classSel.value, st = teacherSel.value;
         const activeTab = document.querySelector('.tab-pane.active');
@@ -330,6 +483,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     if (show) hasVisible = true;
                 });
                 if (!hasVisible) showCard = false;
+                recalcCardTotal(card);
             }
             card.style.display = showCard ? '' : 'none';
         });

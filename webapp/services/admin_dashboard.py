@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 
 from ..extensions import db
@@ -103,3 +104,148 @@ def get_quarter_reports(school_id: int, period_number: int, **extra_filters):
         reports = _exclude_semester_subjects(reports, "quarter", period_number, school_id)
 
     return reports
+
+
+def class_name_sort_key(name: str) -> tuple:
+    """Sort key for class labels (e.g. 7А before 10Б)."""
+    grade_str = ""
+    for ch in str(name):
+        if ch.isdigit():
+            grade_str += ch
+        else:
+            break
+    grade_num = int(grade_str) if grade_str else 999
+    return (grade_num, name)
+
+
+def _accumulate_report_into_class_totals(
+    report: GradeReport,
+    active_class_names: set[str],
+    class_totals: dict,
+) -> None:
+    """Add one GradeReport row into per-class weighted sums."""
+    class_name = report.class_name
+    if class_name not in active_class_names:
+        return
+    if class_name not in class_totals:
+        class_totals[class_name] = {
+            "quality_weighted_sum": 0.0,
+            "success_weighted_sum": 0.0,
+            "weight_total": 0,
+        }
+    if not report.grades_json:
+        return
+    try:
+        grades_data = json.loads(report.grades_json)
+    except json.JSONDecodeError:
+        return
+    students = grades_data.get("students", []) or []
+    total = int(grades_data.get("total_students") or len(students) or 0)
+    if total <= 0:
+        return
+    quality = grades_data.get("quality_percent")
+    success = grades_data.get("success_percent")
+    if quality is None:
+        s5 = s4 = s3 = s2 = 0
+        for student in students:
+            grade = student.get("grade")
+            if grade == 5:
+                s5 += 1
+            elif grade == 4:
+                s4 += 1
+            elif grade == 3:
+                s3 += 1
+            elif grade is not None and grade <= 2:
+                s2 += 1
+        denom = s5 + s4 + s3 + s2
+        quality = round((s5 + s4) / denom * 100, 1) if denom else None
+        success = round((s5 + s4 + s3) / denom * 100, 1) if denom else None
+    if quality is None or success is None:
+        return
+    class_totals[class_name]["quality_weighted_sum"] += float(quality) * total
+    class_totals[class_name]["success_weighted_sum"] += float(success) * total
+    class_totals[class_name]["weight_total"] += total
+
+
+def aggregate_class_metrics(school_id: int, period_number: int, active_class_names: set[str]) -> dict:
+    """
+    Weighted quality/success per class and school-wide (same rules as class metrics charts).
+
+    Учитываются только отчёты, у которых class_name есть в списке классов школы (таблица Class).
+    Так удалённый из списка класс не отображается на диаграммах, даже если строки GradeReport
+    остались в базе (их можно удалить в «Обзоре оценок»).
+
+    Returns dict with:
+      class_totals, school_quality, school_success,
+      parallel (1-4, 5-9, 10-11): optional floats,
+      classes_with_data, total_weight, has_data.
+    """
+    reports = get_quarter_reports(school_id, period_number)
+    roster = set(active_class_names)
+    class_totals: dict = {}
+    for report in reports:
+        _accumulate_report_into_class_totals(report, roster, class_totals)
+
+    tw_q = tw_s = tw = 0.0
+    classes_with_data = 0
+    parallel_raw = {
+        "1-4": {"quality_weighted_sum": 0.0, "success_weighted_sum": 0.0, "weight_total": 0},
+        "5-9": {"quality_weighted_sum": 0.0, "success_weighted_sum": 0.0, "weight_total": 0},
+        "10-11": {"quality_weighted_sum": 0.0, "success_weighted_sum": 0.0, "weight_total": 0},
+    }
+    for class_name, agg in class_totals.items():
+        wt = agg["weight_total"]
+        if wt <= 0:
+            continue
+        classes_with_data += 1
+        tw_q += agg["quality_weighted_sum"]
+        tw_s += agg["success_weighted_sum"]
+        tw += wt
+        bucket = class_accordion_group(class_name)
+        if bucket in parallel_raw:
+            parallel_raw[bucket]["quality_weighted_sum"] += agg["quality_weighted_sum"]
+            parallel_raw[bucket]["success_weighted_sum"] += agg["success_weighted_sum"]
+            parallel_raw[bucket]["weight_total"] += wt
+
+    school_quality = round(tw_q / tw, 1) if tw > 0 else None
+    school_success = round(tw_s / tw, 1) if tw > 0 else None
+
+    parallel = {}
+    for key, pr in parallel_raw.items():
+        pwt = pr["weight_total"]
+        if pwt > 0:
+            parallel[key] = {
+                "quality": round(pr["quality_weighted_sum"] / pwt, 1),
+                "success": round(pr["success_weighted_sum"] / pwt, 1),
+            }
+        else:
+            parallel[key] = {"quality": None, "success": None}
+
+    return {
+        "class_totals": class_totals,
+        "school_quality": school_quality,
+        "school_success": school_success,
+        "parallel": parallel,
+        "classes_with_data": classes_with_data,
+        "total_weight": int(tw) if tw else 0,
+        "has_data": tw > 0,
+    }
+
+
+def chart_series_from_class_totals(class_totals: dict) -> tuple[list[str], list[float], list[float]]:
+    """Build sorted label/value lists for bar charts."""
+    labels = []
+    quality_values = []
+    success_values = []
+    for class_name in sorted(class_totals.keys(), key=class_name_sort_key):
+        weight_total = class_totals[class_name]["weight_total"]
+        if weight_total <= 0:
+            continue
+        labels.append(class_name)
+        quality_values.append(
+            round(class_totals[class_name]["quality_weighted_sum"] / weight_total, 1)
+        )
+        success_values.append(
+            round(class_totals[class_name]["success_weighted_sum"] / weight_total, 1)
+        )
+    return labels, quality_values, success_values

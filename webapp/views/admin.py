@@ -1,6 +1,7 @@
 import secrets
 import json
 from io import BytesIO
+from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, redirect, render_template, request, url_for, flash, send_file
 from flask_login import current_user
@@ -15,6 +16,8 @@ from ..security import decrypt_password, encrypt_password
 from ..constants import kazakh_sort_key, normalize_subject_name
 from ..services.admin_common import apply_analytics_filters, redirect_back
 from ..services.admin_dashboard import (
+    aggregate_class_metrics,
+    chart_series_from_class_totals,
     class_accordion_group,
     get_quarter_reports,
     student_class_summary_category,
@@ -30,18 +33,14 @@ def _redirect_back(fallback_url: str):
     return redirect_back(fallback_url)
 
 
-@bp.get("/")
-@admin_required
-def dashboard():
+def _management_list_context(school_id: int) -> dict:
+    """Teachers/classes lists and accordion buckets for the management page."""
     teachers = User.query.filter_by(
-        role=Role.TEACHER.value, school_id=current_user.school_id
+        role=Role.TEACHER.value, school_id=school_id
     ).all()
-    classes = Class.query.filter_by(
-        school_id=current_user.school_id
-    ).all()
+    classes = Class.query.filter_by(school_id=school_id).all()
     teachers.sort(key=lambda t: kazakh_sort_key(t.full_name or t.username))
     classes.sort(key=lambda c: kazakh_sort_key(c.name))
-    # Группировка учителей по аккордеонам (1-4, 5-9, 10-11, без руководства)
     teachers_by_accordion = {
         "1-4": [],
         "5-9": [],
@@ -51,7 +50,6 @@ def dashboard():
     for t in teachers:
         group = teacher_accordion_group(t, classes)
         teachers_by_accordion[group].append(t)
-    # Группировка классов по аккордеонам (1-4, 5-9, 10-11)
     classes_by_accordion = {
         "1-4": [],
         "5-9": [],
@@ -60,12 +58,64 @@ def dashboard():
     for cls in classes:
         group = class_accordion_group(cls.name)
         classes_by_accordion[group].append(cls)
+    return {
+        "teachers": teachers,
+        "classes": classes,
+        "teachers_by_accordion": teachers_by_accordion,
+        "classes_by_accordion": classes_by_accordion,
+    }
+
+
+@bp.get("/")
+@admin_required
+def dashboard():
+    period_number = int(request.args.get("period_number", 2))
+    if period_number < 1 or period_number > 4:
+        period_number = 2
+    classes = Class.query.filter_by(school_id=current_user.school_id).all()
+    active_class_names = {c.name for c in classes}
+    school_metrics = aggregate_class_metrics(current_user.school_id, period_number, active_class_names)
+    teachers_count = User.query.filter_by(
+        role=Role.TEACHER.value, school_id=current_user.school_id
+    ).count()
+    classes_count = Class.query.filter_by(school_id=current_user.school_id).count()
     return render_template(
         "admin/dashboard.html",
-        teachers=teachers,
-        teachers_by_accordion=teachers_by_accordion,
-        classes=classes,
-        classes_by_accordion=classes_by_accordion,
+        teachers_count=teachers_count,
+        classes_count=classes_count,
+        period_number=period_number,
+        school_metrics=school_metrics,
+    )
+
+
+@bp.get("/management")
+@admin_required
+def management():
+    """Учителя и классы: отдельная страница."""
+    return render_template(
+        "admin/management.html",
+        **_management_list_context(current_user.school_id),
+    )
+
+
+@bp.get("/class-metrics-charts")
+@admin_required
+def class_metrics_charts():
+    """Статистика качества и успеваемости по классам в виде диаграмм."""
+    period_number = int(request.args.get("period_number", 2))
+    active_class_names = {
+        row.name
+        for row in Class.query.filter_by(school_id=current_user.school_id).with_entities(Class.name).all()
+    }
+    agg = aggregate_class_metrics(current_user.school_id, period_number, active_class_names)
+    labels, quality_values, success_values = chart_series_from_class_totals(agg["class_totals"])
+
+    return render_template(
+        "admin/class_metrics_charts.html",
+        period_number=period_number,
+        labels=labels,
+        quality_values=quality_values,
+        success_values=success_values,
     )
 
 
@@ -76,10 +126,10 @@ def create_teacher():
     full_name = request.form.get("full_name", "").strip()
     if not username:
         flash("Логин учителя обязателен.", "danger")
-        return redirect_back(url_for("admin.dashboard"))
+        return redirect_back(url_for("admin.management") + "#teachers-tab")
     if User.query.filter_by(username=username).first():
         flash("Такой логин уже существует.", "danger")
-        return redirect_back(url_for("admin.dashboard"))
+        return redirect_back(url_for("admin.management") + "#teachers-tab")
 
     pw = secrets.token_urlsafe(8)
     u = User(username=username, full_name=full_name or username, role=Role.TEACHER.value, school_id=current_user.school_id, is_active=True)
@@ -95,7 +145,7 @@ def create_teacher():
     db.session.add(u)
     db.session.commit()
     flash(f"Учитель создан. Пароль: {pw}", "success")
-    return _redirect_back(url_for("admin.dashboard"))
+    return _redirect_back(url_for("admin.management") + "#teachers-tab")
 
 
 @bp.post("/teachers/import")
@@ -105,23 +155,23 @@ def import_teachers():
     file = request.files.get("file")
     if not file or not file.filename:
         flash("Выберите Excel-файл для импорта.", "danger")
-        return _redirect_back(url_for("admin.dashboard"))
+        return _redirect_back(url_for("admin.management") + "#teachers-tab")
 
     if not file.filename.lower().endswith(".xlsx"):
         flash("Поддерживается только формат .xlsx.", "danger")
-        return _redirect_back(url_for("admin.dashboard"))
+        return _redirect_back(url_for("admin.management") + "#teachers-tab")
 
     try:
         wb = load_workbook(file, data_only=True)
         ws = wb.active
     except Exception:
         flash("Не удалось прочитать Excel-файл.", "danger")
-        return _redirect_back(url_for("admin.dashboard"))
+        return _redirect_back(url_for("admin.management") + "#teachers-tab")
 
     header_cells = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)
     if not header_cells:
         flash("Файл пустой или не содержит заголовков.", "danger")
-        return _redirect_back(url_for("admin.dashboard"))
+        return _redirect_back(url_for("admin.management") + "#teachers-tab")
 
     headers = [str(v).strip().lower() if v is not None else "" for v in header_cells]
     header_map = {name: idx for idx, name in enumerate(headers)}
@@ -130,7 +180,7 @@ def import_teachers():
     missing = [h for h in required_headers if h not in header_map]
     if missing:
         flash(f"Не найдены обязательные столбцы: {', '.join(missing)}.", "danger")
-        return _redirect_back(url_for("admin.dashboard"))
+        return _redirect_back(url_for("admin.management") + "#teachers-tab")
 
     fio_idx = header_map["фио"]
     login_idx = header_map["логин"]
@@ -192,7 +242,7 @@ def import_teachers():
 
     category = "success" if created else "warning"
     flash(f"Импорт завершён: добавлено {created}, пропущено {skipped}.", category)
-    return _redirect_back(url_for("admin.dashboard"))
+    return _redirect_back(url_for("admin.management") + "#teachers-tab")
 
 
 @bp.get("/teachers/import/template")
@@ -235,16 +285,16 @@ def update_teacher_password(user_id: int):
     u = db.session.get(User, user_id)
     if not u or u.role != Role.TEACHER.value or u.school_id != current_user.school_id:
         flash("Пользователь не найден.", "danger")
-        return _redirect_back(url_for("admin.dashboard"))
+        return _redirect_back(url_for("admin.management") + "#teachers-tab")
     new_password = request.form.get("new_password", "").strip()
     if not new_password or len(new_password) < 4:
         flash("Пароль должен быть не менее 4 символов.", "danger")
-        return _redirect_back(url_for("admin.dashboard"))
+        return _redirect_back(url_for("admin.management") + "#teachers-tab")
     u.set_password(new_password)
     u.password_enc = encrypt_password(new_password, current_app.config.get("PASSWORD_ENC_KEY", ""))
     db.session.commit()
     flash(f"Пароль для {u.username} обновлен.", "success")
-    return _redirect_back(url_for("admin.dashboard"))
+    return _redirect_back(url_for("admin.management") + "#teachers-tab")
 
 
 @bp.post("/teachers/<int:user_id>/edit")
@@ -254,15 +304,15 @@ def edit_teacher(user_id: int):
     u = db.session.get(User, user_id)
     if not u or u.role != Role.TEACHER.value or u.school_id != current_user.school_id:
         flash("Учитель не найден.", "danger")
-        return _redirect_back(url_for("admin.dashboard"))
+        return _redirect_back(url_for("admin.management") + "#teachers-tab")
     full_name = request.form.get("full_name", "").strip()
     if not full_name:
         flash("ФИО не может быть пустым.", "danger")
-        return _redirect_back(url_for("admin.dashboard"))
+        return _redirect_back(url_for("admin.management") + "#teachers-tab")
     u.full_name = full_name
     db.session.commit()
     flash(f'ФИО обновлено: "{full_name}".', "success")
-    return _redirect_back(url_for("admin.dashboard"))
+    return _redirect_back(url_for("admin.management") + "#teachers-tab")
 
 
 @bp.post("/teachers/<int:user_id>/delete")
@@ -272,7 +322,7 @@ def delete_teacher(user_id: int):
     u = db.session.get(User, user_id)
     if not u or u.role != Role.TEACHER.value or u.school_id != current_user.school_id:
         flash("Учитель не найден.", "danger")
-        return _redirect_back(url_for("admin.dashboard"))
+        return _redirect_back(url_for("admin.management") + "#teachers-tab")
     
     teacher_name = u.full_name or u.username
     
@@ -292,7 +342,7 @@ def delete_teacher(user_id: int):
     db.session.delete(u)
     db.session.commit()
     flash(f'Учитель "{teacher_name}" удалён.', "success")
-    return _redirect_back(url_for("admin.dashboard"))
+    return _redirect_back(url_for("admin.management") + "#teachers-tab")
 
 
 # ==============================================================================
@@ -307,19 +357,19 @@ def create_class():
     class_teacher_id = request.form.get("class_teacher_id")
     if not name:
         flash("Название класса обязательно.", "danger")
-        return _redirect_back(url_for("admin.dashboard") + "#classes-tab")
+        return _redirect_back(url_for("admin.management") + "#classes-tab")
     # Проверяем дубликат
     existing = Class.query.filter_by(school_id=current_user.school_id, name=name).first()
     if existing:
         flash(f'Класс "{name}" уже существует.', "danger")
-        return _redirect_back(url_for("admin.dashboard") + "#classes-tab")
+        return _redirect_back(url_for("admin.management") + "#classes-tab")
     cls = Class(name=name, school_id=current_user.school_id)
     if class_teacher_id:
         cls.class_teacher_id = int(class_teacher_id)
     db.session.add(cls)
     db.session.commit()
     flash(f'Класс "{name}" создан.', "success")
-    return _redirect_back(url_for("admin.dashboard") + "#classes-tab")
+    return _redirect_back(url_for("admin.management") + "#classes-tab")
 
 
 @bp.post("/classes/<int:class_id>/edit")
@@ -329,34 +379,57 @@ def edit_class(class_id: int):
     cls = db.session.get(Class, class_id)
     if not cls or cls.school_id != current_user.school_id:
         flash("Класс не найден.", "danger")
-        return _redirect_back(url_for("admin.dashboard") + "#classes-tab")
+        return _redirect_back(url_for("admin.management") + "#classes-tab")
     name = request.form.get("name", "").strip()
     if name:
         # Проверяем, нет ли другого класса с таким именем
         dup = Class.query.filter_by(school_id=current_user.school_id, name=name).first()
         if dup and dup.id != class_id:
             flash(f'Класс "{name}" уже существует.', "danger")
-            return _redirect_back(url_for("admin.dashboard") + "#classes-tab")
+            return _redirect_back(url_for("admin.management") + "#classes-tab")
         cls.name = name
     class_teacher_id = request.form.get("class_teacher_id")
     cls.class_teacher_id = int(class_teacher_id) if class_teacher_id else None
     db.session.commit()
     flash(f'Класс "{cls.name}" обновлён.', "success")
-    return _redirect_back(url_for("admin.dashboard") + "#classes-tab")
+    return _redirect_back(url_for("admin.management") + "#classes-tab")
 
 
 @bp.post("/classes/<int:class_id>/delete")
 @admin_required
 def delete_class(class_id: int):
-    """Удаление класса"""
+    """Удаление класса из списка школы вместе с оценками (GradeReport) и записями файлов отчётов по этому классу."""
     cls = db.session.get(Class, class_id)
     if not cls or cls.school_id != current_user.school_id:
         flash("Класс не найден.", "danger")
-        return _redirect_back(url_for("admin.dashboard") + "#classes-tab")
+        return _redirect_back(url_for("admin.management") + "#classes-tab")
+    name = cls.name
+    school_id = cls.school_id
+
+    report_files = ReportFile.query.filter_by(school_id=school_id, class_name=name).all()
+    for rf in report_files:
+        for path_str in (rf.excel_path, rf.word_path):
+            if path_str:
+                try:
+                    Path(path_str).unlink(missing_ok=True)
+                except OSError:
+                    pass
+        db.session.delete(rf)
+
+    grades_n = GradeReport.query.filter_by(school_id=school_id, class_name=name).delete(
+        synchronize_session=False
+    )
+
+    # Явно удаляем связи учитель-предмет-класс, чтобы ORM не пытался
+    # проставлять class_id = NULL (поле NOT NULL в teacher_classes).
+    TeacherClass.query.filter_by(class_id=class_id).delete(synchronize_session=False)
     db.session.delete(cls)
     db.session.commit()
-    flash(f'Класс "{cls.name}" удалён.', "success")
-    return _redirect_back(url_for("admin.dashboard") + "#classes-tab")
+    flash(
+        f'Класс «{name}» удалён. Удалено записей оценок: {grades_n}, файлов отчётов: {len(report_files)}.',
+        "success",
+    )
+    return _redirect_back(url_for("admin.management") + "#classes-tab")
 
 
 # ==============================================================================
@@ -370,14 +443,21 @@ def grades_overview():
     
     # Параметры фильтрации (только четверти)
     period_number = int(request.args.get("period_number", 2))
+
+    active_class_names = {
+        row.name
+        for row in Class.query.filter_by(school_id=current_user.school_id).with_entities(Class.name).all()
+    }
     
     # Получаем отчёты (включая полугодовые для четвертей 2/4)
     reports = get_quarter_reports(current_user.school_id, period_number)
     
-    # Группируем по классам
+    # Группируем по классам (только классы из актуального списка школы — как на диаграммах)
     classes_data = {}
     for report in reports:
         class_name = report.class_name
+        if class_name not in active_class_names:
+            continue
         if class_name not in classes_data:
             classes_data[class_name] = {
                 "class_name": class_name,
@@ -426,6 +506,13 @@ def grades_class(class_name: str):
     
     # Параметры (только четверти)
     period_number = int(request.args.get("period_number", 2))
+
+    if not Class.query.filter_by(school_id=current_user.school_id, name=class_name).first():
+        flash(
+            "Этого класса нет в списке школы (возможно, он удалён). Данные в отчётах остаются в базе, но страница недоступна.",
+            "warning",
+        )
+        return redirect(url_for("admin.grades_overview", period_number=period_number))
     
     # Получаем все отчёты для этого класса (включая полугодовые для 2/4)
     reports = get_quarter_reports(current_user.school_id, period_number, class_name=class_name)
@@ -631,6 +718,10 @@ def analytics_home():
     
     # Получаем отчёты (включая полугодовые для четвертей 2/4)
     reports = get_quarter_reports(current_user.school_id, period_number)
+    active_class_names = {
+        row.name
+        for row in Class.query.filter_by(school_id=current_user.school_id).with_entities(Class.name).all()
+    }
     
     # Группируем по предмету
     # subjects_data_sor:    { subject_name -> [{ class_name, sor_list, teacher, has_data }] }
@@ -644,6 +735,8 @@ def analytics_home():
     for report in reports:
         subj = normalize_subject_name(report.subject_name)
         cls = report.class_name
+        if cls not in active_class_names:
+            continue
         # Фильтрация по сегменту классов 1-4 / 5-11, если указан
         grade_str = ""
         for ch in str(cls):
@@ -791,6 +884,10 @@ def download_analytics_excel():
     period_name = f"{period_number} четверть"
     
     reports = get_quarter_reports(current_user.school_id, period_number)
+    active_class_names = {
+        row.name
+        for row in Class.query.filter_by(school_id=current_user.school_id).with_entities(Class.name).all()
+    }
     
     subjects_data_sor = {}
     subjects_data_soch = {}
@@ -799,6 +896,8 @@ def download_analytics_excel():
     for report in reports:
         subj = normalize_subject_name(report.subject_name)
         cls = report.class_name
+        if cls not in active_class_names:
+            continue
         teacher_name = ""
         if report.teacher:
             teacher_name = report.teacher.full_name or report.teacher.username
@@ -1022,6 +1121,11 @@ def class_teacher_report():
     
     # Получаем все отчёты (включая полугодовые для 2/4)
     all_reports = get_quarter_reports(current_user.school_id, period_number)
+    active_class_names = {
+        row.name
+        for row in Class.query.filter_by(school_id=current_user.school_id).with_entities(Class.name).all()
+    }
+    all_reports = [r for r in all_reports if r.class_name in active_class_names]
     all_class_names = {r.class_name for r in all_reports}
     def _parse_grade_from_name(name: str):
         grade_str = ""

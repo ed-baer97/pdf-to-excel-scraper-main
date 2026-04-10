@@ -33,7 +33,7 @@ English summary: multi-user web app plus optional PyQt6 desktop client; Playwrig
 | `mektep-desktop/app/report_pipeline/` | Логика финализации отчётов после скрапинга (вынесена из `scraper_thread`) |
 | `tests/` | Pytest (утилиты `report_pipeline`) |
 
-Подробные запуски и сценарии: [ИНСТРУКЦИЯ_ЗАПУСКА.md](ИНСТРУКЦИЯ_ЗАПУСКА.md). Мониторинг: [MONITORING.md](MONITORING.md).
+Подробные запуски и сценарии: [ИНСТРУКЦИЯ_ЗАПУСКА.md](ИНСТРУКЦИЯ_ЗАПУСКА.md). Мониторинг: [MONITORING.md](MONITORING.md). Методическое оформление проекта (структура пособия): [МЕТОДИЧЕСКИЕ_РЕКОМЕНДАЦИИ_MEKTEP.md](МЕТОДИЧЕСКИЕ_РЕКОМЕНДАЦИИ_MEKTEP.md).
 
 ---
 
