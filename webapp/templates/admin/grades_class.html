@@ -1,223 +1,62 @@
 {% extends "layout.html" %}
-{% block content %}
-<div class="container-fluid py-3">
-  <nav aria-label="breadcrumb" class="mb-3">
-    <ol class="breadcrumb">
-      <li class="breadcrumb-item"><a href="{{ url_for('admin.grades_overview', period_number=period_number) }}">{{ _('grades_overview') }}</a></li>
-      <li class="breadcrumb-item active">{{ class_name }}</li>
-    </ol>
-  </nav>
-  
-  <div class="d-flex justify-content-between align-items-center mb-4">
-    <h3 class="mb-0">{{ _('summary_table_grades') }}: {{ class_name }}</h3>
-    {% if students %}
-    <a href="{{ url_for('admin.download_grades_class_excel', class_name=class_name, period_number=period_number) }}" 
-       class="btn btn-success">
-      <i class="bi bi-file-earmark-excel"></i> {{ _('download_excel') }}
-    </a>
-    {% endif %}
-  </div>
-  
-  <!-- Статистика -->
-  <div class="row mb-4">
-    <div class="col-md-3">
-      <div class="card text-white bg-primary shadow-sm">
-        <div class="card-body">
-          <h5 class="card-title">{{ _('total_students') }}</h5>
-          <h2>{{ summary.total_students }}</h2>
-        </div>
-      </div>
-    </div>
-    <div class="col-md-3">
-      <div class="card text-white bg-success shadow-sm">
-        <div class="card-body">
-          <h5 class="card-title">{{ _('quality_label') }}</h5>
-          <h2>{{ summary.quality_percent }}%</h2>
-        </div>
-      </div>
-    </div>
-    <div class="col-md-3">
-      <div class="card text-white bg-info shadow-sm">
-        <div class="card-body">
-          <h5 class="card-title">{{ _('success_label') }}</h5>
-          <h2>{{ summary.success_percent }}%</h2>
-        </div>
-      </div>
-    </div>
-    <div class="col-md-3">
-      <div class="card shadow-sm">
-        <div class="card-body">
-          <h5 class="card-title">{{ _('distribution') }}</h5>
-          <div class="d-flex justify-content-between small">
-            <span class="text-success">5: {{ summary.grades_count['5'] }}</span>
-            <span class="text-primary">4: {{ summary.grades_count['4'] }}</span>
-            <span class="text-warning">3: {{ summary.grades_count['3'] }}</span>
-            <span class="text-danger">2: {{ summary.grades_count['2'] }}</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-  
-  <!-- Таблица оценок -->
-  <div class="card shadow-sm">
-    <div class="card-body">
-      <h5 class="card-title mb-3">{{ _('grades_by_subjects') }}</h5>
-      
-      {% if students %}
-        <div class="table-responsive">
-          <table class="table table-bordered table-hover table-sm" id="gradesTable">
-            <thead class="table-light sticky-top">
-              <tr>
-                <th class="sticky-col">№</th>
-                <th class="sticky-col" style="left: 30px;">{{ _('student_fio') }}</th>
-                {% for subject in subjects %}
-                  <th class="text-center subject-col">
-                    <div class="d-flex justify-content-between align-items-start gap-1 subject-col-inner">
-                      <span class="subject-name text-break">{{ subject }}</span>
-                      <button
-                        type="button"
-                        class="btn btn-sm btn-outline-danger subject-delete-btn"
-                        title="Удалить предмет из связанных отчётов класса"
-                        onclick='deleteSubject({{ subject|tojson }})'
-                      >
-                        <i class="bi bi-trash"></i>
-                      </button>
-                    </div>
-                  </th>
-                {% endfor %}
-                <th class="text-center col-count bg-count-5">5</th>
-                <th class="text-center col-count bg-count-4">4</th>
-                <th class="text-center col-count bg-count-3">3</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for student in students %}
-                <tr>
-                  <td class="sticky-col">{{ loop.index }}</td>
-                  <td class="sticky-col" style="left: 30px;">{{ student.name }}</td>
-                  {% for subject in subjects %}
-                    {% set grade_info = student.grades.get(subject, {}) %}
-                    {% set pct = grade_info.get('percent') %}
-                    {% set grd = grade_info.get('grade') %}
-                    {# Подсветка только пограничных процентов: 37-39, 61-64, 82-84 #}
-                    {% set is_border = pct is not none and ((pct >= 37 and pct <= 39) or (pct >= 61 and pct <= 64) or (pct >= 82 and pct <= 84)) %}
-                    <td class="text-center {% if is_border %}border-highlight{% endif %}">
-                      {% if grd %}
-                        <strong>{{ grd }}</strong>
-                        {% if pct %}
-                          <br><small class="{% if is_border %}text-danger fw-bold{% else %}text-muted{% endif %}">{{ pct }}%</small>
-                        {% endif %}
-                      {% else %}
-                        —
-                      {% endif %}
-                    </td>
-                  {% endfor %}
-                  {# Количество 5, 4, 3 по строке #}
-                  <td class="text-center fw-bold bg-count-5">{{ student.count_5 }}</td>
-                  <td class="text-center fw-bold bg-count-4">{{ student.count_4 }}</td>
-                  <td class="text-center fw-bold bg-count-3">{{ student.count_3 }}</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-            <tfoot>
-              {# Строка: Кол-во 5 по столбцам #}
-              <tr class="fw-bold bg-count-5">
-                <td class="sticky-col"></td>
-                <td class="sticky-col" style="left: 30px;">{{ _('count_5') }}</td>
-                {% for subject in subjects %}
-                  <td class="text-center">{{ subject_stats[subject].count_5 }}</td>
-                {% endfor %}
-                <td class="text-center">{{ students|selectattr('count_5', 'greaterthan', 0)|list|length }}</td>
-                <td class="text-center"></td>
-                <td class="text-center"></td>
-              </tr>
-              {# Строка: Кол-во 4 по столбцам #}
-              <tr class="fw-bold bg-count-4">
-                <td class="sticky-col"></td>
-                <td class="sticky-col" style="left: 30px;">{{ _('count_4') }}</td>
-                {% for subject in subjects %}
-                  <td class="text-center">{{ subject_stats[subject].count_4 }}</td>
-                {% endfor %}
-                <td class="text-center"></td>
-                <td class="text-center">{{ students|selectattr('count_4', 'greaterthan', 0)|list|length }}</td>
-                <td class="text-center"></td>
-              </tr>
-              {# Строка: Кол-во 3 по столбцам #}
-              <tr class="fw-bold bg-count-3">
-                <td class="sticky-col"></td>
-                <td class="sticky-col" style="left: 30px;">{{ _('count_3') }}</td>
-                {% for subject in subjects %}
-                  <td class="text-center">{{ subject_stats[subject].count_3 }}</td>
-                {% endfor %}
-                <td class="text-center"></td>
-                <td class="text-center"></td>
-                <td class="text-center">{{ students|selectattr('count_3', 'greaterthan', 0)|list|length }}</td>
-              </tr>
-              {# Строка: Качество по предмету #}
-              <tr class="fw-bold table-success">
-                <td class="sticky-col"></td>
-                <td class="sticky-col" style="left: 30px;">{{ _('quality_pct_label') }}</td>
-                {% for subject in subjects %}
-                  <td class="text-center">{{ subject_stats[subject].quality_percent }}%</td>
-                {% endfor %}
-                <td class="text-center" colspan="3"></td>
-              </tr>
-              {# Строка: Успеваемость по предмету #}
-              <tr class="fw-bold table-info">
-                <td class="sticky-col"></td>
-                <td class="sticky-col" style="left: 30px;">{{ _('success_pct_label') }}</td>
-                {% for subject in subjects %}
-                  <td class="text-center">{{ subject_stats[subject].success_percent }}%</td>
-                {% endfor %}
-                <td class="text-center" colspan="3"></td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      {% else %}
-        <div class="alert alert-info">
-          {{ _('no_data_class_grades') }}
-        </div>
-      {% endif %}
-    </div>
-  </div>
-</div>
-
-<form id="deleteSubjectForm" method="post" action="{{ url_for('admin.delete_subject_from_class', class_name=class_name) }}" style="display:none;">
-  <input type="hidden" name="subject_name" id="deleteSubjectName">
-  <input type="hidden" name="period_number" value="{{ period_number }}">
-  <input type="hidden" name="next_url" id="deleteSubjectNextUrl">
-</form>
-
-<script>
-  function deleteSubject(subjectName) {
-    const ok = confirm(
-      `Удалить предмет "${subjectName}" за текущую четверть?\n` +
-      "Удаление будет применено только к текущему периоду на этой странице."
-    );
-    if (!ok) return;
-
-    document.getElementById("deleteSubjectName").value = subjectName;
-    document.getElementById("deleteSubjectNextUrl").value = window.location.href;
-    document.getElementById("deleteSubjectForm").submit();
-  }
-</script>
-
+{% block head_extra %}
 <style>
   .sticky-col {
     position: sticky;
-    background: white;
-    z-index: 1;
+    z-index: 2;
   }
   .sticky-col:first-child {
     left: 0;
     width: 30px;
   }
+  #gradesTable tbody td.sticky-col,
+  #gradesTable tfoot td.sticky-col {
+    font-weight: 600;
+    font-size: 0.8125rem;
+    box-shadow: inset -1px 0 0 rgba(var(--bs-primary-rgb), 0.18);
+  }
+  #gradesTable tbody td.sticky-col:first-child {
+    background-color: rgba(var(--bs-primary-rgb), 0.08);
+    color: #495057;
+  }
+  #gradesTable tbody td.sticky-col[style*="left: 30px"] {
+    background-color: rgba(var(--bs-primary-rgb), 0.06);
+    color: #212529;
+  }
+  #gradesTable tbody tr:nth-child(even) td.sticky-col:first-child {
+    background-color: rgba(var(--bs-primary-rgb), 0.11);
+  }
+  #gradesTable tbody tr:nth-child(even) td.sticky-col[style*="left: 30px"] {
+    background-color: rgba(var(--bs-primary-rgb), 0.09);
+  }
   #gradesTable td {
     white-space: nowrap;
+    vertical-align: middle;
+    border-color: rgba(var(--bs-primary-rgb), 0.14) !important;
   }
-  /* Заголовки предметов: перенос + шрифт уменьшается при узких столбцах */
+  #gradesTable tbody tr:nth-child(even) > td:not(.sticky-col):not(.bg-count-5):not(.bg-count-4):not(.bg-count-3):not(.bg-count-2):not(.border-highlight) {
+    background-color: rgba(var(--bs-primary-rgb), 0.035);
+  }
+  #gradesTable.table-hover tbody tr:hover > td:not(.border-highlight):not(.sticky-col):not(.bg-count-5):not(.bg-count-4):not(.bg-count-3):not(.bg-count-2) {
+    background-color: rgba(var(--bs-primary-rgb), 0.1) !important;
+  }
+  #gradesTable.table-hover tbody tr:hover > td.sticky-col:first-child {
+    background-color: rgba(var(--bs-primary-rgb), 0.2) !important;
+    color: #343a40 !important;
+  }
+  #gradesTable.table-hover tbody tr:hover > td.sticky-col[style*="left: 30px"] {
+    background-color: rgba(var(--bs-primary-rgb), 0.18) !important;
+    color: #212529 !important;
+  }
+  #gradesTable.table-hover tbody tr:hover > td.bg-count-5,
+  #gradesTable.table-hover tbody tr:hover > td.bg-count-4,
+  #gradesTable.table-hover tbody tr:hover > td.bg-count-3,
+  #gradesTable.table-hover tbody tr:hover > td.bg-count-2 {
+    background-color: rgba(var(--bs-primary-rgb), 0.16) !important;
+  }
+  #gradesTable.table-hover tbody tr:hover > td.border-highlight {
+    background-color: rgba(var(--bs-primary-rgb), 0.18) !important;
+  }
   #gradesTable th.subject-col {
     white-space: normal;
     word-break: break-word;
@@ -244,32 +83,346 @@
     padding: 0.1rem 0.35rem;
     line-height: 1;
   }
-  
-  /* Пограничные оценки — яркая подсветка */
+  /* Пограничный % — в той же гамме, без жёлтого/красного «сигнала» */
   .border-highlight {
-    background-color: #fff3cd !important;
-    border: 2px solid #f59e0b !important;
+    background-color: rgba(var(--bs-primary-rgb), 0.1) !important;
+    border: 1px solid rgba(var(--bs-primary-rgb), 0.4) !important;
   }
-  
-  /* Столбцы и строки подсчёта */
-  .bg-count-5 {
-    background-color: #d1fae5 !important;
+  .grade-pct-border {
+    color: var(--bs-primary);
+    font-weight: 600;
   }
-  .bg-count-4 {
-    background-color: #dbeafe !important;
-  }
-  .bg-count-3 {
-    background-color: #fef3c7 !important;
+  /* Счётчики 5/4/3/2: единый primary-фон, без зелёно-сине-жёлтой сетки */
+  #gradesTable tbody td.bg-count-5,
+  #gradesTable tbody td.bg-count-4,
+  #gradesTable tbody td.bg-count-3,
+  #gradesTable tbody td.bg-count-2 {
+    background-color: rgba(var(--bs-primary-rgb), 0.09) !important;
+    color: #212529 !important;
+    font-weight: 600;
+    border-left: 1px solid rgba(var(--bs-primary-rgb), 0.22) !important;
   }
   .col-count {
     min-width: 35px !important;
     max-width: 50px !important;
     width: 40px !important;
   }
-  
-  /* Фиксированные строки tfoot */
-  tfoot tr td.sticky-col {
-    background: inherit;
+  .grades-table-panel {
+    border-radius: var(--bs-border-radius-xl, 0.5rem);
+    background: #fff;
+    box-shadow: var(--bs-box-shadow-sm);
+    border: 1px solid rgba(var(--bs-primary-rgb), 0.25);
+    overflow: hidden;
+  }
+  .grades-table-panel .table-responsive {
+    margin-bottom: 0;
+  }
+  /* Шапка: №, ФИО, предметы — приглушённый фон (не яркий primary) */
+  #gradesTable thead.grades-table-head th {
+    background-color: color-mix(in srgb, var(--bs-primary) 11%, #ffffff 89%);
+    color: #2c4a66;
+    font-weight: 600;
+    font-size: 0.8125rem;
+    border-color: rgba(var(--bs-primary-rgb), 0.2);
+    vertical-align: middle;
+  }
+  #gradesTable thead.grades-table-head .sticky-col {
+    background-color: color-mix(in srgb, var(--bs-primary) 13%, #f8fafc 87%) !important;
+    color: #2c4a66 !important;
+    z-index: 4;
+  }
+  #gradesTable thead.grades-table-head th.subject-col {
+    color: #2c4a66 !important;
+  }
+  .grades-table-panel thead .subject-delete-btn:hover {
+    background-color: rgba(var(--bs-danger-rgb), 0.08);
+  }
+  /* Столбцы 5 / 4 / 3 / 2 — градация primary от тёмного к светлому */
+  #gradesTable thead.grades-table-head th.col-count {
+    color: #fff !important;
+    border-color: rgba(255, 255, 255, 0.28) !important;
+    font-weight: 700;
+    box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.18);
+  }
+  #gradesTable thead.grades-table-head th.col-count.bg-count-5 {
+    background-color: color-mix(in srgb, var(--bs-primary) 88%, #000 12%) !important;
+  }
+  #gradesTable thead.grades-table-head th.col-count.bg-count-4 {
+    background-color: color-mix(in srgb, var(--bs-primary) 94%, #000 6%) !important;
+  }
+  #gradesTable thead.grades-table-head th.col-count.bg-count-3 {
+    background-color: color-mix(in srgb, var(--bs-primary) 76%, #fff 24%) !important;
+  }
+  /* «2» — светлее, чем «3»; белый текст как у остальных col-count */
+  #gradesTable thead.grades-table-head th.col-count.bg-count-2 {
+    background-color: color-mix(in srgb, var(--bs-primary) 52%, #ffffff 48%) !important;
+    color: rgba(252, 252, 252, 1) !important;
+    border-color: rgba(255, 255, 255, 0.28) !important;
+    box-shadow: inset 1px 0 0 0 rgba(13, 110, 253, 0.12);
+  }
+  #gradesTable tfoot {
+    border-top: 2px solid rgba(var(--bs-primary-rgb), 0.3);
+  }
+  #gradesTable tfoot tr td {
+    background-color: rgba(var(--bs-primary-rgb), 0.05);
+    color: #212529;
+    border-color: rgba(var(--bs-primary-rgb), 0.12) !important;
+  }
+  #gradesTable tfoot td.sticky-col {
+    background-color: rgba(var(--bs-primary-rgb), 0.11) !important;
+    color: #343a40 !important;
+    font-weight: 600;
+    z-index: 2;
+  }
+  /* Липкие ячейки строк «Кол-во 5/4/3» — те же оттенки, что у заголовков столбцов */
+  #gradesTable tfoot tr.bg-count-5 td.sticky-col {
+    background-color: color-mix(in srgb, var(--bs-primary) 88%, #000 12%) !important;
+    color: #fff !important;
+    font-weight: 700;
+    box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.2);
+  }
+  #gradesTable tfoot tr.bg-count-4 td.sticky-col {
+    background-color: color-mix(in srgb, var(--bs-primary) 94%, #000 6%) !important;
+    color: #fff !important;
+    font-weight: 700;
+    box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.2);
+  }
+  #gradesTable tfoot tr.bg-count-3 td.sticky-col {
+    background-color: color-mix(in srgb, var(--bs-primary) 76%, #fff 24%) !important;
+    color: #fff !important;
+    font-weight: 700;
+    box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.22);
+  }
+  #gradesTable tfoot tr.bg-count-2 td.sticky-col {
+    background-color: color-mix(in srgb, var(--bs-primary) 52%, #ffffff 48%) !important;
+    color: #fff !important;
+    font-weight: 700;
+    box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.22);
+  }
+  #gradesTable tfoot tr.table-success td,
+  #gradesTable tfoot tr.table-info td {
+    background-color: rgba(var(--bs-primary-rgb), 0.07) !important;
+    color: #212529 !important;
+  }
+  #gradesTable tfoot tr.table-success td.sticky-col,
+  #gradesTable tfoot tr.table-info td.sticky-col {
+    background-color: rgba(var(--bs-primary-rgb), 0.12) !important;
+    color: var(--bs-primary) !important;
+    font-weight: 700;
   }
 </style>
+{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+  <div class="rounded-3 bg-white shadow-sm border border-primary border-opacity-25 px-4 py-3 flex-grow-1">
+    <nav aria-label="breadcrumb" class="mb-2">
+      <ol class="breadcrumb mb-0 small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.grades_overview', period_number=period_number) }}">{{ _('grades_overview') }}</a></li>
+        <li class="breadcrumb-item active" aria-current="page">{{ class_name }}</li>
+      </ol>
+    </nav>
+    <h1 class="h3 mb-0 fw-semibold text-primary d-flex align-items-center gap-2 flex-wrap">
+      <i class="bi bi-journal-text fs-4" aria-hidden="true"></i>
+      <span>{{ _('summary_table_grades') }}: {{ class_name }}</span>
+    </h1>
+  </div>
+  <div class="d-flex flex-wrap gap-2 align-self-center">
+    <a href="{{ url_for('admin.grades_overview', period_number=period_number) }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left"></i> {{ _('grades_overview') }}
+    </a>
+    {% if students %}
+    <a href="{{ url_for('admin.download_grades_class_excel', class_name=class_name, period_number=period_number) }}"
+       class="btn btn-success btn-sm">
+      <i class="bi bi-file-earmark-excel"></i> {{ _('download_excel') }}
+    </a>
+    {% endif %}
+  </div>
+</div>
+
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="border rounded-3 p-3 h-100 shadow-sm border-primary border-opacity-25">
+        <div class="small text-muted text-uppercase">{{ _('total_students') }}</div>
+        <div class="fs-3 fw-semibold text-primary">{{ summary.total_students }}</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="border rounded-3 p-3 h-100 bg-primary bg-opacity-10 shadow-sm border-primary border-opacity-25">
+        <div class="small text-muted text-uppercase">{{ _('quality_label') }}</div>
+        <div class="fs-3 fw-semibold text-primary">{{ summary.quality_percent }}%</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="border rounded-3 p-3 h-100 bg-primary bg-opacity-25 shadow-sm border-primary border-opacity-25">
+        <div class="small text-muted text-uppercase">{{ _('success_label') }}</div>
+        <div class="fs-3 fw-semibold text-primary">{{ summary.success_percent }}%</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="border rounded-3 p-3 h-100 shadow-sm border-primary border-opacity-25">
+        <div class="small text-muted text-uppercase mb-2">{{ _('distribution') }}</div>
+        <div class="d-flex justify-content-between small gap-1 flex-wrap">
+          <span class="text-success fw-semibold">5: {{ summary.grades_count['5'] }}</span>
+          <span class="text-primary fw-semibold">4: {{ summary.grades_count['4'] }}</span>
+          <span class="text-warning fw-semibold">3: {{ summary.grades_count['3'] }}</span>
+          <span class="text-danger fw-semibold">2: {{ summary.grades_count['2'] }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm border border-primary border-opacity-25">
+    <div class="px-3 pt-3 border-bottom border-light">
+      <h2 class="h5 mb-0 text-primary fw-semibold">{{ _('grades_by_subjects') }}</h2>
+    </div>
+    <div class="card-body p-3">
+      {% if students %}
+        <div class="grades-table-panel">
+        <div class="table-responsive">
+          <table class="table table-bordered table-hover table-sm mb-0" id="gradesTable">
+            <thead class="grades-table-head sticky-top">
+              <tr>
+                <th class="sticky-col">№</th>
+                <th class="sticky-col" style="left: 30px;">{{ _('student_fio') }}</th>
+                {% for subject in subjects %}
+                  <th class="text-center subject-col">
+                    <div class="d-flex justify-content-between align-items-start gap-1 subject-col-inner">
+                      <span class="subject-name text-break">{{ subject }}</span>
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-outline-secondary subject-delete-btn"
+                        title="Удалить предмет из связанных отчётов класса"
+                        onclick='deleteSubject({{ subject|tojson }})'
+                      >
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </div>
+                  </th>
+                {% endfor %}
+                <th class="text-center col-count bg-count-5">5</th>
+                <th class="text-center col-count bg-count-4">4</th>
+                <th class="text-center col-count bg-count-3">3</th>
+                <th class="text-center col-count bg-count-2">2</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for student in students %}
+                <tr>
+                  <td class="sticky-col">{{ loop.index }}</td>
+                  <td class="sticky-col" style="left: 30px;">{{ student.name }}</td>
+                  {% for subject in subjects %}
+                    {% set grade_info = student.grades.get(subject, {}) %}
+                    {% set pct = grade_info.get('percent') %}
+                    {% set grd = grade_info.get('grade') %}
+                    {% set is_border = pct is not none and ((pct >= 37 and pct <= 39) or (pct >= 61 and pct <= 64) or (pct >= 82 and pct <= 84)) %}
+                    <td class="text-center {% if is_border %}border-highlight{% endif %}">
+                      {% if grd %}
+                        <strong>{{ grd }}</strong>
+                        {% if pct %}
+                          <br><small class="{% if is_border %}grade-pct-border{% else %}text-muted{% endif %}">{{ pct }}%</small>
+                        {% endif %}
+                      {% else %}
+                        —
+                      {% endif %}
+                    </td>
+                  {% endfor %}
+                  <td class="text-center fw-bold bg-count-5">{{ student.count_5 }}</td>
+                  <td class="text-center fw-bold bg-count-4">{{ student.count_4 }}</td>
+                  <td class="text-center fw-bold bg-count-3">{{ student.count_3 }}</td>
+                  <td class="text-center fw-bold bg-count-2">{{ student.count_2 }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+            <tfoot>
+              <tr class="fw-bold bg-count-5">
+                <td class="sticky-col"></td>
+                <td class="sticky-col" style="left: 30px;">{{ _('count_5') }}</td>
+                {% for subject in subjects %}
+                  <td class="text-center">{{ subject_stats[subject].count_5 }}</td>
+                {% endfor %}
+                <td class="text-center">{{ students|selectattr('count_4', 'equalto', 0)|list|length }}</td>
+                <td class="text-center"></td>
+                <td class="text-center"></td>
+                <td class="text-center"></td>
+              </tr>
+              <tr class="fw-bold bg-count-4">
+                <td class="sticky-col"></td>
+                <td class="sticky-col" style="left: 30px;">{{ _('count_4') }}</td>
+                {% for subject in subjects %}
+                  <td class="text-center">{{ subject_stats[subject].count_4 }}</td>
+                {% endfor %}
+                <td class="text-center"></td>
+                <td class="text-center">{{ students|selectattr('count_3', 'equalto', 0)|list|length }}</td>
+                <td class="text-center"></td>
+                <td class="text-center"></td>
+              </tr>
+              <tr class="fw-bold bg-count-3">
+                <td class="sticky-col"></td>
+                <td class="sticky-col" style="left: 30px;">{{ _('count_3') }}</td>
+                {% for subject in subjects %}
+                  <td class="text-center">{{ subject_stats[subject].count_3 }}</td>
+                {% endfor %}
+                <td class="text-center"></td>
+                <td class="text-center"></td>
+                <td class="text-center">{{ students|selectattr('count_2', 'equalto', 0)|list|length }}</td>
+                <td class="text-center"></td>
+              </tr>
+              <tr class="fw-bold bg-count-2">
+                <td class="sticky-col"></td>
+                <td class="sticky-col" style="left: 30px;">{{ _('count_2') }}</td>
+                {% for subject in subjects %}
+                  <td class="text-center">{{ subject_stats[subject].count_2 }}</td>
+                {% endfor %}
+                <td class="text-center"></td>
+                <td class="text-center"></td>
+                <td class="text-center"></td>
+                <td class="text-center">{{ students|selectattr('count_2', 'greaterthan', 0)|list|length }}</td>
+              </tr>
+              <tr class="fw-bold table-success">
+                <td class="sticky-col"></td>
+                <td class="sticky-col" style="left: 30px;">{{ _('quality_pct_label') }}</td>
+                {% for subject in subjects %}
+                  <td class="text-center">{{ subject_stats[subject].quality_percent }}%</td>
+                {% endfor %}
+                <td class="text-center" colspan="4"></td>
+              </tr>
+              <tr class="fw-bold table-info">
+                <td class="sticky-col"></td>
+                <td class="sticky-col" style="left: 30px;">{{ _('success_pct_label') }}</td>
+                {% for subject in subjects %}
+                  <td class="text-center">{{ subject_stats[subject].success_percent }}%</td>
+                {% endfor %}
+                <td class="text-center" colspan="4"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        </div>
+      {% else %}
+        <div class="alert alert-info mb-0">
+          {{ _('no_data_class_grades') }}
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+<form id="deleteSubjectForm" method="post" action="{{ url_for('admin.delete_subject_from_class', class_name=class_name) }}" style="display:none;">
+  <input type="hidden" name="subject_name" id="deleteSubjectName">
+  <input type="hidden" name="period_number" value="{{ period_number }}">
+  <input type="hidden" name="next_url" id="deleteSubjectNextUrl">
+</form>
+
+<script>
+  function deleteSubject(subjectName) {
+    const ok = confirm(
+      `Удалить предмет "${subjectName}" за текущую четверть?\n` +
+      "Удаление будет применено только к текущему периоду на этой странице."
+    );
+    if (!ok) return;
+
+    document.getElementById("deleteSubjectName").value = subjectName;
+    document.getElementById("deleteSubjectNextUrl").value = window.location.href;
+    document.getElementById("deleteSubjectForm").submit();
+  }
+</script>
 {% endblock %}

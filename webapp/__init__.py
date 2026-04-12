@@ -78,8 +78,10 @@ def create_app(config_object=None) -> Flask:
     app.register_blueprint(api_bp)  # Register Desktop API
 
     # CLI
-    from .cli import create_superadmin
+    from .cli import clear_cache, create_superadmin
+
     app.cli.add_command(create_superadmin)
+    app.cli.add_command(clear_cache)
 
     # Lightweight “no-terminal” bootstrap for dev: create tables if missing.
     with app.app_context():

@@ -222,3 +222,15 @@ def cache_delete(key: str) -> bool:
         client.delete(key)
         return True
     return False
+
+
+def flush_redis_db() -> tuple[bool, str]:
+    """
+    Полная очистка текущей БД Redis (FLUSHDB).
+    Внимание: если Celery и кэш на одном инстансе, сбросятся и очереди задач.
+    """
+    client = get_redis_client()
+    if not client:
+        return False, "Redis недоступен."
+    client.flushdb()
+    return True, "Выполнено FLUSHDB для текущей БД Redis."

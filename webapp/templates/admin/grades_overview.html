@@ -1,50 +1,85 @@
 {% extends "layout.html" %}
+{% block head_extra %}
+<style>
+  .accordion-primary .accordion-button {
+    font-weight: 600;
+  }
+  .accordion-primary .accordion-button.collapsed {
+    background-color: #fff;
+    color: #212529;
+    border: 1px solid var(--bs-table-border-color);
+    box-shadow: none;
+  }
+  .accordion-primary .accordion-button:not(.collapsed) {
+    background-color: var(--bs-primary);
+    color: #fff;
+    border: 1px solid var(--bs-table-border-color);
+  }
+  .accordion-primary .accordion-button:focus {
+    box-shadow: 0 0 0 0.2rem rgba(var(--bs-primary-rgb), 0.35);
+  }
+  .accordion-primary .accordion-button.collapsed:focus {
+    box-shadow: 0 0 0 0.2rem rgba(var(--bs-primary-rgb), 0.25);
+  }
+</style>
+{% endblock %}
 {% block content %}
-<div class="container-fluid py-3">
-  <h3 class="mb-4">{{ _('grades_overview') }}</h3>
-  
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+  <div class="rounded-3 bg-white shadow-sm border border-primary border-opacity-25 px-4 py-3 flex-grow-1">
+    <h1 class="h3 mb-0 fw-semibold text-primary d-flex align-items-center gap-2 flex-wrap">
+      <i class="bi bi-table fs-4" aria-hidden="true"></i>
+      <span>{{ _('grades_overview') }}</span>
+    </h1>
+    <p class="text-muted small mb-0 mt-1">{{ _('grades_overview_desc') }}</p>
+  </div>
+  <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline-secondary align-self-center">
+    <i class="bi bi-arrow-left"></i> {{ _('admin_panel') }}
+  </a>
+</div>
+
   <!-- Фильтры -->
-  <div class="card shadow-sm mb-4">
-    <div class="card-body">
+  <div class="card shadow-sm border border-primary border-opacity-25 mb-4">
+    <div class="card-body py-3">
       <form method="get" class="row g-3 align-items-end">
         <div class="col-md-3">
-          <label class="form-label">{{ _('period_number') }}</label>
-          <select name="period_number" class="form-select" onchange="this.form.submit()">
+          <label class="form-label small text-muted mb-1">{{ _('period_number') }}</label>
+          <select name="period_number" class="form-select form-select-sm" onchange="this.form.submit()">
             {% for i in range(1, 5) %}
               <option value="{{ i }}" {% if period_number == i %}selected{% endif %}>{{ i }} {{ _('quarter_suffix') }}</option>
             {% endfor %}
           </select>
         </div>
         <div class="col-md-2">
-          <button type="submit" class="btn btn-primary">{{ _('apply_btn') }}</button>
+          <button type="submit" class="btn btn-primary btn-sm">{{ _('apply_btn') }}</button>
         </div>
       </form>
     </div>
   </div>
   
   <!-- Список классов -->
-  <div class="card shadow-sm">
-    <div class="card-body">
-      <h5 class="card-title mb-3">{{ _('classes') }}</h5>
-      
+  <div class="card shadow-sm border border-primary border-opacity-25">
+    <div class="px-3 pt-3 border-bottom border-light">
+      <h2 class="h5 mb-0 text-primary fw-semibold">{{ _('classes') }}</h2>
+    </div>
+    <div class="card-body pt-3 pb-3">
       {% if classes %}
-        <div class="accordion" id="gradesOverviewAccordion">
+        <div class="accordion accordion-primary" id="gradesOverviewAccordion">
           <div class="accordion-item">
             <h2 class="accordion-header">
               <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#grades-acc-1-4" aria-expanded="true">
-                {{ _('classes_1_4') }} <span class="badge bg-secondary ms-2">{{ classes_by_accordion['1-4']|length }}</span>
+                {{ _('classes_1_4') }} <span class="badge bg-light text-primary ms-2">{{ classes_by_accordion['1-4']|length }}</span>
               </button>
             </h2>
             <div id="grades-acc-1-4" class="accordion-collapse collapse show" data-bs-parent="#gradesOverviewAccordion">
               <div class="accordion-body p-0">
-                <table class="table table-hover mb-0">
+                <table class="table table-sm table-hover mb-0">
                   <thead class="table-light"><tr><th>{{ _('class_col') }}</th><th>{{ _('students_count') }}</th><th>{{ _('subjects') }}</th><th>{{ _('actions') }}</th></tr></thead>
                   <tbody>
                     {% for cls in classes_by_accordion['1-4'] %}
                     <tr>
                       <td><strong>{{ cls.class_name }}</strong></td>
                       <td>{{ cls.students_count }}</td>
-                      <td><span class="badge bg-secondary">{{ cls.subjects|length }} {{ _('subjects_count') }}</span></td>
+                      <td><span class="badge bg-light text-primary border border-primary border-opacity-25">{{ cls.subjects|length }} {{ _('subjects_count') }}</span></td>
                       <td><a href="{{ url_for('admin.grades_class', class_name=cls.class_name, period_number=period_number) }}" class="btn btn-sm btn-outline-primary">{{ _('summary_table') }}</a></td>
                     </tr>
                     {% else %}
@@ -58,19 +93,19 @@
           <div class="accordion-item">
             <h2 class="accordion-header">
               <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#grades-acc-5-9" aria-expanded="false">
-                {{ _('classes_5_9') }} <span class="badge bg-secondary ms-2">{{ classes_by_accordion['5-9']|length }}</span>
+                {{ _('classes_5_9') }} <span class="badge bg-light text-primary ms-2">{{ classes_by_accordion['5-9']|length }}</span>
               </button>
             </h2>
             <div id="grades-acc-5-9" class="accordion-collapse collapse" data-bs-parent="#gradesOverviewAccordion">
               <div class="accordion-body p-0">
-                <table class="table table-hover mb-0">
+                <table class="table table-sm table-hover mb-0">
                   <thead class="table-light"><tr><th>{{ _('class_col') }}</th><th>{{ _('students_count') }}</th><th>{{ _('subjects') }}</th><th>{{ _('actions') }}</th></tr></thead>
                   <tbody>
                     {% for cls in classes_by_accordion['5-9'] %}
                     <tr>
                       <td><strong>{{ cls.class_name }}</strong></td>
                       <td>{{ cls.students_count }}</td>
-                      <td><span class="badge bg-secondary">{{ cls.subjects|length }} {{ _('subjects_count') }}</span></td>
+                      <td><span class="badge bg-light text-primary border border-primary border-opacity-25">{{ cls.subjects|length }} {{ _('subjects_count') }}</span></td>
                       <td><a href="{{ url_for('admin.grades_class', class_name=cls.class_name, period_number=period_number) }}" class="btn btn-sm btn-outline-primary">{{ _('summary_table') }}</a></td>
                     </tr>
                     {% else %}
@@ -84,19 +119,19 @@
           <div class="accordion-item">
             <h2 class="accordion-header">
               <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#grades-acc-10-11" aria-expanded="false">
-                {{ _('classes_10_11') }} <span class="badge bg-secondary ms-2">{{ classes_by_accordion['10-11']|length }}</span>
+                {{ _('classes_10_11') }} <span class="badge bg-light text-primary ms-2">{{ classes_by_accordion['10-11']|length }}</span>
               </button>
             </h2>
             <div id="grades-acc-10-11" class="accordion-collapse collapse" data-bs-parent="#gradesOverviewAccordion">
               <div class="accordion-body p-0">
-                <table class="table table-hover mb-0">
+                <table class="table table-sm table-hover mb-0">
                   <thead class="table-light"><tr><th>{{ _('class_col') }}</th><th>{{ _('students_count') }}</th><th>{{ _('subjects') }}</th><th>{{ _('actions') }}</th></tr></thead>
                   <tbody>
                     {% for cls in classes_by_accordion['10-11'] %}
                     <tr>
                       <td><strong>{{ cls.class_name }}</strong></td>
                       <td>{{ cls.students_count }}</td>
-                      <td><span class="badge bg-secondary">{{ cls.subjects|length }} {{ _('subjects_count') }}</span></td>
+                      <td><span class="badge bg-light text-primary border border-primary border-opacity-25">{{ cls.subjects|length }} {{ _('subjects_count') }}</span></td>
                       <td><a href="{{ url_for('admin.grades_class', class_name=cls.class_name, period_number=period_number) }}" class="btn btn-sm btn-outline-primary">{{ _('summary_table') }}</a></td>
                     </tr>
                     {% else %}
@@ -115,5 +150,4 @@
       {% endif %}
     </div>
   </div>
-</div>
 {% endblock %}

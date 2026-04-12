@@ -1,20 +1,29 @@
 {% extends "layout.html" %}
 {% block content %}
 <style>
+  /* Как карточки KPI на дашборде: белое «окно», рамка primary */
   .chart-card-body {
     height: auto;
-    padding: 0.85rem;
+    padding: 1rem 1.25rem;
   }
 
   .chart-canvas-wrap {
     height: clamp(220px, 40vh, 420px);
-    margin-top: 0.75rem;
+    margin-top: 0.5rem;
   }
 
-  .metrics-table-wrap {
+  .metrics-table-window {
+    border-radius: var(--bs-border-radius-xl, 0.5rem);
+    background: #fff;
+    box-shadow: var(--bs-box-shadow-sm);
+    border: 1px solid rgba(var(--bs-primary-rgb), 0.25);
+    overflow: hidden;
+  }
+
+  .metrics-table-window .metrics-table-wrap {
     width: 100%;
     overflow-x: auto;
-    padding-bottom: 0.25rem;
+    padding: 0.75rem 1rem 1rem;
   }
 
   .metrics-table-scale {
@@ -26,42 +35,68 @@
   .metrics-table {
     margin-bottom: 0;
     white-space: nowrap;
+    --bs-table-bg: transparent;
   }
 
-  .metrics-table th,
-  .metrics-table td {
-    padding: clamp(0.2rem, 0.45vw, 0.45rem);
-    font-size: clamp(0.66rem, 1.05vw, 0.84rem);
+  .metrics-table thead.metrics-table-head th {
+    background-color: var(--bs-primary);
+    color: #fff;
+    font-weight: 600;
+    font-size: 0.8125rem;
+    border-color: rgba(255, 255, 255, 0.28);
+    vertical-align: middle;
+  }
+
+  .metrics-table tbody th.row-label {
+    background-color: rgba(var(--bs-primary-rgb), 0.08);
+    color: var(--bs-primary);
+    font-weight: 600;
+    font-size: 0.8125rem;
+  }
+
+  .metrics-table td,
+  .metrics-table tbody th {
+    padding: 0.45rem 0.5rem;
+    font-size: 0.8125rem;
+  }
+
+  .metrics-table .col-total {
+    background-color: rgba(var(--bs-primary-rgb), 0.06);
   }
 
   @media (max-width: 768px) {
     .chart-card-body {
-      padding: 0.6rem;
+      padding: 0.75rem 0.85rem;
     }
     .chart-canvas-wrap {
       height: clamp(200px, 36vh, 320px);
+    }
+    .metrics-table-window .metrics-table-wrap {
+      padding: 0.5rem 0.65rem 0.75rem;
     }
   }
 </style>
 <div class="container-fluid py-3">
   <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <div>
-      <h2 class="mb-0">Статистика по классам</h2>
-      <p class="text-muted mb-0">Столбчатые диаграммы качества и успеваемости</p>
+      <h2 class="mb-0">{{ _('metrics_page_title') }}</h2>
+      <p class="text-muted mb-0">{{ _('metrics_page_subtitle') }}</p>
     </div>
-    <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline-secondary">
-      <i class="bi bi-arrow-left"></i> Назад
-    </a>
+    <div class="d-flex flex-wrap gap-2">
+      <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> {{ _('back_btn') }}
+      </a>
+    </div>
   </div>
 
   <div class="card shadow-sm mb-4">
     <div class="card-body">
       <form method="GET" class="row g-3 align-items-end">
         <div class="col-md-3">
-          <label for="period_number" class="form-label">Четверть</label>
+          <label for="period_number" class="form-label">{{ _('quarter') }}</label>
           <select class="form-select" id="period_number" name="period_number" onchange="this.form.submit()">
             {% for i in range(1, 5) %}
-              <option value="{{ i }}" {% if period_number == i %}selected{% endif %}>{{ i }} четверть</option>
+              <option value="{{ i }}" {% if period_number == i %}selected{% endif %}>{{ i }} {{ _('quarter_suffix') }}</option>
             {% endfor %}
           </select>
         </div>
@@ -73,66 +108,86 @@
   <ul class="nav nav-tabs mb-3" id="metricsTabs" role="tablist">
     <li class="nav-item" role="presentation">
       <button class="nav-link active" id="overall-tab" data-bs-toggle="tab" data-bs-target="#overall-pane" type="button" role="tab" aria-controls="overall-pane" aria-selected="true">
-        Общее
+        {{ _('metrics_tab_overall') }}
       </button>
     </li>
     <li class="nav-item" role="presentation">
       <button class="nav-link" id="parallel-tab" data-bs-toggle="tab" data-bs-target="#parallel-pane" type="button" role="tab" aria-controls="parallel-pane" aria-selected="false">
-        По параллелям
+        {{ _('metrics_tab_parallel') }}
       </button>
     </li>
   </ul>
 
   <div class="tab-content" id="metricsTabContent">
     <div class="tab-pane fade show active" id="overall-pane" role="tabpanel" aria-labelledby="overall-tab" tabindex="0">
+      <div class="d-flex justify-content-end mb-3">
+        <a href="{{ url_for('admin.download_class_metrics_charts_excel', export_kind='overall', period_number=period_number, v=5) }}" class="btn btn-success btn-sm">
+          <i class="bi bi-file-earmark-excel"></i> {{ _('metrics_download_overall') }}
+        </a>
+      </div>
       <div class="card shadow-sm mb-4">
         <div class="card-header bg-primary text-white">
-          <h5 class="mb-0">1-4 классы</h5>
+          <h5 class="mb-0">{{ _('metrics_card_1_4') }}</h5>
         </div>
         <div class="card-body chart-card-body">
           <div class="chart-canvas-wrap"><canvas id="chartGroup1to4"></canvas></div>
           <div id="tableGroup1to4" class="mt-3"></div>
-          <div id="emptyGroup1to4" class="text-muted d-none">Нет данных для группы 1-4 классов.</div>
+          <div id="emptyGroup1to4" class="text-muted d-none">{{ _('metrics_empty_1_4') }}</div>
         </div>
       </div>
       <div class="card shadow-sm mb-4">
         <div class="card-header bg-primary text-white">
-          <h5 class="mb-0">5-11 классы</h5>
+          <h5 class="mb-0">{{ _('metrics_card_5_9') }}</h5>
         </div>
         <div class="card-body chart-card-body">
-          <div class="chart-canvas-wrap"><canvas id="chartGroup5to11"></canvas></div>
-          <div id="tableGroup5to11" class="mt-3"></div>
-          <div id="emptyGroup5to11" class="text-muted d-none">Нет данных для группы 5-11 классов.</div>
+          <div class="chart-canvas-wrap"><canvas id="chartGroup5to9"></canvas></div>
+          <div id="tableGroup5to9" class="mt-3"></div>
+          <div id="emptyGroup5to9" class="text-muted d-none">{{ _('metrics_empty_5_9') }}</div>
         </div>
       </div>
       <div class="card shadow-sm mb-4">
         <div class="card-header bg-primary text-white">
-          <h5 class="mb-0">9 класс (отдельно)</h5>
+          <h5 class="mb-0">{{ _('metrics_card_9_11') }}</h5>
+        </div>
+        <div class="card-body chart-card-body">
+          <div class="chart-canvas-wrap"><canvas id="chartGroup9to11"></canvas></div>
+          <div id="tableGroup9to11" class="mt-3"></div>
+          <div id="emptyGroup9to11" class="text-muted d-none">{{ _('metrics_empty_9_11') }}</div>
+        </div>
+      </div>
+      <div class="card shadow-sm mb-4">
+        <div class="card-header bg-primary text-white">
+          <h5 class="mb-0">{{ _('metrics_card_9') }}</h5>
         </div>
         <div class="card-body chart-card-body">
           <div class="chart-canvas-wrap"><canvas id="chartGroup9"></canvas></div>
           <div id="tableGroup9" class="mt-3"></div>
-          <div id="emptyGroup9" class="text-muted d-none">Нет данных для 9 классов.</div>
+          <div id="emptyGroup9" class="text-muted d-none">{{ _('metrics_empty_9') }}</div>
         </div>
       </div>
       <div class="card shadow-sm mb-4">
         <div class="card-header bg-primary text-white">
-          <h5 class="mb-0">11 класс (отдельно)</h5>
+          <h5 class="mb-0">{{ _('metrics_card_11') }}</h5>
         </div>
         <div class="card-body chart-card-body">
           <div class="chart-canvas-wrap"><canvas id="chartGroup11"></canvas></div>
           <div id="tableGroup11" class="mt-3"></div>
-          <div id="emptyGroup11" class="text-muted d-none">Нет данных для 11 классов.</div>
+          <div id="emptyGroup11" class="text-muted d-none">{{ _('metrics_empty_11') }}</div>
         </div>
       </div>
     </div>
 
     <div class="tab-pane fade" id="parallel-pane" role="tabpanel" aria-labelledby="parallel-tab" tabindex="0">
+      <div class="d-flex justify-content-end mb-3">
+        <a href="{{ url_for('admin.download_class_metrics_charts_excel', export_kind='parallel', period_number=period_number, v=5) }}" class="btn btn-success btn-sm">
+          <i class="bi bi-file-earmark-excel"></i> {{ _('metrics_download_parallel') }}
+        </a>
+      </div>
       <div id="parallelGroupsContainer"></div>
     </div>
   </div>
   {% else %}
-    <div class="alert alert-info">Нет данных для построения диаграмм.</div>
+    <div class="alert alert-info">{{ _('metrics_no_charts') }}</div>
   {% endif %}
 </div>
 {% endblock %}
@@ -142,6 +197,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+  const METRICS_I18N = {{ metrics_i18n|tojson }};
   const labels = {{ labels|tojson }};
   const qualityValues = {{ quality_values|tojson }};
   const successValues = {{ success_values|tojson }};
@@ -173,29 +229,31 @@ document.addEventListener('DOMContentLoaded', function () {
     const successTotal = avg(chartSuccessValues);
 
     container.innerHTML = `
-      <div class="metrics-table-wrap">
-        <div class="metrics-table-scale">
-          <table class="table table-sm table-bordered align-middle metrics-table">
-          <thead class="table-light">
-            <tr>
-              <th>Показатель</th>
-              ${classHeaders}
-              <th class="text-center">Итого</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <th class="table-light">Качество, %</th>
-              ${qualityRow}
-              <td class="text-center fw-semibold">${qualityTotal}</td>
-            </tr>
-            <tr>
-              <th class="table-light">Успеваемость, %</th>
-              ${successRow}
-              <td class="text-center fw-semibold">${successTotal}</td>
-            </tr>
-          </tbody>
-        </table>
+      <div class="metrics-table-window">
+        <div class="metrics-table-wrap">
+          <div class="metrics-table-scale">
+            <table class="table table-sm table-bordered align-middle metrics-table">
+              <thead class="metrics-table-head">
+                <tr>
+                  <th scope="col">${METRICS_I18N.indicator}</th>
+                  ${classHeaders}
+                  <th class="text-center" scope="col">${METRICS_I18N.total}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th class="row-label" scope="row">${METRICS_I18N.row_quality}</th>
+                  ${qualityRow}
+                  <td class="text-center fw-semibold col-total">${qualityTotal}</td>
+                </tr>
+                <tr>
+                  <th class="row-label" scope="row">${METRICS_I18N.row_success}</th>
+                  ${successRow}
+                  <td class="text-center fw-semibold col-total">${successTotal}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     `;
@@ -243,14 +301,14 @@ document.addEventListener('DOMContentLoaded', function () {
         labels: chartLabels,
         datasets: [
           {
-            label: 'Качество',
+            label: METRICS_I18N.chart_quality,
             data: chartQualityValues,
             backgroundColor: 'rgba(13, 110, 253, 0.75)',
             borderColor: 'rgba(13, 110, 253, 1)',
             borderWidth: 1
           },
           {
-            label: 'Успеваемость',
+            label: METRICS_I18N.chart_success,
             data: chartSuccessValues,
             backgroundColor: 'rgba(25, 135, 84, 0.75)',
             borderColor: 'rgba(25, 135, 84, 1)',
@@ -334,12 +392,14 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   const g1to4 = unpack(selectRows(g => g >= 1 && g <= 4));
-  const g5to11 = unpack(selectRows(g => g >= 5 && g <= 11));
+  const g5to9 = unpack(selectRows(g => g >= 5 && g <= 9));
+  const g9to11 = unpack(selectRows(g => g >= 9 && g <= 11));
   const g9 = unpack(selectRows(g => g === 9));
   const g11 = unpack(selectRows(g => g === 11));
 
   buildGroupedChart('chartGroup1to4', 'emptyGroup1to4', 'tableGroup1to4', g1to4.labels, g1to4.quality, g1to4.success);
-  buildGroupedChart('chartGroup5to11', 'emptyGroup5to11', 'tableGroup5to11', g5to11.labels, g5to11.quality, g5to11.success);
+  buildGroupedChart('chartGroup5to9', 'emptyGroup5to9', 'tableGroup5to9', g5to9.labels, g5to9.quality, g5to9.success);
+  buildGroupedChart('chartGroup9to11', 'emptyGroup9to11', 'tableGroup9to11', g9to11.labels, g9to11.quality, g9to11.success);
   buildGroupedChart('chartGroup9', 'emptyGroup9', 'tableGroup9', g9.labels, g9.quality, g9.success);
   buildGroupedChart('chartGroup11', 'emptyGroup11', 'tableGroup11', g11.labels, g11.quality, g11.success);
 
@@ -355,14 +415,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
       const card = document.createElement('div');
       card.className = 'card shadow-sm mb-4';
+      const emptyText = METRICS_I18N.parallel_empty.replace(/\{grade\}/g, String(grade));
       card.innerHTML = `
         <div class="card-header ${headerClass}">
-          <h5 class="mb-0">${grade} класс</h5>
+          <h5 class="mb-0">${grade} ${METRICS_I18N.class_word}</h5>
         </div>
         <div class="card-body chart-card-body">
           <div class="chart-canvas-wrap"><canvas id="${canvasId}"></canvas></div>
           <div id="${tableId}" class="mt-3"></div>
-          <div id="${emptyId}" class="text-muted d-none">Нет данных для ${grade} класса.</div>
+          <div id="${emptyId}" class="text-muted d-none">${emptyText}</div>
         </div>
       `;
       parallelContainer.appendChild(card);
