@@ -103,42 +103,46 @@ def create_app(config_object=None) -> Flask:
                 except Exception:
                     return False
 
+            def _create_index_if_missing(index_name: str, ddl: str) -> None:
+                """Create an index without leaving the main session in aborted state."""
+                try:
+                    db.session.execute(text(ddl))
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
+
             # users.iin (ИИН для mektep.edu.kz)
             if not _has_column("users", "iin"):
                 db.session.execute(text("ALTER TABLE users ADD COLUMN iin VARCHAR(12)"))
-                try:
-                    db.session.execute(text("CREATE INDEX ix_users_iin ON users (iin)"))
-                except Exception:
-                    pass
                 db.session.commit()
+                _create_index_if_missing("ix_users_iin", "CREATE INDEX ix_users_iin ON users (iin)")
 
             # users.fs_teacher_seq
             if not _has_column("users", "fs_teacher_seq"):
                 db.session.execute(text("ALTER TABLE users ADD COLUMN fs_teacher_seq INTEGER"))
-                # Index creation syntax works for both SQLite and PostgreSQL
-                try:
-                    db.session.execute(text("CREATE INDEX ix_users_fs_teacher_seq ON users (fs_teacher_seq)"))
-                except Exception:
-                    pass  # Index might already exist
                 db.session.commit()
+                _create_index_if_missing(
+                    "ix_users_fs_teacher_seq",
+                    "CREATE INDEX ix_users_fs_teacher_seq ON users (fs_teacher_seq)",
+                )
 
             # scrape_jobs.fs_job_seq
             if not _has_column("scrape_jobs", "fs_job_seq"):
                 db.session.execute(text("ALTER TABLE scrape_jobs ADD COLUMN fs_job_seq INTEGER"))
-                try:
-                    db.session.execute(text("CREATE INDEX ix_scrape_jobs_fs_job_seq ON scrape_jobs (fs_job_seq)"))
-                except Exception:
-                    pass  # Index might already exist
                 db.session.commit()
+                _create_index_if_missing(
+                    "ix_scrape_jobs_fs_job_seq",
+                    "CREATE INDEX ix_scrape_jobs_fs_job_seq ON scrape_jobs (fs_job_seq)",
+                )
 
             # scrape_jobs.celery_task_id (for Celery integration)
             if not _has_column("scrape_jobs", "celery_task_id"):
                 db.session.execute(text("ALTER TABLE scrape_jobs ADD COLUMN celery_task_id VARCHAR(64)"))
-                try:
-                    db.session.execute(text("CREATE INDEX ix_scrape_jobs_celery_task_id ON scrape_jobs (celery_task_id)"))
-                except Exception:
-                    pass  # Index might already exist
                 db.session.commit()
+                _create_index_if_missing(
+                    "ix_scrape_jobs_celery_task_id",
+                    "CREATE INDEX ix_scrape_jobs_celery_task_id ON scrape_jobs (celery_task_id)",
+                )
 
             # schools.ai_model (модель AI для школы, выбирает супер-админ)
             if not _has_column("schools", "ai_model"):
