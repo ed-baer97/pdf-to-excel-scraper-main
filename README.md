@@ -9,7 +9,6 @@ English summary: multi-user web app plus optional PyQt6 desktop client; Playwrig
 - Многопользовательская система (суперадмин → школы → учителя)
 - Сбор данных с mektep.edu.kz (Playwright)
 - Генерация Excel и Word из шаблонов
-- Квоты отчётов по четвертям
 - Прогресс задач в реальном времени
 - Опционально: аналитика через AI API (Qwen и др.)
 
@@ -22,18 +21,37 @@ English summary: multi-user web app plus optional PyQt6 desktop client; Playwrig
 
 ---
 
-## Структура репозитория
+## Структура проекта
 
-| Путь | Назначение |
-|------|------------|
-| `webapp/` | Flask-приложение (модели, views, Celery) |
-| `scrape_mektep.py` | Скрапер (CLI и общая логика для десктопа) |
-| `build_report.py`, `build_word_report.py` | Сборка отчётов из шаблонов |
-| `mektep-desktop/` | PyQt6 десктоп (`mektep-desktop/main.py`) |
-| `mektep-desktop/app/report_pipeline/` | Логика финализации отчётов после скрапинга (вынесена из `scraper_thread`) |
-| `tests/` | Pytest (утилиты `report_pipeline`) |
+### Карта каталогов
 
-Подробные запуски и сценарии: [ИНСТРУКЦИЯ_ЗАПУСКА.md](ИНСТРУКЦИЯ_ЗАПУСКА.md). Мониторинг: [MONITORING.md](MONITORING.md). Методическое оформление проекта (структура пособия): [МЕТОДИЧЕСКИЕ_РЕКОМЕНДАЦИИ_MEKTEP.md](МЕТОДИЧЕСКИЕ_РЕКОМЕНДАЦИИ_MEKTEP.md).
+| Путь | Роль |
+|------|------|
+| `webapp/` | Flask веб-платформа: роуты, модели, сервисы, шаблоны, фоновые задачи |
+| `entrypoints/` | Точки входа для запуска веба (`app`, `wsgi`, production launcher) |
+| `scripts/db/` | DB-миграции и обслуживающие скрипты |
+| `scripts/dev/` | Локальные dev-утилиты (очистка данных/выходов, компиляция переводов) |
+| `scrape_mektep.py` | Основной CLI-скрапер для mektep.edu.kz |
+| `build_report.py`, `build_word_report.py` | Генерация Excel/Word отчётов по шаблонам |
+| `deploy/` | Docker/Prometheus файлы для инфраструктуры |
+| `nginx/` | Конфиг reverse-proxy для production |
+| `mektep-desktop/` | PyQt6 десктоп-клиент для учителя |
+| `tests/` | Pytest-тесты |
+
+### Внутренняя структура модулей
+
+- **`webapp/`**: `views/`, `services/`, `templates/`, `translations/`, `tasks.py`, `models.py`, `security.py`
+- **`mektep-desktop/`**: UI-слой в `app/`, отчётный pipeline в `app/report_pipeline/`, AI-модуль в `ai/`
+- **`tests/`**: базовые unit-тесты утилит report pipeline
+- **`nginx/`**: `nginx.conf` для роутинга и ограничений
+
+### Текущие зоны для рефакторинга
+
+- Крупные скрипты в корне (`scrape_mektep.py`, `build_word_report.py`, `build_report.py`) — кандидаты на декомпозицию.
+- `webapp/models.py` и `webapp/tasks.py` потенциально стоит дробить по доменам.
+- В `webapp/views/*` часть логики уже вынесена в `webapp/services/*`; направление верное, можно продолжать.
+
+Подробные сценарии запуска: [ИНСТРУКЦИЯ_ЗАПУСКА.md](ИНСТРУКЦИЯ_ЗАПУСКА.md). Содержание методического пособия: [МЕТОДИЧЕСКОЕ_ПОСОБИЕ_СОДЕРЖАНИЕ.md](МЕТОДИЧЕСКОЕ_ПОСОБИЕ_СОДЕРЖАНИЕ.md).
 
 ---
 
@@ -58,10 +76,10 @@ python app.py
 
 ```bash
 copy env.example .env
-docker-compose up -d
+docker compose -f deploy/docker-compose.yml up -d
 ```
 
-Сервисы: веб (порт 5000), Celery, PostgreSQL, Redis. См. `docker-compose.yml`.
+Сервисы: веб (порт 5000), PostgreSQL, мониторинг. См. `deploy/docker-compose.yml`.
 
 ---
 
@@ -106,7 +124,7 @@ python -m pytest
 |----------|----------|
 | `SECRET_KEY` | Секрет Flask (обязателен в production) |
 | `DATABASE_URL` | Строка подключения к БД |
-| `REDIS_URL` | Redis для Celery/лимитов |
+| `REDIS_URL` | Redis для Celery |
 | `USE_CELERY` | Включить фоновые задачи |
 
 ---
@@ -129,6 +147,35 @@ python scrape_mektep.py --lang ru --period 2 --all 1 --limit 10
 | Фон | Потоки / опционально Celery | Celery + Redis |
 
 Десктоп: поток `ScraperThread` вызывает `scrape_mektep.run`, затем модуль `report_pipeline` переносит файлы и при необходимости загружает отчёты на сервер через API.
+
+---
+
+## Мониторинг
+
+### UptimeRobot
+
+- Health URL: `https://mektep-analyzer.kz/health/live`
+- Интервал проверки: 5 минут
+- В Cloudflare для `/health/*` используйте `Cache Level: Bypass`
+
+### Prometheus
+
+- URL: `http://localhost:9090`
+- Поднимается через `docker compose -f deploy/docker-compose.yml up -d`
+- Конфиг: `deploy/prometheus.yml`
+
+### Grafana
+
+- URL: `http://localhost:3000`
+- Логин: `admin`
+- Пароль: `GRAFANA_ADMIN_PASSWORD` (по умолчанию `admin`)
+
+Первичная настройка источника данных:
+1. Откройте `http://localhost:3000`
+2. Войдите в Grafana
+3. Перейдите в `Connections` → `Data sources` → `Add data source`
+4. Выберите `Prometheus`
+5. Укажите URL `http://prometheus:9090` и нажмите `Save & test`
 
 ---
 

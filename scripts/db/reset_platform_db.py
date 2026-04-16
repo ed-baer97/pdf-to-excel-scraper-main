@@ -21,7 +21,6 @@ def main() -> int:
             return 1
 
     db_path.unlink(missing_ok=True)
-    # Also remove any migration versions if present
     migrations_dir = Path("migrations")
     if migrations_dir.exists():
         versions_dir = migrations_dir / "versions"

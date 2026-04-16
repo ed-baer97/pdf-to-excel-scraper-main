@@ -648,7 +648,7 @@ def generate_goals_analysis():
         if not difficulties:
             return jsonify({"success": False, "error": "Заполните поле 'Цели, вызвавшие затруднения'"}), 400
         
-        # Ключ и модель из школы (выбор супер-админа); fallback на env/файл для обратной совместимости
+        # Ключ и модель из школы (выбор супер-админа); fallback только на env
         school = current_user.school
         api_key = None
         ai_model = "qwen-flash-character"
@@ -658,10 +658,6 @@ def generate_goals_analysis():
                 ai_model = school.ai_model
         if not api_key or api_key == "sk-xxx":
             api_key = os.getenv("DASHSCOPE_API_KEY")
-        if not api_key or api_key == "sk-xxx":
-            api_key_file = Path(__file__).parent.parent.parent / "api_key.txt"
-            if api_key_file.exists():
-                api_key = api_key_file.read_text(encoding="utf-8").strip()
         
         if not api_key or api_key == "sk-xxx":
             return _generate_fallback_analysis(achieved, difficulties)

@@ -1,29 +1,13 @@
 """
 Миграционный скрипт: удаление некорректных записей quarter 1/3
 для полугодовых предметов.
-
-Проблема:
-    Некоторые пользователи запустили скрапинг до того, как была добавлена
-    логика определения полугодовых предметов. В результате в БД попали
-    записи GradeReport с period_type="quarter", period_number=1 или 3
-    для предметов, которые на самом деле оцениваются за полугодие.
-    Это приводит к заниженным/некорректным оценкам.
-
-Логика:
-    1. Находим все (school_id, subject_name), которые имеют записи
-       с period_type="semester" — эти предметы полугодовые.
-    2. Удаляем записи с period_type="quarter", period_number in (1, 3)
-       для этих предметов.
-
-Использование:
-    python fix_semester_grades.py          # просмотр (dry-run)
-    python fix_semester_grades.py --apply  # применить удаление
 """
 import sys
+
 from webapp import create_app
+from webapp.constants import normalize_subject_name
 from webapp.extensions import db
 from webapp.models import GradeReport
-from webapp.constants import normalize_subject_name
 
 
 def main():
@@ -80,8 +64,9 @@ def main():
             print(f"\nУдалено {len(to_delete)} записей.")
         else:
             print("\nЭто dry-run. Для применения запустите:")
-            print("  python fix_semester_grades.py --apply")
+            print("  python -m scripts.db.fix_semester_grades --apply")
 
 
 if __name__ == "__main__":
     main()
+

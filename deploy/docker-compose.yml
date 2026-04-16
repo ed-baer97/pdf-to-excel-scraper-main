@@ -1,0 +1,115 @@
+version: '3.8'
+
+# =============================================================================
+# Mektep Platform - Simplified Architecture
+# =============================================================================
+# - Nginx: Reverse proxy, SSL termination, rate limiting
+# - Web: Flask app (auth, API, admin panel)
+# - PostgreSQL: Main database
+# =============================================================================
+
+services:
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - web
+    restart: unless-stopped
+    networks:
+      - mektep-network
+
+  web:
+    build: .
+    expose:
+      - "5000"
+    environment:
+      - FLASK_ENV=production
+      - SECRET_KEY=${SECRET_KEY}
+      - DATABASE_URL=postgresql://mektep:${POSTGRES_PASSWORD:-mektep123}@db:5432/mektep_db
+      - USE_CELERY=0
+      - UPLOAD_ROOT=/app/data/uploads
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+    volumes:
+      - ./data:/app/data
+      - ./instance:/app/instance
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - mektep-network
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=mektep
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-mektep123}
+      - POSTGRES_DB=mektep_db
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - mektep-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mektep -d mektep_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    restart: unless-stopped
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - mektep-network
+
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    ports:
+      - "9090:9090"
+    depends_on:
+      - web
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    networks:
+      - mektep-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - mektep-network
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  grafana-data:
+
+networks:
+  mektep-network:
+    driver: bridge
+

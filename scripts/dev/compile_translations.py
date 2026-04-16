@@ -7,7 +7,7 @@ from pathlib import Path
 
 def main() -> None:
     """Компилирует все messages.po в webapp/translations в messages.mo через msgfmt или polib."""
-    translations_dir = Path(__file__).parent / "webapp" / "translations"
+    translations_dir = Path(__file__).resolve().parents[2] / "webapp" / "translations"
 
     for locale_dir in translations_dir.glob("*/LC_MESSAGES"):
         po_file = locale_dir / "messages.po"
@@ -49,3 +49,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

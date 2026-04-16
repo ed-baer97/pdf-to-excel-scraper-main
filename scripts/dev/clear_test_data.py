@@ -1,11 +1,8 @@
 """
 Скрипт для просмотра и очистки тестовых данных из БД.
-Запуск: python clear_test_data.py [--delete]
+Запуск: python -m scripts.dev.clear_test_data [--delete]
 """
-import sys
 import argparse
-
-sys.path.insert(0, '.')
 
 from webapp import create_app
 from webapp.extensions import db
@@ -70,3 +67,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

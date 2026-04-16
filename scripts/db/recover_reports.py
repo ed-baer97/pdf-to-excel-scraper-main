@@ -1,11 +1,13 @@
 """Восстановление записей отчётов в БД из файлов в каталогах задач скрапинга."""
+import sys
+from pathlib import Path
+
 from webapp import create_app
 from webapp.extensions import db
 from webapp.models import ReportFile, ScrapeJob, ScrapeJobStatus
-from pathlib import Path
-import re
 
 app = create_app()
+
 
 def _parse_class_subject(stem: str) -> tuple[str, str]:
     """Разбирает имя файла без расширения на класс и предмет (по «» или по первому пробелу)."""
@@ -16,7 +18,6 @@ def _parse_class_subject(stem: str) -> tuple[str, str]:
             class_name = s[: i + 1].strip()
             subject = s[i + 1 :].strip()
             return class_name, subject
-    # Fallback: split by first space
     parts = s.split()
     if len(parts) <= 1:
         return s, ""
@@ -30,46 +31,44 @@ def recover_reports_for_job(job_id: int):
         if not job:
             print(f"Job {job_id} not found")
             return
-        
+
         if not job.output_dir:
             print(f"Job {job_id} has no output directory")
             return
-        
+
         output_dir = Path(job.output_dir)
         reports_dir = output_dir / "reports"
-        
+
         if not reports_dir.exists():
             print(f"Reports directory not found: {reports_dir}")
             return
-        
+
         print(f"Recovering reports for job {job_id} from {reports_dir}")
-        
-        # Collect reports
+
         by_stem = {}
         for p in reports_dir.glob("*"):
             if p.suffix.lower() not in {".xlsx", ".docx"}:
                 continue
             by_stem.setdefault(p.stem, {})[p.suffix.lower()] = p
-        
+
         created = 0
         updated = 0
-        
+
         for stem, d in sorted(by_stem.items()):
             class_name, subject = _parse_class_subject(stem)
             xlsx = d.get(".xlsx")
             docx = d.get(".docx")
-            
+
             excel_abs = str(xlsx.resolve()) if xlsx and xlsx.exists() else None
             word_abs = str(docx.resolve()) if docx and docx.exists() else None
-            
-            # Check if report already exists
+
             existing = ReportFile.query.filter_by(
                 teacher_id=job.teacher_id,
                 class_name=class_name,
                 subject=subject,
-                period_code=job.period_code
+                period_code=job.period_code,
             ).first()
-            
+
             if existing:
                 if excel_abs:
                     existing.excel_path = excel_abs
@@ -90,7 +89,7 @@ def recover_reports_for_job(job_id: int):
                 db.session.add(rf)
                 created += 1
                 print(f"  Created: {class_name} - {subject}")
-        
+
         db.session.commit()
         print(f"\nRecovery complete: {created} created, {updated} updated")
 
@@ -100,11 +99,11 @@ def recover_all_jobs():
     with app.app_context():
         jobs = ScrapeJob.query.filter(
             ScrapeJob.output_dir.isnot(None),
-            ScrapeJob.status.in_([ScrapeJobStatus.SUCCEEDED.value, ScrapeJobStatus.RUNNING.value])
+            ScrapeJob.status.in_([ScrapeJobStatus.SUCCEEDED.value, ScrapeJobStatus.RUNNING.value]),
         ).all()
-        
+
         print(f"Found {len(jobs)} jobs to check")
-        
+
         for job in jobs:
             try:
                 recover_reports_for_job(job.id)
@@ -113,10 +112,8 @@ def recover_all_jobs():
 
 
 if __name__ == "__main__":
-    import sys
-    
     if len(sys.argv) > 1:
-        job_id = int(sys.argv[1])
-        recover_reports_for_job(job_id)
+        recover_reports_for_job(int(sys.argv[1]))
     else:
         recover_all_jobs()
+

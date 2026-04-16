@@ -31,7 +31,7 @@ def main() -> None:
                         text(f"ALTER TABLE scrape_jobs ADD COLUMN {col_name} {col_type}")
                     )
                     print(f"  ✓ Added column '{col_name}'")
-            except Exception as e:
+            except Exception:
                 try:
                     db.session.execute(
                         text(f"ALTER TABLE scrape_jobs ADD COLUMN {col_name} {col_type}")
@@ -52,3 +52,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
