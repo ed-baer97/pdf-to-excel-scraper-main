@@ -154,6 +154,13 @@ def create_app(config_object=None) -> Flask:
                 db.session.execute(text("ALTER TABLE schools ADD COLUMN allow_cross_school_reports BOOLEAN NOT NULL DEFAULT 0"))
                 db.session.commit()
 
+            # schools.reports_quota_per_period (лимит отчётов на период)
+            if not _has_column("schools", "reports_quota_per_period"):
+                db.session.execute(
+                    text("ALTER TABLE schools ADD COLUMN reports_quota_per_period INTEGER NOT NULL DEFAULT 0")
+                )
+                db.session.commit()
+
             # ---- Backfill local sequences (best-effort) ----
             # Teacher sequence: per school, sequential 1..N (only fills NULLs).
             for school in School.query.order_by(School.id.asc()).all():
