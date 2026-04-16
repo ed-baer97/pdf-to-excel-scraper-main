@@ -200,6 +200,10 @@ def create_app(config_object=None) -> Flask:
         except Exception as e:
             # Don't break app startup for best-effort migration/backfill.
             try:
+                db.session.rollback()
+            except Exception:
+                pass
+            try:
                 app.logger.warning(f"Schema upgrade/backfill skipped due to error: {e}")
             except Exception:
                 pass
