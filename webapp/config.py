@@ -73,9 +73,11 @@ class Config:
     DESKTOP_DOWNLOAD_PATH = os.getenv("DESKTOP_DOWNLOAD_PATH", "")
     # Прямая ссылка на ассет (а не на страницу релиза) — чтобы скачивание
     # стартовало автоматически при клике на «Скачать приложение».
+    # Имя ассета на GitHub — Mektep.Desktop.exe (как в списке релиза). latest —
+    # всегда последний релиз с этим именем файла.
     DESKTOP_DOWNLOAD_URL = os.getenv(
         "DESKTOP_DOWNLOAD_URL",
-        "https://github.com/ed-baer97/mektep-desktop-releases/releases/download/v1.1.1/Mektep.Desktop.exe",
+        "https://github.com/ed-baer97/mektep-desktop-releases/releases/latest/download/Mektep.Desktop.exe",
     )
 
 
