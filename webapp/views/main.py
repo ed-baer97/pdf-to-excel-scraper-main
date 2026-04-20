@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 from flask import Blueprint, current_app, redirect, render_template, send_file, url_for, session, request
@@ -7,11 +8,31 @@ from ..models import Role
 
 bp = Blueprint("main", __name__)
 
+# Частая ошибка: вместо прямой загрузки указывают страницу релиза:
+#   .../releases/tag/<тег>/<файл.exe>  — так GitHub НЕ отдаёт файл.
+# Правильно: .../releases/download/<тег>/<файл.exe>
+_GITHUB_TAG_ASSET_RE = re.compile(
+    r"(https?://github\.com/[^/]+/[^/]+)/releases/tag/([^/]+)/([^/]+\.(?:exe|zip|msi))(?:\?.*)?$",
+    re.IGNORECASE,
+)
+
+
+def _normalize_github_desktop_download_url(url: str) -> str:
+    url = (url or "").strip()
+    if not url:
+        return url
+    m = _GITHUB_TAG_ASSET_RE.match(url)
+    if m:
+        base, tag, filename = m.groups()
+        return f"{base}/releases/download/{tag}/{filename}"
+    return url
+
 
 def _get_desktop_download_info():
     """Возвращает (download_available, download_url) для шаблона."""
     ext_url = current_app.config.get("DESKTOP_DOWNLOAD_URL")
     if ext_url:
+        ext_url = _normalize_github_desktop_download_url(ext_url)
         return False, ext_url  # Внешняя ссылка
     path = current_app.config.get("DESKTOP_DOWNLOAD_PATH")
     if path:
