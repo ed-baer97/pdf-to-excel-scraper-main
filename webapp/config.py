@@ -71,7 +71,12 @@ class Config:
     # DESKTOP_DOWNLOAD_PATH — путь к exe/zip (например dist/Mektep Desktop.zip)
     # DESKTOP_DOWNLOAD_URL — внешняя ссылка (если задана, используется вместо пути)
     DESKTOP_DOWNLOAD_PATH = os.getenv("DESKTOP_DOWNLOAD_PATH", "")
-    DESKTOP_DOWNLOAD_URL = os.getenv("DESKTOP_DOWNLOAD_URL", "https://github.com/ed-baer97/mektep-desktop-releases/releases/tag/v1.0.4")
+    # Прямая ссылка на ассет (а не на страницу релиза) — чтобы скачивание
+    # стартовало автоматически при клике на «Скачать приложение».
+    DESKTOP_DOWNLOAD_URL = os.getenv(
+        "DESKTOP_DOWNLOAD_URL",
+        "https://github.com/ed-baer97/mektep-desktop-releases/releases/download/v1.0.4/Mektep.Desktop.exe",
+    )
 
 
 class DevelopmentConfig(Config):
