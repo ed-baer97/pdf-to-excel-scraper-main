@@ -175,23 +175,12 @@ def _accumulate_report_into_class_totals(
     class_totals[class_name]["weight_total"] += total
 
 
-def aggregate_class_metrics(school_id: int, period_number: int, active_class_names: set[str]) -> dict:
+def _build_metrics_from_reports(reports: list, active_class_names: set[str]) -> dict:
+    """Общее ядро агрегации: из списка отчётов строит класс‑тоталы и сводку.
+
+    Качество/успеваемость считаются простым средним арифметическим: внутри
+    класса — по всем его предметам; по школе/параллелям — по классам с данными.
     """
-    Качество/успеваемость по классам и по школе — простое среднее арифметическое.
-
-    Внутри класса: простое среднее процентов по всем учебным предметам.
-    По школе и параллелям: простое среднее процентов по классам.
-
-    Учитываются только отчёты, у которых class_name есть в списке классов школы
-    (таблица Class). Так удалённый из списка класс не отображается на диаграммах,
-    даже если строки GradeReport остались в базе (их можно удалить в «Обзоре оценок»).
-
-    Returns dict with:
-      class_totals, school_quality, school_success,
-      parallel (1-4, 5-9, 10-11): optional floats,
-      classes_with_data, total_weight, has_data.
-    """
-    reports = get_quarter_reports(school_id, period_number)
     roster = set(active_class_names)
     class_totals: dict = {}
     for report in reports:
@@ -247,6 +236,43 @@ def aggregate_class_metrics(school_id: int, period_number: int, active_class_nam
         "total_weight": students_total,
         "has_data": bool(school_quality_values),
     }
+
+
+def aggregate_class_metrics(school_id: int, period_number: int, active_class_names: set[str]) -> dict:
+    """
+    Качество/успеваемость по классам и по школе за выбранную четверть —
+    простое среднее арифметическое.
+
+    Внутри класса: простое среднее процентов по всем учебным предметам.
+    По школе и параллелям: простое среднее процентов по классам.
+
+    Учитываются только отчёты, у которых class_name есть в списке классов школы
+    (таблица Class). Так удалённый из списка класс не отображается на диаграммах,
+    даже если строки GradeReport остались в базе (их можно удалить в «Обзоре оценок»).
+
+    Returns dict with:
+      class_totals, school_quality, school_success,
+      parallel (1-4, 5-9, 10-11): optional floats,
+      classes_with_data, total_weight, has_data.
+    """
+    reports = get_quarter_reports(school_id, period_number)
+    return _build_metrics_from_reports(reports, active_class_names)
+
+
+def aggregate_year_metrics(school_id: int, active_class_names: set[str]) -> dict:
+    """
+    Качество/успеваемость по классам и по школе за учебный год.
+
+    Берёт отчёты ``period_type="year"`` (заполняется скрапером со вкладки
+    ``#chetvert_5`` на Mektep), агрегация — простое среднее арифметическое,
+    структура результата совпадает с :func:`aggregate_class_metrics`.
+    """
+    reports = GradeReport.query.filter_by(
+        school_id=school_id,
+        period_type="year",
+        period_number=1,
+    ).all()
+    return _build_metrics_from_reports(reports, active_class_names)
 
 
 def chart_series_from_class_totals(class_totals: dict) -> tuple[list[str], list[float], list[float]]:

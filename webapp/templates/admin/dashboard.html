@@ -142,6 +142,109 @@
       {% endif %}
     </div>
   </div>
+
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+      <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+        <div>
+          <h4 class="mb-1">{{ _('year_kpi_title') }}</h4>
+          <p class="text-muted small mb-0">{{ _('year_kpi_hint') }}</p>
+        </div>
+      </div>
+
+      {% if year_metrics.has_data %}
+      <div class="row g-3 mb-2">
+        <div class="col-6 col-md-3">
+          <div class="border rounded-3 p-3 h-100 bg-success bg-opacity-10">
+            <div class="small text-muted text-uppercase">{{ _('quality_label') }}, %</div>
+            <div class="fs-3 fw-semibold text-success">{{ year_metrics.school_quality }}%</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="border rounded-3 p-3 h-100 bg-success bg-opacity-25">
+            <div class="small text-muted text-uppercase">{{ _('success_label') }}, %</div>
+            <div class="fs-3 fw-semibold text-success">{{ year_metrics.school_success }}%</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="border rounded-3 p-3 h-100">
+            <div class="small text-muted text-uppercase">{{ _('school_kpi_classes_with_data') }}</div>
+            <div class="fs-3 fw-semibold">{{ year_metrics.classes_with_data }}</div>
+          </div>
+        </div>
+      </div>
+      <div class="row g-3">
+        <div class="col-12 col-md-4">
+          <div class="border rounded-3 h-100 shadow-sm bg-white overflow-hidden">
+            <div class="px-3 py-2 border-bottom bg-success small fw-semibold text-white">{{ _('classes_1_4') }}</div>
+            <div class="p-3">
+              <div class="row g-2">
+                <div class="col-6">
+                  <div class="border rounded-3 p-2 h-100 text-center bg-success bg-opacity-10">
+                    <div class="small text-muted text-uppercase">{{ _('quality_label') }}</div>
+                    <div class="fs-5 fw-semibold text-success mb-0">{% if year_metrics.parallel['1-4'].quality is not none %}{{ year_metrics.parallel['1-4'].quality }}%{% else %}<span class="text-muted">—</span>{% endif %}</div>
+                  </div>
+                </div>
+                <div class="col-6">
+                  <div class="border rounded-3 p-2 h-100 text-center bg-success bg-opacity-25">
+                    <div class="small text-muted text-uppercase">{{ _('success_label') }}</div>
+                    <div class="fs-5 fw-semibold text-success mb-0">{% if year_metrics.parallel['1-4'].success is not none %}{{ year_metrics.parallel['1-4'].success }}%{% else %}<span class="text-muted">—</span>{% endif %}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-md-4">
+          <div class="border rounded-3 h-100 shadow-sm bg-white overflow-hidden">
+            <div class="px-3 py-2 border-bottom bg-success small fw-semibold text-white">{{ _('classes_5_9') }}</div>
+            <div class="p-3">
+              <div class="row g-2">
+                <div class="col-6">
+                  <div class="border rounded-3 p-2 h-100 text-center bg-success bg-opacity-10">
+                    <div class="small text-muted text-uppercase">{{ _('quality_label') }}</div>
+                    <div class="fs-5 fw-semibold text-success mb-0">{% if year_metrics.parallel['5-9'].quality is not none %}{{ year_metrics.parallel['5-9'].quality }}%{% else %}<span class="text-muted">—</span>{% endif %}</div>
+                  </div>
+                </div>
+                <div class="col-6">
+                  <div class="border rounded-3 p-2 h-100 text-center bg-success bg-opacity-25">
+                    <div class="small text-muted text-uppercase">{{ _('success_label') }}</div>
+                    <div class="fs-5 fw-semibold text-success mb-0">{% if year_metrics.parallel['5-9'].success is not none %}{{ year_metrics.parallel['5-9'].success }}%{% else %}<span class="text-muted">—</span>{% endif %}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-md-4">
+          <div class="border rounded-3 h-100 shadow-sm bg-white overflow-hidden">
+            <div class="px-3 py-2 border-bottom bg-success small fw-semibold text-white">{{ _('classes_10_11') }}</div>
+            <div class="p-3">
+              <div class="row g-2">
+                <div class="col-6">
+                  <div class="border rounded-3 p-2 h-100 text-center bg-success bg-opacity-10">
+                    <div class="small text-muted text-uppercase">{{ _('quality_label') }}</div>
+                    <div class="fs-5 fw-semibold text-success mb-0">{% if year_metrics.parallel['10-11'].quality is not none %}{{ year_metrics.parallel['10-11'].quality }}%{% else %}<span class="text-muted">—</span>{% endif %}</div>
+                  </div>
+                </div>
+                <div class="col-6">
+                  <div class="border rounded-3 p-2 h-100 text-center bg-success bg-opacity-25">
+                    <div class="small text-muted text-uppercase">{{ _('success_label') }}</div>
+                    <div class="fs-5 fw-semibold text-success mb-0">{% if year_metrics.parallel['10-11'].success is not none %}{{ year_metrics.parallel['10-11'].success }}%{% else %}<span class="text-muted">—</span>{% endif %}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% else %}
+      <div class="alert alert-light border mb-0">
+        <i class="bi bi-info-circle text-success"></i> {{ _('year_kpi_no_data') }}
+      </div>
+      {% endif %}
+    </div>
+  </div>
   
   <!-- Навигация по разделам -->
   <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-5 g-3 mb-4">

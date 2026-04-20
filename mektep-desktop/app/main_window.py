@@ -302,14 +302,16 @@ class MektepMainWindow(QMainWindow):
                 "1 тоқсан",
                 "2 тоқсан (1 жартыжылдық)",
                 "3 тоқсан",
-                "4 тоқсан (2 жартыжылдық)"
+                "4 тоқсан (2 жартыжылдық)",
+                "Оқу жылы",
             ])
         else:
             self.period_combo.addItems([
                 "1 четверть",
                 "2 четверть (1 полугодие)",
                 "3 четверть",
-                "4 четверть (2 полугодие)"
+                "4 четверть (2 полугодие)",
+                "Учебный год",
             ])
         self.period_combo.setCurrentIndex(1)
         self.period_combo.setMinimumHeight(30)

@@ -38,6 +38,7 @@ from ..constants import kazakh_sort_key, normalize_subject_name
 from ..services.admin_common import apply_analytics_filters, redirect_back
 from ..services.admin_dashboard import (
     aggregate_class_metrics,
+    aggregate_year_metrics,
     chart_series_from_class_totals,
     class_accordion_group,
     class_name_sort_key,
@@ -108,6 +109,7 @@ def dashboard():
     classes = Class.query.filter_by(school_id=current_user.school_id).all()
     active_class_names = {c.name for c in classes}
     school_metrics = aggregate_class_metrics(current_user.school_id, period_number, active_class_names)
+    year_metrics = aggregate_year_metrics(current_user.school_id, active_class_names)
     teachers_count = User.query.filter_by(
         role=Role.TEACHER.value, school_id=current_user.school_id
     ).count()
@@ -118,6 +120,7 @@ def dashboard():
         classes_count=classes_count,
         period_number=period_number,
         school_metrics=school_metrics,
+        year_metrics=year_metrics,
     )
 
 

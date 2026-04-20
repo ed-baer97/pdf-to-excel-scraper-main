@@ -124,6 +124,7 @@ except ImportError:
         "2": "2 четверть (1 полугодие)",
         "3": "3 четверть",
         "4": "4 четверть (2 полугодие)",
+        "5": "Учебный год",
     }
 
 def _safe_slug(s: str) -> str:
@@ -333,21 +334,23 @@ def _get_org_name(page) -> str | None:
 
 def _choose_period() -> tuple[str, str]:
     """
-    Возвращает (код периода, подпись): из MEKTEP_PERIOD или интерактивный ввод 1–4.
+    Возвращает (код периода, подпись): из MEKTEP_PERIOD или интерактивный ввод 1–5.
     Правило: 2-я четверть соответствует 1 полугодию в подписи PERIOD_MAP.
+    Код 5 — «Учебный год» (вкладка #chetvert_5).
     """
     chosen = os.getenv("MEKTEP_PERIOD", "").strip()
     if chosen in PERIOD_MAP:
         return chosen, PERIOD_MAP[chosen]
 
-    print("Какую четверть будем извлекать?")
+    print("Какой период будем извлекать?")
     print("  1 - 1 четверть")
     print("  2 - 2 четверть (1 полугодие, если нет 2 четверти)")
     print("  3 - 3 четверть")
     print("  4 - 4 четверть (2 полугодие)")
-    chosen = input("Выбор (1/2/3/4) [2]: ").strip() or "2"
+    print("  5 - Учебный год")
+    chosen = input("Выбор (1/2/3/4/5) [2]: ").strip() or "2"
     if chosen not in PERIOD_MAP:
-        raise ValueError("Unknown period. Use: 1,2,3,4")
+        raise ValueError("Unknown period. Use: 1,2,3,4,5")
     return chosen, PERIOD_MAP[chosen]
 
 
@@ -597,6 +600,15 @@ def _pick_tab_href_for_period(period_code: str, tabs: list[dict]) -> str | None:
         # Fallback to "1 полугодие" if 2nd quarter is absent.
         for href, txt in texts.items():
             if "1 полугод" in txt.lower() or ("1" in txt and "жартыжылдық" in txt):
+                return href
+
+    # Учебный год: вкладка #chetvert_5 или подпись, содержащая "учебн"/"оқу жыл".
+    if period_code == "5":
+        if "#chetvert_5" in hrefs:
+            return "#chetvert_5"
+        for href, txt in texts.items():
+            low = txt.lower()
+            if "учебн" in low or "оқу жыл" in low or "оку жыл" in low:
                 return href
 
     # Fallback by matching quarter number in text.

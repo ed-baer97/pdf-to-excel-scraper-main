@@ -418,11 +418,16 @@ def api_upload_report():
     analytics_payload = data.get("analytics_json")
     
     # Валидация period_type
-    if period_type not in ("quarter", "semester"):
-        return jsonify({"error": "period_type должен быть 'quarter' или 'semester'"}), 400
+    if period_type not in ("quarter", "semester", "year"):
+        return jsonify({"error": "period_type должен быть 'quarter', 'semester' или 'year'"}), 400
     
     # Валидация period_number
-    max_period = 4 if period_type == "quarter" else 2
+    if period_type == "quarter":
+        max_period = 4
+    elif period_type == "semester":
+        max_period = 2
+    else:
+        max_period = 1
     if not (1 <= period_number <= max_period):
         return jsonify({"error": f"period_number должен быть от 1 до {max_period}"}), 400
     

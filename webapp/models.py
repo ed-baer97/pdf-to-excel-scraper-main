@@ -262,8 +262,8 @@ class GradeReport(db.Model):
     school_id = db.Column(db.Integer, db.ForeignKey("schools.id"), nullable=False, index=True)
     class_name = db.Column(db.String(64), nullable=False)  # "7А"
     subject_name = db.Column(db.String(255), nullable=False)  # "Математика"
-    period_type = db.Column(db.String(20), nullable=False)  # "quarter" или "semester"
-    period_number = db.Column(db.Integer, nullable=False)  # 1-4 для четверти, 1-2 для полугодия
+    period_type = db.Column(db.String(20), nullable=False)  # "quarter", "semester" или "year"
+    period_number = db.Column(db.Integer, nullable=False)  # 1-4 для четверти, 1-2 для полугодия, 1 для учебного года
     
     # JSON данные оценок
     # Формат grades_json:
