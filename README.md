@@ -652,7 +652,7 @@ pyupdater upload               # залить пакет (см. plugin PyUpdater
 Можно встроить ссылку на скачивание на лендинг:
 
 - Локальный файл: `DESKTOP_DOWNLOAD_PATH=dist/Mektep Desktop.exe` → маршрут `/download/desktop` отдаст файл.
-- Внешний URL: `DESKTOP_DOWNLOAD_URL=https://github.com/<org>/<repo>/releases/download/v1.0.4/Mektep.Desktop.exe` → используйте **прямую ссылку на ассет**, тогда скачивание запустится автоматически (ссылка на страницу релиза вида `/releases/tag/...` или `/releases/latest` откроет страницу GitHub, а не файл).
+- Внешний URL: `DESKTOP_DOWNLOAD_URL=https://github.com/<org>/<repo>/releases/download/v1.1.1/Mektep.Desktop.exe` → используйте **прямую ссылку на ассет** (`/releases/download/...`), тогда скачивание запустится автоматически. Ссылка вида `/releases/tag/v1.1.1/...` ведёт на страницу релиза, а не на файл.
 
 См. [webapp/views/main.py](webapp/views/main.py) (`_get_desktop_download_info`).
 
