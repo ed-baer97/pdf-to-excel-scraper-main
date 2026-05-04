@@ -1,85 +1,102 @@
 {% extends "layout.html" %}
+{% block head_extra %}
+<style>
+  .hero-card {
+    border: 0;
+    background: linear-gradient(135deg, #0d6efd 0%, #3f8cff 100%);
+    color: #fff;
+  }
+  .quick-step {
+    border: 1px solid #e9ecef;
+    border-radius: .75rem;
+    padding: .9rem 1rem;
+    background: #fff;
+    height: 100%;
+  }
+  .quick-step .step-number {
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #e7f1ff;
+    color: #0d6efd;
+    font-weight: 700;
+    margin-right: .5rem;
+  }
+</style>
+{% endblock %}
 {% block content %}
+{% set is_kk = get_locale() == 'kk' %}
 <div class="row">
   <div class="col-lg-8">
+    <div class="card shadow-sm hero-card mb-4">
+      <div class="card-body">
+        <h2 class="h4 mb-2">
+          <i class="bi bi-mortarboard-fill"></i>
+          {{ "Mektep Desktop мугалімдерге арналған" if is_kk else "Mektep Desktop для учителей" }}
+        </h2>
+        <p class="mb-3">
+          {{ "Басты әрекеттер бір экранда: жүктеу, жылдам бастау және әкімшілерге кіру. Мугалімдер тек десктоп қолданбасы арқылы жұмыс істейді." if is_kk else "Всё основное на одном экране: скачивание, быстрый старт и вход для администраторов. Учителя работают только через десктопное приложение." }}
+        </p>
+        <div class="row g-2 small">
+          <div class="col-md-6">
+            <div class="bg-white bg-opacity-10 rounded p-2">
+              <strong>{{ "Платформа логині" if is_kk else "Логин платформы" }}</strong><br>
+              {{ "мектеп әкімшісі береді" if is_kk else "выдаёт администратор школы" }}
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="bg-white bg-opacity-10 rounded p-2">
+              <strong>{{ "mektep.edu.kz логині" if is_kk else "Логин mektep.edu.kz" }}</strong><br>
+              {{ "ЖСН және мемлекеттік портал құпиясөзі" if is_kk else "ИИН и пароль гос. портала" }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="card shadow-sm mb-4">
       <div class="card-body">
-        <h2 class="mb-4"><i class="bi bi-book"></i> Инструкция по использованию Mektep Desktop</h2>
-        
-        <h5>Для учителей</h5>
-        <p class="text-muted">Учителя работают только через десктопное приложение Mektep Desktop. Вход в кабинет через сайт недоступен.</p>
-        
-        <div class="alert alert-info mb-3">
-          <strong>Важно:</strong> В приложении используются <strong>два разных логина</strong>:
-          <ul class="mb-0 mt-1">
-            <li><strong>Логин от платформы</strong> — выдаёт администратор школы (для входа в приложение)</li>
-            <li><strong>Логин от mektep.edu.kz</strong> — ваш ИИН и пароль от государственного портала (для создания отчётов)</li>
-          </ul>
+        <h5 class="mb-3"><i class="bi bi-rocket-takeoff"></i> {{ "Жылдам бастау" if is_kk else "Быстрый старт" }}</h5>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <div class="quick-step">
+              <div class="mb-1"><span class="step-number">1</span><strong>{{ "Қолданбаны жүктеңіз" if is_kk else "Скачайте приложение" }}</strong></div>
+              <div class="small text-muted">{{ "«Қолданбаны жүктеу» батырмасын басып, файлды іске қосыңыз." if is_kk else "Нажмите кнопку «Скачать приложение» и запустите файл." }}</div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="quick-step">
+              <div class="mb-1"><span class="step-number">2</span><strong>{{ "Жүйеге кіріңіз" if is_kk else "Войдите в систему" }}</strong></div>
+              <div class="small text-muted">{{ "Әкімші берген платформа логині мен құпиясөзін енгізіңіз." if is_kk else "Введите логин и пароль платформы, выданные администратором." }}</div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="quick-step">
+              <div class="mb-1"><span class="step-number">3</span><strong>{{ "Есептерді жасаңыз" if is_kk else "Сформируйте отчёты" }}</strong></div>
+              <div class="small text-muted">{{ "mektep.edu.kz үшін ЖСН/құпиясөзді, тоқсанды көрсетіп, «Іске қосу» түймесін басыңыз." if is_kk else "Укажите ИИН/пароль mektep.edu.kz, четверть и нажмите «Запустить»." }}</div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="quick-step">
+              <div class="mb-1"><span class="step-number">4</span><strong>{{ "Нәтижені тексеріңіз" if is_kk else "Проверьте результат" }}</strong></div>
+              <div class="small text-muted">{{ "Есептерді ашып, кестелерді экспорттаңыз және қажет болса AI-талдауды қолданыңыз." if is_kk else "Откройте отчёты, экспортируйте таблицы и при необходимости примените AI-анализ." }}</div>
+            </div>
+          </div>
         </div>
-        
-        <hr>
-        
-        <h5>Шаг 1: Скачайте и запустите</h5>
-        <p>Нажмите кнопку <strong>«Скачать приложение»</strong> справа. Загрузится файл <strong>Mektep Desktop.exe</strong>. Сохраните его в удобную папку и запустите двойным щелчком.</p>
-        <p class="text-muted small">При первом запуске Windows может показать предупреждение SmartScreen — нажмите «Подробнее» и затем «Выполнить в любом случае».</p>
-        
-        <h5>Шаг 2: Вход в приложение</h5>
-        <p>При запуске появится окно авторизации. Введите <strong>логин и пароль от платформы</strong>, которые выдал администратор школы. Отметьте «Запомнить меня», чтобы не вводить пароль повторно. Приложение само свяжется с платформой — запускать сервер вручную не нужно.</p>
-        
-        <h5>Шаг 3: Создание отчётов</h5>
-        <p>В левой панели окна:</p>
-        <ol>
-          <li>Введите <strong>логин и пароль от mektep.edu.kz</strong> (ИИН и пароль от государственного портала)</li>
-          <li>Выберите <strong>четверть</strong> и <strong>язык</strong> отчётов</li>
-          <li>При необходимости укажите папку для сохранения</li>
-          <li>Нажмите <strong>«Запустить»</strong></li>
-        </ol>
-        <p class="text-muted small">Приложение автоматически соберёт данные с mektep.edu.kz, сформирует Excel- и Word-отчёты и загрузит результаты на сервер платформы.</p>
-        
-        <h5>Шаг 4: Работа с отчётами</h5>
-        <p>После создания отчётов доступны <strong>4 вкладки</strong> в правой части окна:</p>
-        <ul>
-          <li><strong>Мои отчёты</strong> — список всех созданных отчётов. Можно открыть Excel/Word файл, открыть папку или удалить отчёт</li>
-          <li><strong>Оценки по классам</strong> — таблица оценок учеников по предметам с процентами качества и успеваемости. Подсвечивает пограничные оценки</li>
-          <li><strong>Предметник</strong> — отчёт учителя-предметника: качество и успеваемость по классам, аналитика по СОР/СОЧ</li>
-          <li><strong>Кл. руководитель</strong> — отчёт классного руководителя: отличники, хорошисты, с одной «4», троечники, с одной «3», неуспевающие</li>
-        </ul>
-        <p class="text-muted small">Каждую вкладку можно экспортировать в Excel с помощью кнопки <strong>«Экспорт в Excel»</strong>.</p>
-        
-        <h5>Шаг 5: Цели обучения и генерация анализа (AI)</h5>
-        <p>Во вкладке «Мои отчёты» нажмите кнопку <strong>«Цели»</strong>. В открывшемся окне:</p>
-        <ol>
-          <li>Для каждого типа оценивания (СОР1, СОР2, СОР3, СОЧ) заполните:
-            <ul>
-              <li><strong>Достигнутые цели</strong> — что учащиеся усвоили</li>
-              <li><strong>Цели, вызвавшие затруднения</strong> — что вызвало трудности (обязательно для генерации)</li>
-            </ul>
-          </li>
-          <li>Нажмите <strong>«Генерировать анализ (AI)»</strong> — система автоматически заполнит перечень затруднений, причины и план коррекционной работы</li>
-          <li>Отметьте отчёты, к которым применить цели, и нажмите <strong>«Применить к выбранным отчетам»</strong></li>
-        </ol>
-        <p class="text-muted small mb-0">Анализ будет записан в Word-документы выбранных отчётов.</p>
-        
-        <hr>
-        
-        <h5>Настройки</h5>
-        <p>Нажмите на значок шестерёнки в верхней части окна. Доступные настройки:</p>
-        <ul>
-          <li><strong>Сервер</strong> — адрес платформы и проверка подключения</li>
-          <li><strong>Папка отчётов</strong> — путь для сохранения отчётов (по умолчанию: <code>Документы/Mektep Reports</code>)</li>
-          <li><strong>Язык</strong> — русский или казахский интерфейс (требуется перезапуск)</li>
-        </ul>
-        
-        <hr>
-        
-        <h5>Частые проблемы</h5>
-        <ul>
-          <li><strong>Не удаётся войти / нет подключения</strong> — проверьте интернет. Если проблема сохраняется, обратитесь к администратору — возможно, сервер платформы временно недоступен.</li>
-          <li><strong>Квота исчерпана</strong> — обратитесь к администратору школы для увеличения лимита.</li>
-          <li><strong>Неверный логин</strong> — при входе используйте логин и пароль от платформы, выданные администратором. При создании отчётов — отдельный ИИН и пароль от mektep.edu.kz.</li>
-          <li><strong>Предупреждение SmartScreen</strong> — нажмите «Подробнее» → «Выполнить в любом случае».</li>
-          <li><strong>Отчёты не загружаются на сервер</strong> — убедитесь, что ваша школа зарегистрирована на платформе. Обратитесь к администратору.</li>
-        </ul>
+      </div>
+    </div>
+
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="mb-3"><i class="bi bi-question-circle"></i> {{ "Жиі қойылатын сұрақтар" if is_kk else "Частые вопросы" }}</h5>
+        <div class="small">
+          <p class="mb-2"><strong>{{ "Файл іске қосылмай ма?" if is_kk else "Не запускается файл?" }}</strong> {{ "SmartScreen терезесінде «Толығырақ» → «Бәрібір іске қосу» таңдаңыз." if is_kk else "В SmartScreen нажмите «Подробнее» → «Выполнить в любом случае»." }}</p>
+          <p class="mb-2"><strong>{{ "Кіруде мәселе бар ма?" if is_kk else "Проблема со входом?" }}</strong> {{ "Қадамға сәйкес дұрыс логин түрін қолданып жатқаныңызды тексеріңіз." if is_kk else "Проверьте, что используете правильный тип логина для нужного шага." }}</p>
+          <p class="mb-0"><strong>{{ "Серверге жүктелмей ме?" if is_kk else "Нет загрузки на сервер?" }}</strong> {{ "Интернетті тексеріп, мектеп әкімшісіне хабарласыңыз." if is_kk else "Проверьте интернет и обратитесь к администратору школы." }}</p>
+        </div>
       </div>
     </div>
   </div>
@@ -88,18 +105,18 @@
     <!-- Вход для админов и супер админов -->
     <div class="card shadow-sm mb-4">
       <div class="card-body">
-        <h5 class="mb-3"><i class="bi bi-box-arrow-in-right"></i> Вход для администраторов</h5>
-        <p class="text-muted small">Только для админов школ и супер-админов. Учителя входят через десктопное приложение.</p>
+        <h5 class="mb-3"><i class="bi bi-box-arrow-in-right"></i> {{ "Әкімшілерге кіру" if is_kk else "Вход для администраторов" }}</h5>
+        <p class="text-muted small">{{ "Тек мектеп әкімшілері мен супер-әкімшілер үшін. Мугалімдер десктоп қолданбасы арқылы кіреді." if is_kk else "Только для админов школ и супер-админов. Учителя входят через десктопное приложение." }}</p>
         <form method="post" action="{{ url_for('auth.login_post') }}">
           <div class="mb-3">
-            <label class="form-label">Логин</label>
+            <label class="form-label">{{ "Логин" if is_kk else "Логин" }}</label>
             <input class="form-control" name="username" autocomplete="username" required>
           </div>
           <div class="mb-3">
-            <label class="form-label">Пароль</label>
+            <label class="form-label">{{ "Құпиясөз" if is_kk else "Пароль" }}</label>
             <input class="form-control" name="password" type="password" autocomplete="current-password" required>
           </div>
-          <button class="btn btn-primary w-100">Войти</button>
+          <button class="btn btn-primary w-100">{{ "Кіру" if is_kk else "Войти" }}</button>
         </form>
       </div>
     </div>
@@ -107,27 +124,21 @@
     <!-- Скачивание десктопной версии -->
     <div class="card shadow-sm">
       <div class="card-body">
-        <h5 class="mb-3"><i class="bi bi-download"></i> Скачать Mektep Desktop</h5>
+        <h5 class="mb-3"><i class="bi bi-download"></i> {{ "Mektep Desktop жүктеу" if is_kk else "Скачать Mektep Desktop" }}</h5>
         {% if download_url %}
           <a href="{{ download_url }}" class="btn btn-success w-100 mb-2" rel="noopener noreferrer">
-            <i class="bi bi-download"></i> Скачать приложение
+            <i class="bi bi-download"></i> {{ "Қолданбаны жүктеу" if is_kk else "Скачать приложение" }}
           </a>
         {% elif download_available %}
           <a href="{{ url_for('main.download_desktop') }}" class="btn btn-success w-100 mb-2" download>
-            <i class="bi bi-download"></i> Скачать приложение
+            <i class="bi bi-download"></i> {{ "Қолданбаны жүктеу" if is_kk else "Скачать приложение" }}
           </a>
         {% else %}
           <div class="alert alert-warning small mb-2">
-            Файл сборки пока не загружен. Обратитесь к администратору или соберите приложение самостоятельно:
+            {{ "Жинақ файлы әлі жүктелмеген. Әкімшіге хабарласыңыз немесе қолданбаны өзіңіз жинаңыз:" if is_kk else "Файл сборки пока не загружен. Обратитесь к администратору или соберите приложение самостоятельно:" }}
           </div>
           <code class="d-block small">cd mektep-desktop && pyinstaller mektep_desktop.spec</code>
         {% endif %}
-        <p class="text-muted small mt-2 mb-1">
-          Скачивается файл <strong>Mektep.Desktop.exe</strong> с GitHub Releases (как в списке ассетов, ~94&nbsp;МБ).
-        </p>
-        <p class="text-muted small mb-0">
-          Требуется: Windows. После скачивания сохраните файл и запустите его двойным щелчком.
-        </p>
       </div>
     </div>
   </div>

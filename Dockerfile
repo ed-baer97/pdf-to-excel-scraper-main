@@ -1,5 +1,5 @@
 # =============================================================================
-# Mektep Platform - Simplified Dockerfile
+# Mektep Scraper - Simplified Dockerfile
 # =============================================================================
 # Lightweight image for auth, API, and admin panel
 # Scraping/browser automation moved to desktop app

@@ -128,13 +128,13 @@ class SettingsDialog(QDialog):
         # Подсказка
         if self.translator.get_language() == 'ru':
             hint = (
-                "Укажите адрес сервера Mektep Platform.\n"
+                "Укажите адрес сервера Mektep Scraper.\n"
                 f"По умолчанию: {DEFAULT_SERVER_URL}\n\n"
                 "После изменения URL потребуется повторная авторизация."
             )
         else:
             hint = (
-                "Mektep Platform серверінің мекенжайын көрсетіңіз.\n"
+                "Mektep Scraper серверінің мекенжайын көрсетіңіз.\n"
                 f"Әдепкі: {DEFAULT_SERVER_URL}\n\n"
                 "URL өзгертілгеннен кейін қайта авторизация қажет."
             )

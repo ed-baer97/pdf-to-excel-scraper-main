@@ -290,7 +290,7 @@ Gettext-каталоги для двух локалей:
 |------|------|
 | [app/__init__.py](mektep-desktop/app/__init__.py) | Пакетный маркер (`__version__ = "1.0.0"`). |
 | [app/main_window.py](mektep-desktop/app/main_window.py) | `MektepMainWindow` — главное окно: табы «Создание отчётов», «История», «Оценки», «Отчёт предметника», «Отчёт классного руководителя», меню «Настройки», «Цели», «Обновление». |
-| [app/login_dialog.py](mektep-desktop/app/login_dialog.py) | `LoginDialog` — авторизация на сервере Mektep Platform, авто-вход по сохранённому токену (`QSettings`). |
+| [app/login_dialog.py](mektep-desktop/app/login_dialog.py) | `LoginDialog` — авторизация на сервере Mektep Scraper, авто-вход по сохранённому токену (`QSettings`). |
 | [app/settings_dialog.py](mektep-desktop/app/settings_dialog.py) | `SettingsDialog` — вкладки «Сервер», «Папка отчётов», «Язык»; хранение в `QSettings`. |
 | [app/goals_dialog.py](mektep-desktop/app/goals_dialog.py) | `GoalsDialog` — редактор целей обучения; применение изменений к Word-отчётам. |
 | [app/history_widget.py](mektep-desktop/app/history_widget.py) | `HistoryWidget` — таблица ранее сгенерированных отчётов с фильтрами (период/класс/предмет). |

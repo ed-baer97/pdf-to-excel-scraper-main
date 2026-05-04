@@ -1,4 +1,4 @@
-# Prometheus configuration for Mektep Platform
+# Prometheus configuration for Mektep Scraper
 # Scrapes metrics from Flask app (internal Docker network only)
 
 global:
