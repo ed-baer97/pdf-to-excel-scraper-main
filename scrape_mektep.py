@@ -18,8 +18,16 @@ from playwright.sync_api import Page
 # Импорт логгера
 try:
     from scraper_logger import (
-        init_logger, get_logger, log_stage, log_info, log_success, 
-        log_warning, log_error, ScraperLogger
+        init_logger,
+        get_logger,
+        log_stage,
+        log_info,
+        log_success,
+        log_warning,
+        log_error,
+        log_timing,
+        timing_block,
+        ScraperLogger,
     )
 except ImportError:
     # Fallback если логгер недоступен
@@ -50,6 +58,20 @@ except ImportError:
     def log_error(msg, exc=None):
         """Заглушка: печатает ошибку в консоль."""
         print(f"[ERROR] {msg}")
+
+    def log_timing(label: str, seconds: float) -> None:
+        print(f"[TIMING] {label}: {seconds:.2f}s")
+
+    from contextlib import contextmanager
+
+    @contextmanager
+    def timing_block(label: str):
+        t0 = time.perf_counter()
+        try:
+            yield
+        finally:
+            log_timing(label, time.perf_counter() - t0)
+
     class ScraperLogger:
         STAGE_INIT = "INIT"
         STAGE_BROWSER = "BROWSER"
@@ -65,6 +87,19 @@ except ImportError:
         STAGE_WORD_REPORT = "WORD_REPORT"
         STAGE_COMPLETE = "COMPLETE"
         STAGE_ERROR = "ERROR"
+
+
+def _timed_sleep(seconds: float, reason: str) -> None:
+    """Явный time.sleep с записью фактической длительности в лог [TIMING]."""
+    t0 = time.perf_counter()
+    time.sleep(seconds)
+    log_timing(f"sleep({seconds:g}s): {reason}", time.perf_counter() - t0)
+
+
+def _debug_artifacts_enabled() -> bool:
+    """Управляет сохранением HTML/скриншотов в штатном сценарии."""
+    return os.getenv("MEKTEP_DEBUG_ARTIFACTS", "1").strip().lower() not in ("0", "false", "no", "off")
+
 
 # Fix stdout/stderr for frozen PyInstaller builds (console=False → stdout is None)
 if getattr(sys, 'frozen', False):
@@ -356,14 +391,26 @@ def _choose_period() -> tuple[str, str]:
 
 def _go_to_grades(page) -> None:
     """Переходит на страницу «Оценки» (/office/?action=semester) по ссылке или через goto."""
-    # Nav item:
-    # <a class="nav-link" href="/office/?action=semester">Оценки</a>
     _dismiss_blocking_ui(page)
+
+    # Fast path: if already on grades page and table is visible, skip navigation.
+    try:
+        if "action=semester" in page.url and page.locator("table.table.table-hover").first.is_visible():
+            return
+    except Exception:
+        pass
+
+    # Fast path: click visible grades nav link.
     link = page.locator('a.nav-link[href="/office/?action=semester"]:visible').first
     try:
         link.wait_for(state="visible", timeout=7000)
         link.click(timeout=7000)
+        page.wait_for_selector("table.table.table-hover", timeout=8000)
+        page.wait_for_load_state("domcontentloaded")
+        _dismiss_blocking_ui(page)
+        return
     except Exception:
+        # Fallback: direct navigation.
         page.goto("https://mektep.edu.kz/office/?action=semester", wait_until="domcontentloaded")
 
     page.wait_for_load_state("domcontentloaded")
@@ -484,16 +531,28 @@ def _choose_row(rows: list[dict]) -> dict:
     return rows[idx - 1]
 
 
-def _open_criteria(page, href: str) -> None:
+def _open_criteria(page, href: str, absolute_url: str | None = None, prefer_goto: bool = False) -> None:
     """Открывает страницу критериев по ссылке (клик или page.goto)."""
     if not href:
         raise ValueError("Empty criteria link.")
-    # Use navigation by click if possible; fallback to goto.
+    # Batch-fast-path: go directly by URL, then fallback to click.
     _dismiss_blocking_ui(page)
+    if prefer_goto:
+        try:
+            target = absolute_url or urljoin(page.url, href)
+            page.goto(target, wait_until="domcontentloaded")
+            page.wait_for_load_state("domcontentloaded")
+            _dismiss_blocking_ui(page)
+            return
+        except Exception:
+            pass
+
+    # Default path: click if possible; fallback to goto.
     try:
         page.locator(f'a[href="{href}"]').first.click(timeout=7000)
     except Exception:
-        page.goto(urljoin(page.url, href), wait_until="domcontentloaded")
+        target = absolute_url or urljoin(page.url, href)
+        page.goto(target, wait_until="domcontentloaded")
     page.wait_for_load_state("domcontentloaded")
     _dismiss_blocking_ui(page)
 
@@ -753,94 +812,79 @@ def _extract_students_from_criteria_tab(page, tab_href: str) -> list[dict]:
         return []
 
     trs = table.locator("tbody tr, tr")
-    out: list[dict] = []
     n = trs.count()
-    
     if n == 0:
         print(f"Warning: No table rows found in tab {tab_href}")
         return []
-    
-    for i in range(n):
-        tr = trs.nth(i)
 
-        tds = tr.locator("td")
-        if tds.count() < 2:
+    # Batch-read row contents in one browser round-trip to reduce Playwright overhead.
+    row_payload = trs.evaluate_all(
+        """
+        (rows) => rows.map((tr) => {
+          const norm = (s) => (s || "").replace(/\\s+/g, " ").trim();
+          const cells = Array.from(tr.querySelectorAll("td"), (td) => norm(td.innerText));
+          const pNodes = Array.from(tr.querySelectorAll("p[id]"), (p) => ({
+            id: p.id || "",
+            text: norm(p.innerText),
+          }));
+          const points = {};
+          for (const inp of tr.querySelectorAll('input[id^="chetvert_"][id*="_razdel_"]')) {
+            if (inp.id) points[inp.id] = inp.value || "";
+          }
+          return { cells, pNodes, points };
+        })
+        """
+    )
+
+    out: list[dict] = []
+    for i, row in enumerate(row_payload):
+        all_cells = row.get("cells") or []
+        if len(all_cells) < 2:
             continue
 
-        num_txt = " ".join((tds.nth(0).inner_text() or "").split()).strip()
-        fio_txt = " ".join((tds.nth(1).inner_text() or "").split()).strip()
-        
-        # Skip header rows or rows without valid student number
-        if not num_txt.isdigit():
+        num_txt = all_cells[0]
+        fio_txt = all_cells[1]
+        if not str(num_txt).isdigit():
             continue
 
-        # Try to find grade cell - may not exist for all subjects
-        grade_loc = tr.locator(f'p[id^="ocenka_"][id$="_chetvert_{quarter_num}"]')
-        row_index = None
-        
-        if grade_loc.count() > 0:
-            # Row index comes from the grade id: ocenka_{row}_chetvert_{q}
-            gid = (grade_loc.first.get_attribute("id") or "").strip()
-            try:
-                gid_parts = gid.split("_")
-                row_index = int(gid_parts[1]) if len(gid_parts) >= 4 else None
-            except Exception:
-                row_index = None
-        else:
-            # Fallback: use row index from table position
-            # This works when grade cells don't have the expected ID pattern
-            row_index = i
+        p_map: dict[str, str] = {}
+        for p in row.get("pNodes") or []:
+            pid = (p.get("id") or "").strip()
+            if pid:
+                p_map[pid] = (p.get("text") or "").strip()
 
-        # Try to extract data using IDs first, then fallback to cell positions
-        average_val = None
-        formative_pct_val = None
-        sor_pct_val = None
-        soch_pct_val = None
-        total_pct_val = None
-        grade_val = None
-        
-        if row_index is not None:
-            # Try ID-based extraction
-            average_val = _text_or_none(tr.locator(f"p#average_{quarter_num}_chetvert_{row_index}"))
-            formative_pct_val = _text_or_none(tr.locator(f"p#average_itog_{quarter_num}_chetvert_{row_index}"))
-            sor_pct_val = _text_or_none(tr.locator(f"p#sor_{row_index}_chetvert_{quarter_num}"))
-            soch_pct_val = _text_or_none(tr.locator(f"p#soch_{row_index}_chetvert_{quarter_num}"))
-            total_pct_val = _text_or_none(tr.locator(f"p#summa_{row_index}_chetvert_{quarter_num}"))
-            if grade_loc.count() > 0:
-                grade_val = _text_or_none(grade_loc)
-        
-        # Fallback: extract from cell positions if IDs didn't work
-        # Typically: №, ФИО, average, sections..., formative%, sor%, soch%, total%, grade
-        td_count = tds.count()
-        
-        # Collect all cell texts for analysis
-        all_cells = []
-        for j in range(td_count):
-            cell_text = " ".join((tds.nth(j).inner_text() or "").split()).strip()
-            all_cells.append(cell_text)
-        
-        # Try to extract data from cell positions
-        # Structure varies, but typically: №, ФИО, [sections with scores], average, percentages, grade
-        if average_val is None or not any([formative_pct_val, sor_pct_val, soch_pct_val, total_pct_val]):
-            # Look for numeric values and percentages in cells
-            for j in range(2, td_count):
-                cell_text = all_cells[j]
+        row_index = i
+        grade_val = ""
+        for pid, txt in p_map.items():
+            marker = f"_chetvert_{quarter_num}"
+            if pid.startswith("ocenka_") and marker in pid:
+                parts = pid.split("_")
+                if len(parts) >= 4 and parts[2] == "chetvert":
+                    try:
+                        row_index = int(parts[1])
+                    except Exception:
+                        row_index = i
+                grade_val = txt
+                break
+
+        average_val = p_map.get(f"average_{quarter_num}_chetvert_{row_index}", "")
+        formative_pct_val = p_map.get(f"average_itog_{quarter_num}_chetvert_{row_index}", "")
+        sor_pct_val = p_map.get(f"sor_{row_index}_chetvert_{quarter_num}", "")
+        soch_pct_val = p_map.get(f"soch_{row_index}_chetvert_{quarter_num}", "")
+        total_pct_val = p_map.get(f"summa_{row_index}_chetvert_{quarter_num}", "")
+
+        if not average_val or not any([formative_pct_val, sor_pct_val, soch_pct_val, total_pct_val]):
+            for cell_text in all_cells[2:]:
                 if not cell_text:
                     continue
-                
-                # Check if it's a decimal number (likely average)
                 try:
-                    float_val = float(cell_text.replace(",", "."))
-                    if average_val is None and 0 <= float_val <= 20:  # Average is usually 0-20
+                    float_val = float(str(cell_text).replace(",", "."))
+                    if not average_val and 0 <= float_val <= 20:
                         average_val = cell_text
                         continue
                 except (ValueError, AttributeError):
                     pass
-                
-                # Check for percentages
-                if "%" in cell_text:
-                    # Try to determine which percentage it is based on position
-                    # Usually: formative%, sor%, soch%, total% (in that order)
+                if "%" in str(cell_text):
                     if not formative_pct_val:
                         formative_pct_val = cell_text
                     elif not sor_pct_val:
@@ -849,52 +893,28 @@ def _extract_students_from_criteria_tab(page, tab_href: str) -> list[dict]:
                         soch_pct_val = cell_text
                     elif not total_pct_val:
                         total_pct_val = cell_text
-        
-        # Try to find grade in last cells
-        if grade_val is None and td_count > 0:
-            # Grade is usually in one of the last 1-3 cells
-            for j in range(max(0, td_count - 3), td_count):
-                cell_text = all_cells[j]
-                if cell_text.isdigit() and 1 <= int(cell_text) <= 5:
-                    grade_val = cell_text
+
+        if not grade_val and all_cells:
+            for cell_text in all_cells[max(0, len(all_cells) - 3) :]:
+                if str(cell_text) in {"1", "2", "3", "4", "5"}:
+                    grade_val = str(cell_text)
                     break
-                # Also check for grade in text format
-                if cell_text in ["1", "2", "3", "4", "5"]:
-                    grade_val = cell_text
-                    break
-        
-        data = {
-            "num": int(num_txt),
-            "fio": fio_txt,
-            "quarter_num": quarter_num,
-            "average": average_val or "",
-            "formative_pct": formative_pct_val or "",
-            "sor_pct": sor_pct_val or "",
-            "soch_pct": soch_pct_val or "",
-            "total_pct": total_pct_val or "",
-            "grade": grade_val or "",
-        }
 
-        # Raw cell texts (useful because number of sections (СОР/СОч) can vary).
-        raw_cells: list[str] = []
-        td_count = tds.count()
-        for j in range(td_count):
-            raw_cells.append(" ".join((tds.nth(j).inner_text() or "").split()).strip())
-        data["raw_cells"] = raw_cells
-
-        # Per-section points are often stored in inputs with ids like chetvert_{q}_razdel_{k}_{rowIndex}
-        inputs = tr.locator(f'input[id^="chetvert_{quarter_num}_razdel_"]')
-        inp_n = inputs.count()
-        points: dict[str, str] = {}
-        for k in range(inp_n):
-            inp = inputs.nth(k)
-            inp_id = inp.get_attribute("id") or ""
-            inp_val = inp.input_value() if inp_id else ""
-            if inp_id:
-                points[inp_id] = inp_val
-        data["points"] = points
-
-        out.append(data)
+        out.append(
+            {
+                "num": int(num_txt),
+                "fio": fio_txt,
+                "quarter_num": quarter_num,
+                "average": average_val or "",
+                "formative_pct": formative_pct_val or "",
+                "sor_pct": sor_pct_val or "",
+                "soch_pct": soch_pct_val or "",
+                "total_pct": total_pct_val or "",
+                "grade": grade_val or "",
+                "raw_cells": [str(c) for c in all_cells],
+                "points": row.get("points") or {},
+            }
+        )
 
     return out
 
@@ -1197,14 +1217,16 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
 
     with sync_playwright() as p:
         log_stage(ScraperLogger.STAGE_BROWSER, "Запуск браузера Chromium", 2)
-        browser = _launch_browser(p, headless, slow_mo_ms)
+        with timing_block("запуск браузера (_launch_browser)"):
+            browser = _launch_browser(p, headless, slow_mo_ms)
         context = browser.new_context(locale="ru-RU")
         page = context.new_page()
         log_success("Браузер запущен успешно")
 
         log_stage(ScraperLogger.STAGE_PAGE_LOAD, f"Загрузка страницы: {URL}", 3)
         try:
-            page.goto(URL, wait_until="load", timeout=60000)
+            with timing_block("page.goto главная mektep (wait_until=load, timeout=60s)"):
+                page.goto(URL, wait_until="load", timeout=60000)
             log_success("Страница загружена")
         except Exception as e:
             log_error("Ошибка загрузки страницы", e)
@@ -1222,19 +1244,23 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
 
         log_stage(ScraperLogger.STAGE_LOGIN_FORM, "Открытие формы входа", 4)
         # Debug artifacts before clicking (useful if selector fails due to unexpected content).
-        (out_dir / "before_click.url.txt").write_text(page.url, encoding="utf-8")
-        (out_dir / "before_click.html").write_text(page.content(), encoding="utf-8")
-        page.screenshot(path=str(out_dir / "before_click.png"), full_page=True)
-        log_info("Сохранён скриншот: before_click.png")
+        if _debug_artifacts_enabled():
+            with timing_block("артефакты before_click (url, HTML, full_page screenshot)"):
+                (out_dir / "before_click.url.txt").write_text(page.url, encoding="utf-8")
+                (out_dir / "before_click.html").write_text(page.content(), encoding="utf-8")
+                page.screenshot(path=str(out_dir / "before_click.png"), full_page=True)
+            log_info("Сохранён скриншот: before_click.png")
 
         log_info("Нажатие кнопки 'Вход в систему'...")
-        _click_login_button(page)
+        with timing_block("_click_login_button"):
+            _click_login_button(page)
         log_success("Кнопка нажата")
 
         # Wait for the collapsed section to expand and reveal the login form.
         log_info("Ожидание раскрытия формы входа...")
         try:
-            page.wait_for_selector(f"{LOGIN_PANEL_SELECTOR}.show", timeout=15000)
+            with timing_block("wait_for_selector форма входа (#collapseThree.show, до 15s)"):
+                page.wait_for_selector(f"{LOGIN_PANEL_SELECTOR}.show", timeout=15000)
             log_success("Форма входа открыта")
         except Exception as e:
             log_error("Не удалось открыть форму входа", e)
@@ -1287,19 +1313,20 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
         log_stage(ScraperLogger.STAGE_AUTH, "Авторизация на сайте", 5)
         log_info(f"Ввод логина: {login[:3]}***")
         try:
-            login_input.click()
-            login_input.press("Control+A")
-            login_input.type(login, delay=20)
-            log_info("Логин введён")
+            with timing_block("ввод логина/пароля (type delay=20) и submit формы"):
+                login_input.click()
+                login_input.press("Control+A")
+                login_input.type(login, delay=20)
+                log_info("Логин введён")
 
-            password_input.click()
-            password_input.press("Control+A")
-            password_input.type(password, delay=20)
-            log_info("Пароль введён")
+                password_input.click()
+                password_input.press("Control+A")
+                password_input.type(password, delay=20)
+                log_info("Пароль введён")
 
-            log_info("Отправка формы авторизации...")
-            panel.locator("form button[type='submit'], form input[type='submit']").first.click(timeout=10000)
-            page.wait_for_load_state("domcontentloaded", timeout=15000)
+                log_info("Отправка формы авторизации...")
+                panel.locator("form button[type='submit'], form input[type='submit']").first.click(timeout=10000)
+                page.wait_for_load_state("domcontentloaded", timeout=15000)
         except Exception as e:
             log_error("Ошибка при вводе данных или отправке формы", e)
             if logger:
@@ -1308,15 +1335,19 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
 
         # Wait for login to process
         log_info("Ожидание обработки авторизации (3 сек)...")
-        time.sleep(3)
+        _timed_sleep(3, "после отправки формы логина (фиксированная пауза)")
         
         # Scenario 2 & 3 Combined: Check for role/school selection dialog
         # If there are multiple "Войти как учитель" buttons, it means multiple schools
         log_info("Проверка наличия окна выбора роли/школы...")
+        _t_school = time.perf_counter()
         try:
-            # Wait longer and explicitly check for buttons
-            time.sleep(2)
-            
+            # Prefer condition-based wait; keep short fallback if dialog is not rendered yet.
+            try:
+                page.wait_for_selector('button[name="account_choice"][value="true"]', timeout=1200)
+            except Exception:
+                _timed_sleep(0.5, "fallback: окно выбора роли/школы еще не отрисовано")
+
             # Look for all role/school selection buttons by attributes (works for any language)
             # This selector finds buttons with name="account_choice" and value="true"
             # These buttons can have text "Войти как учитель" (RU) or "Мұғалім ретінде кіру" (KZ)
@@ -1356,7 +1387,7 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
                 log_info("Обнаружено окно выбора роли (учитель/родитель)")
                 school_buttons_list[0].click()
                 log_success("Выбрана роль: Учитель")
-                time.sleep(2)
+                _timed_sleep(2, "после выбора роли «учитель»")
             elif button_count > 1:
                 # Multiple "Войти как учитель" buttons - teacher works at multiple schools
                 log_info(f"Обнаружено окно выбора школы. Доступно школ: {button_count}")
@@ -1413,7 +1444,7 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
                     # No environment variable - request user selection via progress file
                     log_info("Ожидание выбора школы пользователем...")
                     _update_progress(5, f"schools_selection_needed|{json.dumps(school_list, ensure_ascii=False)}")
-                    time.sleep(2)  # Даём время UI получить сообщение
+                    _timed_sleep(2, "UI: сообщение о выборе школы")
                     _update_progress(5, "Ожидание выбора школы...")  # Очищаем специальное сообщение
                     
                     # Wait for user selection (with timeout)
@@ -1445,9 +1476,7 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
                             if chosen_school_idx is not None:
                                 break
                         
-                        time.sleep(0.5)  # Проверяем каждые 0.5 секунды
-                        
-                        time.sleep(0.5)
+                        _timed_sleep(1.0, "poll school_choice.txt (интервал итерации)")
                     
                     # If timeout or no valid selection, use first school
                     if chosen_school_idx is None:
@@ -1457,20 +1486,32 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
                 # Click selected school button
                 school_buttons_list[chosen_school_idx].click()
                 log_success(f"Выбрана школа: {school_list[chosen_school_idx]}")
-                
-                time.sleep(2)  # Wait for school selection to process
+                try:
+                    page.locator("nav .profile p, .topline .profile, .user-profile").first.wait_for(
+                        state="visible", timeout=2000
+                    )
+                except Exception:
+                    _timed_sleep(0.5, "fallback: после выбора школы (обработка UI)")
             else:
                 # button_count == 0, no role/school selection needed
                 log_info("Окно выбора роли/школы не обнаружено (стандартный вход)")
-                
+
         except Exception as e:
             # No role/school selection dialog - that's fine, continue normally
             log_info(f"Окно выбора роли/школы не обнаружено: {e}")
-        
+        finally:
+            log_timing(
+                "выбор роли/школа: поиск кнопок, клики, ожидания",
+                time.perf_counter() - _t_school,
+            )
+
         # Check if login was successful
         log_info("Проверка результата авторизации...")
         try:
-            page.locator("nav .profile p, .topline .profile, .user-profile").first.wait_for(state="visible", timeout=10000)
+            with timing_block("wait_for профиль после входа (до 10s)"):
+                page.locator("nav .profile p, .topline .profile, .user-profile").first.wait_for(
+                    state="visible", timeout=10000
+                )
             log_success("Авторизация успешна!")
         except Exception:
             # Login failed - check if we're still on login page
@@ -1483,7 +1524,7 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
             else:
                 # Unexpected state, but might be success - try one more check
                 log_warning("Неопределённое состояние, повторная проверка...")
-                time.sleep(2)
+                _timed_sleep(2, "перед повторной проверкой профиля")
                 try:
                     page.locator("nav .profile p, .topline .profile").first.wait_for(state="visible", timeout=5000)
                     log_success("Авторизация успешна (повторная проверка)")
@@ -1519,10 +1560,10 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
         log_info(f"Текущий язык после авторизации: {current_lang or 'не определён'}")
 
         # Принудительно переключаем на русский для чтения org_name
-        log_info("Переключение на русский для чтения названия организации...")
-        _ensure_language(page, "ru")
-
-        org_name_ru = _get_org_name(page)
+        with timing_block("_ensure_language(ru) и чтение org_name_ru"):
+            log_info("Переключение на русский для чтения названия организации...")
+            _ensure_language(page, "ru")
+            org_name_ru = _get_org_name(page)
         if org_name_ru:
             (out_dir / "org_name_ru.txt").write_text(org_name_ru, encoding="utf-8")
             log_info(f"Организация (рус): {org_name_ru}")
@@ -1565,43 +1606,47 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
             log_warning("Имя профиля не найдено")
 
         # Переключаем на целевой язык отчётов
-        log_info(f"Установка языка отчётов: {LANG_MAP[chosen]['label']}")
-        _ensure_language(page, chosen)
-        log_success(f"Язык установлен: {LANG_MAP[chosen]['label']}")
+        with timing_block("язык отчётов, org_name, период (_choose_period)"):
+            log_info(f"Установка языка отчётов: {LANG_MAP[chosen]['label']}")
+            _ensure_language(page, chosen)
+            log_success(f"Язык установлен: {LANG_MAP[chosen]['label']}")
 
-        # Save org name on target language (for report filenames/content)
-        org_name = _get_org_name(page)
-        if org_name:
-            (out_dir / "org_name.txt").write_text(org_name, encoding="utf-8")
-            log_info(f"Организация: {org_name}")
-        else:
-            org_name = org_name_ru
+            # Save org name on target language (for report filenames/content)
+            org_name = _get_org_name(page)
             if org_name:
                 (out_dir / "org_name.txt").write_text(org_name, encoding="utf-8")
-            log_warning("Название организации на текущем языке не найдено, использовано русское")
+                log_info(f"Организация: {org_name}")
+            else:
+                org_name = org_name_ru
+                if org_name:
+                    (out_dir / "org_name.txt").write_text(org_name, encoding="utf-8")
+                log_warning("Название организации на текущем языке не найдено, использовано русское")
 
-        # Choose quarter/period for future extraction steps.
-        try:
-            period_code, period_label = _choose_period()
-        except ValueError as e:
-            log_error(str(e))
-            if logger:
-                logger.finish(success=False)
-            return 2
-        (out_dir / "period.txt").write_text(period_label, encoding="utf-8")
-        log_info(f"Выбранный период: {period_label}")
+            # Choose quarter/period for future extraction steps.
+            try:
+                period_code, period_label = _choose_period()
+            except ValueError as e:
+                log_error(str(e))
+                if logger:
+                    logger.finish(success=False)
+                return 2
+            (out_dir / "period.txt").write_text(period_label, encoding="utf-8")
+            log_info(f"Выбранный период: {period_label}")
 
         # Go to "Оценки" section.
         log_stage(ScraperLogger.STAGE_NAVIGATION, "Переход в раздел 'Оценки'", 7)
         _update_progress(10, "Авторизация завершена, переход к оценкам...")
-        _go_to_grades(page)
+        with timing_block("_go_to_grades (первый переход)"):
+            _go_to_grades(page)
         log_success("Раздел 'Оценки' открыт")
 
         # Artifacts after navigation to grades.
-        (out_dir / "grades.url.txt").write_text(page.url, encoding="utf-8")
-        (out_dir / "grades.html").write_text(page.content(), encoding="utf-8")
-        page.screenshot(path=str(out_dir / "grades.png"), full_page=True)
-        log_info("Сохранён скриншот: grades.png")
+        if _debug_artifacts_enabled():
+            with timing_block("артефакты раздела «Оценки» (url, HTML, full_page screenshot)"):
+                (out_dir / "grades.url.txt").write_text(page.url, encoding="utf-8")
+                (out_dir / "grades.html").write_text(page.content(), encoding="utf-8")
+                page.screenshot(path=str(out_dir / "grades.png"), full_page=True)
+            log_info("Сохранён скриншот: grades.png")
 
         def process_one(selected: dict, batch_subdir: Path) -> None:
             """Строит отчёт по одной паре класс/предмет: критерии, JSON учеников, Excel/Word в batch_subdir."""
@@ -1631,11 +1676,24 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
             subject_name = selected.get("subject", "Unknown")
             log_stage(ScraperLogger.STAGE_CRITERIA, f"Открытие критериев: {class_name} - {subject_name}", None)
             log_info(f'[{class_name} - {subject_name}] Открытие критериев...')
-            _open_criteria(page, selected["criteria_href"])
-            
-            # Wait a bit for page to fully render (especially for dynamic warnings)
-            time.sleep(1)
-            
+            criteria_href = selected.get("criteria_href", "")
+            criteria_url = selected.get("criteria_url", "")
+            if all_mode:
+                with timing_block(f"goto criteria (batch) [{class_name} — {subject_name}]"):
+                    _open_criteria(page, criteria_href, criteria_url, prefer_goto=True)
+            else:
+                with timing_block(f"_open_criteria [{class_name} — {subject_name}]"):
+                    _open_criteria(page, criteria_href)
+
+            # Prefer lightweight readiness check over fixed delay.
+            try:
+                page.wait_for_selector(
+                    "div#pills-tabContent div.tab-pane.show table, div#pills-tabContent div.tab-pane.active table",
+                    timeout=1200,
+                )
+            except Exception:
+                _timed_sleep(0.3, "fallback: рендер страницы критериев перед проверкой предупреждений")
+
             # Check for warning about missing evaluation data (case 2)
             if _check_criteria_warning(page):
                 log_warning(f'[{class_name} - {subject_name}] Обнаружено предупреждение: "Для начала работы необходимо установить данные оценивания!" - пропуск страницы.')
@@ -1644,18 +1702,21 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
             log_success(f'[{class_name} - {subject_name}] Критерии открыты')
 
             log_info(f'[{class_name} - {subject_name}] Выбор вкладки периода...')
-            selected_tab = _analyze_and_select_criteria_tabs(page, batch_subdir, period_code) or _get_active_criteria_tab_href(page)
+            with timing_block(f"_analyze_and_select_criteria_tabs [{class_name} — {subject_name}]"):
+                selected_tab = _analyze_and_select_criteria_tabs(page, batch_subdir, period_code) or _get_active_criteria_tab_href(page)
             if not selected_tab:
                 log_error(f'[{class_name} - {subject_name}] Не удалось определить вкладку критериев, пропуск.')
                 return
             log_info(f'[{class_name} - {subject_name}] Вкладка выбрана: {selected_tab}')
 
-            has_quarter_grade_header = _has_quarter_grade_header(page, selected_tab)
+            with timing_block(f"_has_quarter_grade_header [{class_name} — {subject_name}]"):
+                has_quarter_grade_header = _has_quarter_grade_header(page, selected_tab)
             log_info(f'[{class_name} - {subject_name}] Заголовок четвертной оценки: {"да" if has_quarter_grade_header else "нет"}')
 
             log_stage(ScraperLogger.STAGE_STUDENTS, f"Извлечение учащихся: {class_name}", None)
             log_info(f'[{class_name} - {subject_name}] Извлечение данных учащихся...')
-            students = _extract_students_from_criteria_tab(page, selected_tab)
+            with timing_block(f"_extract_students_from_criteria_tab [{class_name} — {subject_name}]"):
+                students = _extract_students_from_criteria_tab(page, selected_tab)
             students_count = len(students)
             log_success(f'[{class_name} - {subject_name}] Найдено учащихся: {students_count}')
             (batch_subdir / "criteria_students.json").write_text(json.dumps(students, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1681,8 +1742,13 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
             }
             (batch_subdir / "criteria_context.json").write_text(json.dumps(ctx, ensure_ascii=False, indent=2), encoding="utf-8")
 
-            max_points = _extract_quarter_max_points(page, selected_tab)
+            with timing_block(f"_extract_quarter_max_points [{class_name} — {subject_name}]"):
+                max_points = _extract_quarter_max_points(page, selected_tab)
             (batch_subdir / "criteria_max_points.json").write_text(json.dumps(max_points, ensure_ascii=False, indent=2), encoding="utf-8")
+
+            if students_count == 0:
+                log_warning(f'[{class_name} - {subject_name}] Нет учащихся: генерация Excel/Word пропущена')
+                return
 
             # Build Excel report
             try:
@@ -1691,15 +1757,16 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
                 if template_path.exists():
                     log_stage(ScraperLogger.STAGE_EXCEL_REPORT, f"Создание Excel: {class_name} - {subject_name}", None)
                     log_info(f'[{class_name} - {subject_name}] Создание Excel отчета...')
-                    report_path = build_report(
-                        template_path=template_path,
-                        students_path=batch_subdir / "criteria_students.json",
-                        context_path=batch_subdir / "criteria_context.json",
-                        out_dir=out_dir / "reports",
-                        max_points_path=batch_subdir / "criteria_max_points.json",
-                        criteria_html_path=batch_subdir / "criteria.html",
-                        org_name_path=batch_subdir / "org_name.txt",
-                    )
+                    with timing_block(f"build_report (Excel) [{class_name} — {subject_name}]"):
+                        report_path = build_report(
+                            template_path=template_path,
+                            students_path=batch_subdir / "criteria_students.json",
+                            context_path=batch_subdir / "criteria_context.json",
+                            out_dir=out_dir / "reports",
+                            max_points_path=batch_subdir / "criteria_max_points.json",
+                            criteria_html_path=batch_subdir / "criteria.html",
+                            org_name_path=batch_subdir / "org_name.txt",
+                        )
                     log_success(f'[{class_name} - {subject_name}] Excel отчет создан: {report_path.name}')
                     if logger:
                         logger.report_created(class_name, subject_name, "Excel")
@@ -1719,13 +1786,14 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
                         if tpl.exists():
                             log_stage(ScraperLogger.STAGE_WORD_REPORT, f"Создание Word: {class_name} - {subject_name}", None)
                             log_info(f'[{class_name} - {subject_name}] Создание Word отчета ({tpl.name})...')
-                            word_path = build_word_report(
-                                template_docx=tpl,
-                                report_xlsx=report_path,
-                                out_dir=out_dir / "reports",
-                                context_json=batch_subdir / "criteria_context.json",
-                                lang=chosen,
-                            )
+                            with timing_block(f"build_word_report [{class_name} — {subject_name}]"):
+                                word_path = build_word_report(
+                                    template_docx=tpl,
+                                    report_xlsx=report_path,
+                                    out_dir=out_dir / "reports",
+                                    context_json=batch_subdir / "criteria_context.json",
+                                    lang=chosen,
+                                )
                             log_success(f'[{class_name} - {subject_name}] Word отчет создан: {word_path.name}')
                         else:
                             log_warning(f'[{class_name} - {subject_name}] Шаблон Word не найден: {tpl}')
@@ -1746,7 +1814,8 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
         # Extract table rows and either process one (interactive) or all (batch).
         log_stage(ScraperLogger.STAGE_GRADES_TABLE, "Извлечение таблицы оценок", 8)
         log_info("Извлечение данных таблицы оценок...")
-        rows = _extract_grades_table(page)
+        with timing_block("_extract_grades_table"):
+            rows = _extract_grades_table(page)
         if not rows:
             log_error("Таблица оценок пуста или не найдена")
             if logger:
@@ -1781,13 +1850,17 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
                 log_info(f"[{idx}/{total_reports}] === Обработка: {class_name} - {subject_name} ===")
                 log_info("-" * 60)
                 sub = batch_root / _safe_slug(f'{class_name} {subject_name}')
-                process_one(r, sub)
+                with timing_block(f"process_one [{idx}/{total_reports}] {class_name} — {subject_name}"):
+                    process_one(r, sub)
+
                 # Calculate progress: 10% (auth) to 90% (reports processing)
                 progress_percent = min(90, 10 + int((idx / total_reports) * 80))
-                _update_progress(progress_percent, f"Обработано отчетов: {idx} из {total_reports}", total_reports, idx)
-                # Return to grades list for next item
-                log_info(f"[{idx}/{total_reports}] Возврат к списку оценок...")
-                _go_to_grades(page)
+                _update_progress(
+                    progress_percent,
+                    f"Обработано отчетов: {idx} из {total_reports}",
+                    total_reports,
+                    idx,
+                )
             log_info("")
             log_info("=" * 60)
             log_success(f"ПАКЕТНЫЙ РЕЖИМ ЗАВЕРШЕН: Создано отчетов")
@@ -1801,21 +1874,23 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
                 return 2
             process_one(selected, out_dir)
 
-        (out_dir / "criteria.url.txt").write_text(page.url, encoding="utf-8")
-        (out_dir / "criteria.html").write_text(page.content(), encoding="utf-8")
-        page.screenshot(path=str(out_dir / "criteria.png"), full_page=True)
+        if _debug_artifacts_enabled():
+            with timing_block("финальные артефакты criteria + after_login (HTML, screenshots)"):
+                (out_dir / "criteria.url.txt").write_text(page.url, encoding="utf-8")
+                (out_dir / "criteria.html").write_text(page.content(), encoding="utf-8")
+                page.screenshot(path=str(out_dir / "criteria.png"), full_page=True)
 
-        html_path = out_dir / "after_login.html"
-        png_path = out_dir / "after_login.png"
-        url_path = out_dir / "after_login.url.txt"
+                html_path = out_dir / "after_login.html"
+                png_path = out_dir / "after_login.png"
+                url_path = out_dir / "after_login.url.txt"
 
-        html_path.write_text(page.content(), encoding="utf-8")
-        page.screenshot(path=str(png_path), full_page=True)
-        url_path.write_text(page.url, encoding="utf-8")
+                html_path.write_text(page.content(), encoding="utf-8")
+                page.screenshot(path=str(png_path), full_page=True)
+                url_path.write_text(page.url, encoding="utf-8")
 
-        log_info(f"Сохранён: {html_path}")
-        log_info(f"Сохранён: {png_path}")
-        log_info(f"Сохранён: {url_path}")
+            log_info(f"Сохранён: {html_path}")
+            log_info(f"Сохранён: {png_path}")
+            log_info(f"Сохранён: {url_path}")
 
         log_stage(ScraperLogger.STAGE_COMPLETE, "Закрытие браузера", 95)
         context.close()

@@ -24,7 +24,7 @@ from ..services.api_helpers import (
     get_quarter_reports_api,
     require_jwt,
 )
-from ..constants import MIN_DESKTOP_VERSION, normalize_subject_name
+from ..constants import MIN_DESKTOP_VERSION, normalize_subject_name, kazakh_sort_key
 
 bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -754,13 +754,13 @@ def api_get_class_grades(class_name: str):
                 current_app.logger.error(f"Invalid JSON in report {report.id}")
     
     # Формируем ответ
-    subjects_list = sorted(subjects)
+    subjects_list = sorted(subjects, key=kazakh_sort_key)
     students_list = [
         {
             "name": name,
             "grades": grades
         }
-        for name, grades in sorted(students_data.items())
+        for name, grades in sorted(students_data.items(), key=lambda item: kazakh_sort_key(item[0]))
     ]
     
     # Считаем общую статистику
@@ -1073,7 +1073,7 @@ def api_teacher_class_teacher_report():
             "poor": []
         }
         
-        for name, subj_grades in sorted(students_grades.items()):
+        for name, subj_grades in sorted(students_grades.items(), key=lambda item: kazakh_sort_key(item[0])):
             grades_list = list(subj_grades.values())
             if not grades_list:
                 continue

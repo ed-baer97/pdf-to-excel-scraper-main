@@ -20,6 +20,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFont
 
 from .loading_overlay import LoadingOverlay, ApiWorker
+from .sort_utils import kazakh_sort_key
 from .translator import get_translator
 
 if TYPE_CHECKING:
@@ -157,6 +158,8 @@ class ClassReportWidget(QWidget):
 
     # ------------------------------------------------------------------
     def _render(self, classes):
+        classes = sorted(classes, key=lambda c: kazakh_sort_key(c.get("class_name", "")))
+
         # Очищаем
         while self.content_layout.count():
             child = self.content_layout.takeAt(0)
@@ -217,6 +220,7 @@ class ClassReportWidget(QWidget):
             # Категории
             for cat_key, cat_label, bg_color, text_color in self.CATEGORIES:
                 items = categories.get(cat_key, [])
+                items = sorted(items, key=lambda item: kazakh_sort_key(item.get("name", "")))
                 self._add_category(c_layout, cat_label, items, cat_key, bg_color, text_color)
 
             self.content_layout.addWidget(class_group)
@@ -275,7 +279,9 @@ class ClassReportWidget(QWidget):
             for row, item in enumerate(items):
                 table.setItem(row, 0, self._centered_item(str(row + 1)))
                 table.setItem(row, 1, QTableWidgetItem(item.get("name", "")))
-                subjects = ", ".join(item.get("subjects_with_3", []))
+                subjects = ", ".join(
+                    sorted(item.get("subjects_with_3", []), key=kazakh_sort_key)
+                )
                 table.setItem(row, 2, QTableWidgetItem(subjects))
             table.setColumnWidth(0, 35)
             h = table.horizontalHeader()
@@ -290,9 +296,13 @@ class ClassReportWidget(QWidget):
             for row, item in enumerate(items):
                 table.setItem(row, 0, self._centered_item(str(row + 1)))
                 table.setItem(row, 1, QTableWidgetItem(item.get("name", "")))
+                sorted_subjects = sorted(
+                    item.get("subjects", []),
+                    key=lambda s: kazakh_sort_key(s.get("subject", ""))
+                )
                 subjects_info = "; ".join(
                     f"{s.get('subject', '')} ({s.get('teacher', '')})"
-                    for s in item.get("subjects", [])
+                    for s in sorted_subjects
                 )
                 table.setItem(row, 2, QTableWidgetItem(subjects_info))
             table.setColumnWidth(0, 35)

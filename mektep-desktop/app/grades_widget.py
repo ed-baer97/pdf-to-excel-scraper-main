@@ -16,6 +16,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFont
 
 from .loading_overlay import LoadingOverlay, ApiWorker
+from .sort_utils import kazakh_sort_key
 from .translator import get_translator
 
 if TYPE_CHECKING:
@@ -198,7 +199,7 @@ class GradesWidget(QWidget):
         for cls_name in result.get("managed_classes", []):
             classes.add(cls_name)
 
-        sorted_classes = sorted(classes)
+        sorted_classes = sorted(classes, key=kazakh_sort_key)
 
         self.class_combo.blockSignals(True)
         prev = self.class_combo.currentText()
@@ -252,8 +253,11 @@ class GradesWidget(QWidget):
             self.export_btn.setEnabled(False)
             return
 
-        subjects = result.get("subjects", [])
-        students = result.get("students", [])
+        subjects = sorted(result.get("subjects", []), key=kazakh_sort_key)
+        students = sorted(
+            result.get("students", []),
+            key=lambda s: kazakh_sort_key(s.get("name", ""))
+        )
         summary = result.get("summary", {})
 
         if not students:

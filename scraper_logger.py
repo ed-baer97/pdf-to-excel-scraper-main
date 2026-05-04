@@ -4,7 +4,13 @@
 
 ВАЖНО: Этот логгер НЕ обновляет progress.json - прогресс управляется 
 через _update_progress() в scrape_mektep.py для совместимости с scraper_runner.py.
+
+Тайминги: log_timing / timing_block пишут строки [TIMING] в консоль и scraper.log.
+Отключить: MEKTEP_TIMING=0
 """
+import os
+import time
+from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
@@ -136,6 +142,14 @@ class ScraperLogger:
             msg += f" - {details}"
         self._write_log(msg, "DEBUG")
 
+    def timing(self, label: str, seconds: float) -> None:
+        """Фиксация длительности этапа (поиск узких мест по времени ожидания/работы)."""
+        self._write_log(f"[TIMING] {label}: {seconds:.2f}s", "INFO")
+
+
+def _timing_enabled() -> bool:
+    return os.getenv("MEKTEP_TIMING", "1").strip().lower() not in ("0", "false", "no", "off")
+
 
 # Глобальный логгер (инициализируется в run())
 _logger: Optional[ScraperLogger] = None
@@ -181,3 +195,26 @@ def log_error(message: str, exception: Exception = None):
     """Логирование ошибки."""
     if _logger:
         _logger.error(message, exception)
+
+
+def log_timing(label: str, seconds: float) -> None:
+    """Записывает длительность этапа. Управление: MEKTEP_TIMING=0 — отключить."""
+    if not _timing_enabled():
+        return
+    if _logger:
+        _logger.timing(label, seconds)
+    else:
+        print(f"[TIMING] {label}: {seconds:.2f}s")
+
+
+@contextmanager
+def timing_block(label: str):
+    """Контекстный менеджер: логирует время выполнения блока (perf_counter)."""
+    if not _timing_enabled():
+        yield
+        return
+    t0 = time.perf_counter()
+    try:
+        yield
+    finally:
+        log_timing(label, time.perf_counter() - t0)
