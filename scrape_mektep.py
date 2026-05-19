@@ -818,6 +818,10 @@ def _extract_students_from_criteria_tab(page, tab_href: str) -> list[dict]:
         return []
 
     # Batch-read row contents in one browser round-trip to reduce Playwright overhead.
+    # Also parse <p id="..."> tags that live inside HTML comments (используется на
+    # вкладке «Учебный год»: оценка/процент отображаются как `###` в ячейках, а
+    # реальные значения скрыты в комментариях вида
+    # <!-- <p id="ocenka_0_godovaya">4</p> --> и <!-- <p id="summa_0_godovaya">79</p> -->).
     row_payload = trs.evaluate_all(
         """
         (rows) => rows.map((tr) => {
@@ -831,10 +835,19 @@ def _extract_students_from_criteria_tab(page, tab_href: str) -> list[dict]:
           for (const inp of tr.querySelectorAll('input[id^="chetvert_"][id*="_razdel_"]')) {
             if (inp.id) points[inp.id] = inp.value || "";
           }
-          return { cells, pNodes, points };
+          const commentPs = {};
+          const html = tr.innerHTML || "";
+          const re = /<!--\\s*<p\\s+[^>]*id\\s*=\\s*"([^"]+)"[^>]*>([\\s\\S]*?)<\\/p>\\s*-->/gi;
+          let m;
+          while ((m = re.exec(html)) !== null) {
+            commentPs[m[1]] = norm(m[2]);
+          }
+          return { cells, pNodes, points, commentPs };
         })
         """
     )
+
+    is_year_tab = (quarter_num == 5) or (pane_id == "chetvert_5")
 
     out: list[dict] = []
     for i, row in enumerate(row_payload):
@@ -853,6 +866,12 @@ def _extract_students_from_criteria_tab(page, tab_href: str) -> list[dict]:
             if pid:
                 p_map[pid] = (p.get("text") or "").strip()
 
+        comment_p_map: dict[str, str] = {}
+        for cpid, ctxt in (row.get("commentPs") or {}).items():
+            cpid_s = (cpid or "").strip()
+            if cpid_s:
+                comment_p_map[cpid_s] = (ctxt or "").strip()
+
         row_index = i
         grade_val = ""
         for pid, txt in p_map.items():
@@ -867,6 +886,21 @@ def _extract_students_from_criteria_tab(page, tab_href: str) -> list[dict]:
                 grade_val = txt
                 break
 
+        # Для вкладки «Учебный год» row_index определяем по ocenka_{r}_godovaya:
+        # как в видимом p_map, так и в скрытом comment_p_map (на вкладке #chetvert_5
+        # реальные <p> часто полностью закомментированы).
+        if is_year_tab:
+            for pid in list(p_map.keys()) + list(comment_p_map.keys()):
+                if pid.startswith("ocenka_") and pid.endswith("_godovaya"):
+                    parts = pid.split("_")
+                    # ocenka_{row}_godovaya
+                    if len(parts) >= 3 and parts[0] == "ocenka" and parts[-1] == "godovaya":
+                        try:
+                            row_index = int(parts[1])
+                            break
+                        except Exception:
+                            pass
+
         average_val = p_map.get(f"average_{quarter_num}_chetvert_{row_index}", "")
         formative_pct_val = p_map.get(f"average_itog_{quarter_num}_chetvert_{row_index}", "")
         sor_pct_val = p_map.get(f"sor_{row_index}_chetvert_{quarter_num}", "")
@@ -876,6 +910,8 @@ def _extract_students_from_criteria_tab(page, tab_href: str) -> list[dict]:
         if not average_val or not any([formative_pct_val, sor_pct_val, soch_pct_val, total_pct_val]):
             for cell_text in all_cells[2:]:
                 if not cell_text:
+                    continue
+                if "###" in str(cell_text):
                     continue
                 try:
                     float_val = float(str(cell_text).replace(",", "."))
@@ -894,11 +930,51 @@ def _extract_students_from_criteria_tab(page, tab_href: str) -> list[dict]:
                     elif not total_pct_val:
                         total_pct_val = cell_text
 
-        if not grade_val and all_cells:
+        if (not grade_val or "###" in str(grade_val)) and all_cells:
+            grade_val_cell = ""
             for cell_text in all_cells[max(0, len(all_cells) - 3) :]:
                 if str(cell_text) in {"1", "2", "3", "4", "5"}:
-                    grade_val = str(cell_text)
+                    grade_val_cell = str(cell_text)
                     break
+            if grade_val_cell:
+                grade_val = grade_val_cell
+
+        # Fallback на скрытые <p>...</p> из HTML-комментариев для вкладки «Учебный год»:
+        # сайт отдаёт `###` в ячейках, а реальные значения лежат в
+        # ocenka_{row}_godovaya / summa_{row}_godovaya.
+        if is_year_tab:
+            year_grade_keys = (
+                f"ocenka_{row_index}_godovaya",
+                f"ocenka_{row_index}_god",
+            )
+            year_total_keys = (
+                f"summa_{row_index}_godovaya",
+                f"summa_{row_index}_god",
+            )
+
+            def _lookup(keys: tuple[str, ...]) -> str:
+                for k in keys:
+                    v = comment_p_map.get(k) or p_map.get(k)
+                    if v:
+                        return v
+                return ""
+
+            if not grade_val or "###" in str(grade_val):
+                year_grade = _lookup(year_grade_keys)
+                if year_grade:
+                    grade_val = year_grade
+
+            if not total_pct_val or "###" in str(total_pct_val):
+                year_total = _lookup(year_total_keys)
+                if year_total:
+                    total_pct_val = year_total
+
+        # На случай, если после всех попыток в значениях всё ещё остался `###` —
+        # не записываем его в отчёт.
+        if grade_val and "###" in str(grade_val):
+            grade_val = ""
+        if total_pct_val and "###" in str(total_pct_val):
+            total_pct_val = ""
 
         out.append(
             {
