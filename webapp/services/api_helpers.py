@@ -64,22 +64,46 @@ def get_quarter_reports_api(school_id: int, period_number: int, **extra_filters)
     return reports
 
 
+def _normalize_org_name(value: str) -> str:
+    """Приводит название организации к каноничному виду для сравнения.
+
+    - схлопывает любые whitespace (включая NBSP \xa0) в одиночные пробелы;
+    - убирает обрамляющие пробелы;
+    - приводит к нижнему регистру.
+    """
+    if not value:
+        return ""
+    return " ".join(value.replace("\xa0", " ").lower().split())
+
+
 def find_school_by_org_name(org_name: str):
-    """Case-insensitive school name lookup with Unicode-safe Python matching."""
-    if not org_name:
+    """Поиск школы по имени организации.
+
+    Стратегия (от строгого к мягкому, чтобы избежать ложных коллизий):
+    1) точное совпадение нормализованных имён;
+    2) `org_name` целиком содержится в имени школы — только если совпадение
+       единственное (иначе возвращаем None, чтобы не выбрать произвольную);
+    3) обратное вхождение (имя школы — подстрока org_name) намеренно НЕ
+       используется: оно слишком часто давало бы false-positive (например,
+       короткое «Лицей» как подстрока «Специализированный IT лицей»).
+    """
+    org_lower = _normalize_org_name(org_name)
+    if not org_lower:
         return None
 
     all_active = School.query.filter(School.is_active == True).all()
-    org_lower = org_name.lower()
 
     for school in all_active:
-        if school.name.lower() == org_lower:
+        if _normalize_org_name(school.name) == org_lower:
             return school
 
-    for school in all_active:
-        school_name = school.name.lower()
-        if org_lower in school_name or school_name in org_lower:
-            return school
+    candidates = [
+        school
+        for school in all_active
+        if org_lower in _normalize_org_name(school.name)
+    ]
+    if len(candidates) == 1:
+        return candidates[0]
 
     return None
 

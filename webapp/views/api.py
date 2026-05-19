@@ -470,19 +470,23 @@ def api_upload_report():
         }), 400
     
     # Валидация правила: если нет СОЧ, отчёт с оценками не должен загружаться.
-    has_grades = False
-    if isinstance(grades_payload, dict):
-        for student in grades_payload.get("students", []) or []:
-            grade = student.get("grade")
-            if grade not in (None, "", "0", 0):
-                has_grades = True
-                break
-    has_soch = isinstance(analytics_payload, dict) and isinstance(analytics_payload.get("soch"), dict)
-    if has_grades and not has_soch:
-        return jsonify({
-            "error": "Отчёт не содержит страницу СОЧ. Загрузка оценок по предмету запрещена.",
-            "missing_soch": True
-        }), 422
+    # Применяется только к четвертям и полугодиям. Для годового отчёта
+    # (period_type == "year") страницы СОЧ не существует — годовая оценка
+    # формируется как агрегат, поэтому требование СОЧ для года не применяем.
+    if period_type in ("quarter", "semester"):
+        has_grades = False
+        if isinstance(grades_payload, dict):
+            for student in grades_payload.get("students", []) or []:
+                grade = student.get("grade")
+                if grade not in (None, "", "0", 0):
+                    has_grades = True
+                    break
+        has_soch = isinstance(analytics_payload, dict) and isinstance(analytics_payload.get("soch"), dict)
+        if has_grades and not has_soch:
+            return jsonify({
+                "error": "Отчёт не содержит страницу СОЧ. Загрузка оценок по предмету запрещена.",
+                "missing_soch": True
+            }), 422
 
     # Преобразуем JSON данные в строки
     grades_json = json.dumps(grades_payload, ensure_ascii=False) if grades_payload else None

@@ -276,14 +276,6 @@ class ReportFinalizer:
                 "H5",
             )
             if grades_data:
-                if not has_soch_page:
-                    print(
-                        f"[DEBUG] Пропуск загрузки на сервер: отсутствует страница СОЧ: {class_name} {subject_name}"
-                    )
-                    report_data["upload_skipped"] = True
-                    report_data["upload_skip_reason"] = "no_soch"
-                    return report_data
-
                 period_type, period_number, skip = resolve_period(self.period_code, subdir)
                 dbg_log(
                     "report_finalization:_process_batch_subdir",
@@ -304,13 +296,28 @@ class ReportFinalizer:
                     )
                     return report_data
 
+                # Проверка наличия страницы СОЧ применима только к четверти/полугодию.
+                # Годовой отчёт (period_type == "year") не содержит СОЧ-страницы
+                # по своей природе — это агрегат, отгружаем только оценки/%.
+                if period_type != "year" and not has_soch_page:
+                    print(
+                        f"[DEBUG] Пропуск загрузки на сервер: отсутствует страница СОЧ: {class_name} {subject_name}"
+                    )
+                    report_data["upload_skipped"] = True
+                    report_data["upload_skip_reason"] = "no_soch"
+                    return report_data
+
+                # Для года аналитика по СОр/СОЧ отсутствует — не отправляем её,
+                # чтобы серверная валидация и админ-дашборд не получали мусорные данные.
+                effective_analytics = None if period_type == "year" else analytics_data
+
                 upload_result = self.api_client.upload_report(
                     class_name=class_name,
                     subject_name=subject_name,
                     period_type=period_type,
                     period_number=period_number,
                     grades_data=grades_data,
-                    analytics_data=analytics_data,
+                    analytics_data=effective_analytics,
                     org_name=self._scraped_org_name,
                 )
                 dbg_log(
@@ -335,7 +342,7 @@ class ReportFinalizer:
                             period_type=period_type,
                             period_number=period_number,
                             grades_data=grades_data,
-                            analytics_data=analytics_data,
+                            analytics_data=effective_analytics,
                             org_name=self._scraped_org_name,
                         )
                         dbg_log(
