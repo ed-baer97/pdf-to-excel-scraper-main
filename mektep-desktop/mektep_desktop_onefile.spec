@@ -97,6 +97,7 @@ a = Analysis(
         
         # Scraper modules
         'scrape_mektep',
+        'grade_table_signals',
         'iin_utils',
         'build_report',
         'build_word_report',

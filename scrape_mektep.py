@@ -10,6 +10,14 @@ from pathlib import Path
 from urllib.parse import urljoin
 from datetime import datetime
 
+# Каталог скрипта в sys.path — для grade_table_signals рядом со scrape_mektep (EXE / mektep-desktop).
+_SCRAPER_DIR = Path(__file__).resolve().parent
+_scraper_dir_str = str(_SCRAPER_DIR)
+if _scraper_dir_str not in sys.path:
+    sys.path.insert(0, _scraper_dir_str)
+
+from grade_table_signals import detect_grade_summary_columns
+
 from dotenv import load_dotenv
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
@@ -761,8 +769,6 @@ def _has_grade_summary_columns(page, tab_href: str) -> bool:
     """
     Есть ли колонки «Сумма%» и «Оценка» (предмет без СОЧ, но с итоговой оценкой за период).
     """
-    from grade_table_signals import detect_grade_summary_columns
-
     pane_id = tab_href.lstrip("#")
     pane = page.locator(f"div#pills-tabContent div.tab-pane#{pane_id}").first
     try:
