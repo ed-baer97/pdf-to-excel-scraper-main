@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 from ..debug_log import dbg_log
 from .period_map import PERIOD_MAP
 from .report_utils import (
+    can_upload_period_grades,
+    has_grade_summary_columns,
     move_file,
     parse_class_liter,
     parse_number,
@@ -268,7 +270,7 @@ class ReportFinalizer:
             return report_data
 
         try:
-            grades_data, analytics_data, has_soch_page = self._build_grades_and_analytics(subdir)
+            grades_data, analytics_data, can_upload = self._build_grades_and_analytics(subdir)
             dbg_log(
                 "report_finalization:_process_batch_subdir",
                 "grades_built",
@@ -296,15 +298,15 @@ class ReportFinalizer:
                     )
                     return report_data
 
-                # Проверка наличия страницы СОЧ применима только к четверти/полугодию.
-                # Годовой отчёт (period_type == "year") не содержит СОЧ-страницы
-                # по своей природе — это агрегат, отгружаем только оценки/%.
-                if period_type != "year" and not has_soch_page:
+                # Четверть/полугодие: нужна секция СОЧ или колонки «Сумма%»+«Оценка».
+                # Годовой отчёт — только оценки, без СОЧ.
+                if period_type != "year" and not can_upload:
                     print(
-                        f"[DEBUG] Пропуск загрузки на сервер: отсутствует страница СОЧ: {class_name} {subject_name}"
+                        f"[DEBUG] Пропуск загрузки: нет СОЧ и нет колонок итога: "
+                        f"{class_name} {subject_name}"
                     )
                     report_data["upload_skipped"] = True
-                    report_data["upload_skip_reason"] = "no_soch"
+                    report_data["upload_skip_reason"] = "no_grade_table"
                     return report_data
 
                 # Для года аналитика по СОр/СОЧ отсутствует — не отправляем её,
@@ -319,6 +321,7 @@ class ReportFinalizer:
                     grades_data=grades_data,
                     analytics_data=effective_analytics,
                     org_name=self._scraped_org_name,
+                    has_grade_summary_columns=has_grade_summary_columns(subdir),
                 )
                 dbg_log(
                     "report_finalization:_process_batch_subdir",
@@ -461,8 +464,8 @@ class ReportFinalizer:
         """
         Формирование grades_json и analytics_json из сырых JSON скрапера.
 
-        Читает criteria_students.json + criteria_max_points.json напрямую,
-        без обхода через Excel.
+        Третий элемент кортежа — можно ли загружать оценки на сервер
+        (есть секция СОЧ или колонки «Сумма%»/«Оценка» в criteria_context).
 
         Пороги оценок (как в build_report.py):
           ≥85% → 5,  65–84% → 4,  40–64% → 3,  <40% → 2
@@ -592,7 +595,8 @@ class ReportFinalizer:
                     entry["name"] = f"СОр {sec}"
                     sor_list.append(entry)
 
-            has_soch_page = 0 in sections_present
+            has_soch_section = 0 in sections_present
+            can_upload = can_upload_period_grades(has_soch_section, batch_subdir)
             analytics_data = None
             if sor_list or soch_data:
                 analytics_data = {}
@@ -601,7 +605,7 @@ class ReportFinalizer:
                 if soch_data:
                     analytics_data["soch"] = soch_data
 
-            return grades_data, analytics_data, has_soch_page
+            return grades_data, analytics_data, can_upload
 
         except Exception as e:
             print(f"[DEBUG] Ошибка формирования данных из JSON: {e}")

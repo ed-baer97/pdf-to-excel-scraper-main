@@ -59,6 +59,11 @@
             <i class="bi bi-building"></i> {{ _('classes') }} <span class="badge bg-primary ms-1">{{ classes|length }}</span>
           </button>
         </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="subjects-dict-tab-btn" data-bs-toggle="tab" data-bs-target="#subjects-dict-tab" type="button">
+            <i class="bi bi-book"></i> {{ _('subject_dictionary') }} <span class="badge bg-primary ms-1">{{ subject_aliases|length }}</span>
+          </button>
+        </li>
       </ul>
     </div>
 
@@ -331,6 +336,66 @@
             </div>
           {% else %}
             <div class="alert alert-info">{{ _('no_classes') }}</div>
+          {% endif %}
+    </div>
+
+    {# ===== Вкладка: Словарь предметов ===== #}
+    <div class="tab-pane fade" id="subjects-dict-tab" role="tabpanel">
+          <h5>{{ _('subject_dictionary') }}</h5>
+          <p class="text-muted small">{{ _('subject_dictionary_desc') }}</p>
+
+          <form class="row g-2 mb-3" method="post" action="{{ url_for('admin.create_subject_alias') }}">
+            <input type="hidden" name="next_url">
+            <div class="col-md-5">
+              <input class="form-control" name="alias_name" placeholder="{{ _('subject_alias_placeholder') }}" required>
+              <div class="form-text">{{ _('subject_alias_kk') }}</div>
+            </div>
+            <div class="col-md-5">
+              <input class="form-control" name="canonical_name" placeholder="{{ _('subject_canonical_placeholder') }}" required>
+              <div class="form-text">{{ _('subject_canonical_ru') }}</div>
+            </div>
+            <div class="col-md-2">
+              <button class="btn btn-primary w-100">{{ _('add_btn') }}</button>
+            </div>
+          </form>
+
+          <form class="mb-3" method="post" action="{{ url_for('admin.restore_subject_alias_defaults') }}">
+            <input type="hidden" name="next_url">
+            <button type="submit" class="btn btn-outline-secondary btn-sm">
+              <i class="bi bi-arrow-counterclockwise"></i> {{ _('restore_subject_dictionary') }}
+            </button>
+          </form>
+
+          {% if subject_aliases %}
+            <div class="table-responsive">
+              <table class="table table-sm table-hover mb-0">
+                <thead class="table-light">
+                  <tr>
+                    <th>{{ _('subject_alias_kk') }}</th>
+                    <th>{{ _('subject_canonical_ru') }}</th>
+                    <th class="text-end" style="width: 100px;">{{ _('actions') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in subject_aliases %}
+                  <tr>
+                    <td>{{ row.alias_name }}</td>
+                    <td>{{ row.canonical_name }}</td>
+                    <td class="text-end">
+                      <form method="post" action="{{ url_for('admin.delete_subject_alias', alias_id=row.id) }}" class="d-inline" onsubmit="return confirm({{ _('confirm_delete_subject_alias')|tojson }});">
+                        <input type="hidden" name="next_url">
+                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                          <i class="bi bi-trash"></i>
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="alert alert-info">{{ _('no_subject_aliases') }}</div>
           {% endif %}
     </div>
 

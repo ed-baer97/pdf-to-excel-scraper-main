@@ -23,7 +23,7 @@ def main():
             .all()
         )
         semester_pairs = {
-            (r.school_id, normalize_subject_name(r.subject_name))
+            (r.school_id, normalize_subject_name(r.subject_name, r.school_id))
             for r in semester_rows
         }
 
@@ -42,7 +42,7 @@ def main():
 
         to_delete = [
             r for r in bad_reports
-            if (r.school_id, normalize_subject_name(r.subject_name)) in semester_pairs
+            if (r.school_id, normalize_subject_name(r.subject_name, r.school_id)) in semester_pairs
         ]
 
         if not to_delete:

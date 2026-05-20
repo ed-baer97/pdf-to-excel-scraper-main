@@ -615,11 +615,11 @@ class MektepMainWindow(QMainWindow):
                         if is_ru else
                         "ұйым деректер базасында табылмады"
                     )
-                if code == "no_soch":
+                if code in ("no_soch", "no_grade_table"):
                     return (
-                        "у предмета нет страницы СОЧ в этом периоде"
+                        "нет СОЧ и нет колонок «Сумма%»/«Оценка» в критериях"
                         if is_ru else
-                        "пәнде осы кезеңде СОЧ беті жоқ"
+                        "СОЧ жоқ және критерийлерде «Сома%»/«Баға» бағандары жоқ"
                     )
                 if code == "auth_required":
                     return (

@@ -469,10 +469,8 @@ def api_upload_report():
             "error": "Не удалось определить организацию. Укажите org_name или привяжите пользователя к школе."
         }), 400
     
-    # Валидация правила: если нет СОЧ, отчёт с оценками не должен загружаться.
-    # Применяется только к четвертям и полугодиям. Для годового отчёта
-    # (period_type == "year") страницы СОЧ не существует — годовая оценка
-    # формируется как агрегат, поэтому требование СОЧ для года не применяем.
+    # Четверть/полугодие: оценки допустимы при наличии СОЧ или колонок «Сумма%»+«Оценка»
+    # (предметы без СОЧ, но с итоговой оценкой). Год — без требования СОЧ.
     if period_type in ("quarter", "semester"):
         has_grades = False
         if isinstance(grades_payload, dict):
@@ -482,9 +480,11 @@ def api_upload_report():
                     has_grades = True
                     break
         has_soch = isinstance(analytics_payload, dict) and isinstance(analytics_payload.get("soch"), dict)
-        if has_grades and not has_soch:
+        has_grade_summary_columns = bool(data.get("has_grade_summary_columns"))
+        if has_grades and not has_soch and not has_grade_summary_columns:
             return jsonify({
-                "error": "Отчёт не содержит страницу СОЧ. Загрузка оценок по предмету запрещена.",
+                "error": "Отчёт не содержит страницу СОЧ и нет колонок итоговой оценки. "
+                         "Загрузка оценок по предмету запрещена.",
                 "missing_soch": True
             }), 422
 
@@ -732,7 +732,7 @@ def api_get_class_grades(class_name: str):
     students_data = {}  # name -> {subject -> {percent, grade}}
     
     for report in reports:
-        subj = normalize_subject_name(report.subject_name)
+        subj = normalize_subject_name(report.subject_name, user.school_id)
         subjects.add(subj)
         
         if report.grades_json:
@@ -915,7 +915,7 @@ def api_teacher_subject_report():
     subjects_map = {}  # subject_name -> {class_name -> report}
 
     for report in reports:
-        subj = normalize_subject_name(report.subject_name)
+        subj = normalize_subject_name(report.subject_name, user.school_id)
         cls = report.class_name
         
         if subj not in subjects_map:
@@ -1049,7 +1049,7 @@ def api_teacher_class_teacher_report():
             teacher_name = ""
             if report.teacher:
                 teacher_name = report.teacher.full_name or report.teacher.username
-            subj = normalize_subject_name(report.subject_name)
+            subj = normalize_subject_name(report.subject_name, report.school_id)
             subject_teachers[subj] = teacher_name
             
             if report.grades_json:

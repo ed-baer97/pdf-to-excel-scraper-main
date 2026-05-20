@@ -32,7 +32,7 @@ from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
 
 from ..extensions import db
-from ..models import Role, User, GradeReport, Class, ReportFile, TeacherSubject, TeacherClass
+from ..models import Role, User, GradeReport, Class, ReportFile, TeacherSubject, TeacherClass, SubjectNameAlias
 from ..security import decrypt_password, encrypt_password
 from ..constants import kazakh_sort_key, normalize_subject_name
 from ..services.admin_common import apply_analytics_filters, redirect_back
@@ -51,6 +51,7 @@ from ..services.admin_dashboard import (
     ui_period_display_name,
 )
 from ..services.auth_guards import admin_or_superadmin_required as admin_required
+from ..services.subject_aliases import ensure_default_aliases, restore_default_aliases
 from ..translator import gettext as translate_gettext
 
 from iin_utils import normalize_kz_iin
@@ -95,11 +96,18 @@ def _management_list_context(school_id: int) -> dict:
     for cls in classes:
         group = class_accordion_group(cls.name)
         classes_by_accordion[group].append(cls)
+    ensure_default_aliases(school_id)
+    subject_aliases = (
+        SubjectNameAlias.query.filter_by(school_id=school_id)
+        .order_by(SubjectNameAlias.alias_name)
+        .all()
+    )
     return {
         "teachers": teachers,
         "classes": classes,
         "teachers_by_accordion": teachers_by_accordion,
         "classes_by_accordion": classes_by_accordion,
+        "subject_aliases": subject_aliases,
     }
 
 
@@ -133,6 +141,60 @@ def management():
         "admin/management.html",
         **_management_list_context(current_user.school_id),
     )
+
+
+@bp.post("/subject-aliases")
+@admin_required
+def create_subject_alias():
+    """Добавить пару в словарь предметов школы."""
+    alias_name = (request.form.get("alias_name") or "").strip()
+    canonical_name = (request.form.get("canonical_name") or "").strip()
+    school_id = current_user.school_id
+
+    if not alias_name or not canonical_name:
+        flash("Укажите оба названия: вариант и каноническое (русское).", "danger")
+        return _redirect_back(url_for("admin.management") + "#subjects-dict-tab")
+
+    existing = SubjectNameAlias.query.filter_by(
+        school_id=school_id, alias_name=alias_name
+    ).first()
+    if existing:
+        existing.canonical_name = canonical_name
+        flash(f'Запись «{alias_name}» обновлена.', "success")
+    else:
+        db.session.add(
+            SubjectNameAlias(
+                school_id=school_id,
+                alias_name=alias_name,
+                canonical_name=canonical_name,
+            )
+        )
+        flash(f'Добавлено: «{alias_name}» → «{canonical_name}».', "success")
+    db.session.commit()
+    return _redirect_back(url_for("admin.management") + "#subjects-dict-tab")
+
+
+@bp.post("/subject-aliases/<int:alias_id>/delete")
+@admin_required
+def delete_subject_alias(alias_id: int):
+    """Удалить запись из словаря предметов."""
+    row = SubjectNameAlias.query.filter_by(
+        id=alias_id, school_id=current_user.school_id
+    ).first_or_404()
+    alias_label = row.alias_name
+    db.session.delete(row)
+    db.session.commit()
+    flash(f'Запись «{alias_label}» удалена из словаря.', "success")
+    return _redirect_back(url_for("admin.management") + "#subjects-dict-tab")
+
+
+@bp.post("/subject-aliases/restore-defaults")
+@admin_required
+def restore_subject_alias_defaults():
+    """Добавить недостающие стандартные пары словаря."""
+    restore_default_aliases(current_user.school_id)
+    flash("Стандартные записи словаря добавлены (существующие не изменены).", "success")
+    return _redirect_back(url_for("admin.management") + "#subjects-dict-tab")
 
 
 @bp.get("/class-metrics-charts")
@@ -1110,7 +1172,7 @@ def grades_overview():
                 "success_percent": 0
             }
         
-        subj_norm = normalize_subject_name(report.subject_name)
+        subj_norm = normalize_subject_name(report.subject_name, current_user.school_id)
         if subj_norm not in classes_data[class_name]["subjects"]:
             classes_data[class_name]["subjects"].append(subj_norm)
         
@@ -1165,7 +1227,7 @@ def grades_class(class_name: str):
     students_data = {}  # name -> {subject -> {percent, grade}}
     
     for report in reports:
-        subj = normalize_subject_name(report.subject_name)
+        subj = normalize_subject_name(report.subject_name, current_user.school_id)
         subjects.add(subj)
         
         if report.grades_json:
@@ -1295,7 +1357,7 @@ def delete_subject_from_class(class_name: str):
         flash("Не указан предмет для удаления.", "danger")
         return _redirect_back(url_for("admin.grades_class", class_name=class_name, period_number=period_number))
 
-    target_subject = normalize_subject_name(subject_name)
+    target_subject = normalize_subject_name(subject_name, current_user.school_id)
 
     # Удаляем GradeReport по текущему классу и предмету ТОЛЬКО за выбранную четверть.
     # Для 2 и 4 четвертей дополнительно удаляем соответствующее полугодие.
@@ -1315,7 +1377,7 @@ def delete_subject_from_class(class_name: str):
 
     reports_to_delete = [
         r for r in reports
-        if normalize_subject_name(r.subject_name) == target_subject
+        if normalize_subject_name(r.subject_name, current_user.school_id) == target_subject
         and (r.period_type, r.period_number) in allowed_periods
     ]
 
@@ -1327,7 +1389,7 @@ def delete_subject_from_class(class_name: str):
     ).all()
     files_to_delete = [
         rf for rf in report_files
-        if normalize_subject_name(rf.subject) == target_subject
+        if normalize_subject_name(rf.subject, current_user.school_id) == target_subject
         and str(rf.period_code) == str(period_number)
     ]
 
@@ -1378,7 +1440,7 @@ def analytics_home():
     subjects_data_grades = {}
     
     for report in reports:
-        subj = normalize_subject_name(report.subject_name)
+        subj = normalize_subject_name(report.subject_name, current_user.school_id)
         cls = report.class_name
         if cls not in active_class_names:
             continue
@@ -1540,7 +1602,7 @@ def download_analytics_excel():
     subjects_data_grades = {}
     
     for report in reports:
-        subj = normalize_subject_name(report.subject_name)
+        subj = normalize_subject_name(report.subject_name, current_user.school_id)
         cls = report.class_name
         if cls not in active_class_names:
             continue
@@ -1822,7 +1884,7 @@ def class_teacher_report():
         subject_teachers = {}  # subject_name -> teacher_name
         
         for report in reports:
-            subj = normalize_subject_name(report.subject_name)
+            subj = normalize_subject_name(report.subject_name, current_user.school_id)
             teacher_name = ""
             if report.teacher:
                 teacher_name = report.teacher.full_name or report.teacher.username
@@ -2015,7 +2077,7 @@ def download_grades_class_excel(class_name: str):
     students_data = {}  # name -> {subject -> {percent, grade}}
     
     for report in reports:
-        subj = normalize_subject_name(report.subject_name)
+        subj = normalize_subject_name(report.subject_name, current_user.school_id)
         subjects.add(subj)
         
         if report.grades_json:
@@ -2333,7 +2395,7 @@ def download_class_teacher_report_excel():
         students_grades = {}
         subject_teachers = {}
         for report in reports:
-            subj = normalize_subject_name(report.subject_name)
+            subj = normalize_subject_name(report.subject_name, current_user.school_id)
             t_name = ""
             if report.teacher:
                 t_name = report.teacher.full_name or report.teacher.username

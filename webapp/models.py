@@ -179,6 +179,27 @@ class Class(db.Model):
         return f"<Class {self.name}>"
 
 
+class SubjectNameAlias(db.Model):
+    """Словарь: казахское/альтернативное название предмета → канон на русском (по школе)."""
+
+    __tablename__ = "subject_name_aliases"
+
+    id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey("schools.id"), nullable=False, index=True)
+    alias_name = db.Column(db.String(255), nullable=False)
+    canonical_name = db.Column(db.String(255), nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint("school_id", "alias_name", name="uq_subject_alias_school_alias"),
+    )
+
+    school = db.relationship("School", backref="subject_name_aliases")
+
+    def __repr__(self):
+        return f"<SubjectNameAlias {self.alias_name!r} -> {self.canonical_name!r}>"
+
+
 class Subject(db.Model):
     """Модель предмета школы"""
     __tablename__ = "subjects"

@@ -98,7 +98,7 @@ def _get_semester_subject_pairs(school_id: int) -> set:
         .distinct()
         .all()
     )
-    return {(r.class_name, normalize_subject_name(r.subject_name)) for r in rows}
+    return {(r.class_name, normalize_subject_name(r.subject_name, school_id)) for r in rows}
 
 
 def _exclude_semester_subjects(reports: list, period_type: str, period_number: int, school_id: int) -> list:
@@ -107,7 +107,10 @@ def _exclude_semester_subjects(reports: list, period_type: str, period_number: i
     semester_pairs = _get_semester_subject_pairs(school_id)
     if not semester_pairs:
         return reports
-    return [r for r in reports if (r.class_name, normalize_subject_name(r.subject_name)) not in semester_pairs]
+    return [
+        r for r in reports
+        if (r.class_name, normalize_subject_name(r.subject_name, school_id)) not in semester_pairs
+    ]
 
 
 def get_quarter_reports(school_id: int, period_number: int, **extra_filters):

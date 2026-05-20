@@ -67,13 +67,13 @@ def get_quarter_reports_api(school_id: int, period_number: int, **extra_filters)
             .all()
         )
         semester_pairs = {
-            (r.class_name, normalize_subject_name(r.subject_name))
+            (r.class_name, normalize_subject_name(r.subject_name, school_id))
             for r in semester_rows
         }
         if semester_pairs:
             reports = [
                 r for r in reports
-                if (r.class_name, normalize_subject_name(r.subject_name)) not in semester_pairs
+                if (r.class_name, normalize_subject_name(r.subject_name, school_id)) not in semester_pairs
             ]
 
     return reports

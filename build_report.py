@@ -457,8 +457,9 @@ def build_report(
             mode="points",
         )
 
-    # "Оценки" имеют смысл только если в критериях есть секция СОЧ (sec=0).
-    if has_grades and (0 in sec_present):
+    # Лист «Оценки»: секция СОЧ (sec=0) или колонки «Сумма%»/«Оценка» без СОЧ.
+    has_grade_cols = bool(ctx.get("has_grade_summary_columns"))
+    if has_grades and (0 in sec_present or has_grade_cols):
         ws = mk_sheet("Оценки")
         nums = [int(s.get("num") or 0) for s in students_sorted]
         fio_list2 = [s.get("fio", "") for s in students_sorted]

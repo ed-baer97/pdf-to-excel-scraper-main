@@ -10,6 +10,8 @@ from app.report_pipeline.progress_monitor import (
     parse_schools_from_progress_message,
 )
 from app.report_pipeline.report_utils import (
+    can_upload_period_grades,
+    has_grade_summary_columns,
     is_semester_subject,
     normalize_period_code,
     parse_class_liter,
@@ -104,6 +106,18 @@ def test_is_semester_from_context(tmp_path):
     ctx = {"has_quarter_grade_header": True}
     (tmp_path / "criteria_context.json").write_text(json.dumps(ctx), encoding="utf-8")
     assert is_semester_subject(tmp_path) is False
+
+
+def test_has_grade_summary_columns_from_context(tmp_path):
+    ctx = {"has_grade_summary_columns": True}
+    (tmp_path / "criteria_context.json").write_text(json.dumps(ctx), encoding="utf-8")
+    assert has_grade_summary_columns(tmp_path) is True
+    assert can_upload_period_grades(False, tmp_path) is True
+
+
+def test_can_upload_with_soch_section_only(tmp_path):
+    assert can_upload_period_grades(True, tmp_path) is True
+    assert can_upload_period_grades(False, tmp_path) is False
 
 
 def test_parse_schools_message():

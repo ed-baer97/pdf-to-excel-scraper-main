@@ -757,6 +757,25 @@ def _has_quarter_grade_header(page, tab_href: str) -> bool:
     return False
 
 
+def _has_grade_summary_columns(page, tab_href: str) -> bool:
+    """
+    Есть ли колонки «Сумма%» и «Оценка» (предмет без СОЧ, но с итоговой оценкой за период).
+    """
+    from grade_table_signals import detect_grade_summary_columns
+
+    pane_id = tab_href.lstrip("#")
+    pane = page.locator(f"div#pills-tabContent div.tab-pane#{pane_id}").first
+    try:
+        pane.wait_for(state="visible", timeout=5000)
+    except Exception:
+        return False
+    tds = pane.locator("td")
+    texts = []
+    for i in range(tds.count()):
+        texts.append((tds.nth(i).inner_text() or "").strip())
+    return detect_grade_summary_columns(texts)
+
+
 def _extract_students_from_criteria_tab(page, tab_href: str) -> list[dict]:
     """Извлекает список учеников с оценками и баллами по секциям для выбранной вкладки критериев."""
     pane_id = tab_href.lstrip("#")
@@ -1789,6 +1808,13 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
                 has_quarter_grade_header = _has_quarter_grade_header(page, selected_tab)
             log_info(f'[{class_name} - {subject_name}] Заголовок четвертной оценки: {"да" if has_quarter_grade_header else "нет"}')
 
+            with timing_block(f"_has_grade_summary_columns [{class_name} — {subject_name}]"):
+                has_grade_summary_columns = _has_grade_summary_columns(page, selected_tab)
+            log_info(
+                f'[{class_name} - {subject_name}] Колонки «Сумма%»/«Оценка»: '
+                f'{"да" if has_grade_summary_columns else "нет"}'
+            )
+
             log_stage(ScraperLogger.STAGE_STUDENTS, f"Извлечение учащихся: {class_name}", None)
             log_info(f'[{class_name} - {subject_name}] Извлечение данных учащихся...')
             with timing_block(f"_extract_students_from_criteria_tab [{class_name} — {subject_name}]"):
@@ -1815,6 +1841,7 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
                 "selected_tab": selected_tab,
                 "criteria_url": page.url,
                 "has_quarter_grade_header": has_quarter_grade_header,
+                "has_grade_summary_columns": has_grade_summary_columns,
             }
             (batch_subdir / "criteria_context.json").write_text(json.dumps(ctx, ensure_ascii=False, indent=2), encoding="utf-8")
 

@@ -22,9 +22,22 @@ _KAZAKH_ALPHABET = (
 )
 _KAZAKH_ORDER = {char: idx for idx, char in enumerate(_KAZAKH_ALPHABET)}
 
+# Казахское / альтернативное название → каноническое (русское) для сводных таблиц.
+DEFAULT_SUBJECT_ALIASES: dict[str, str] = {
+    "Орыс тілі": "Русский язык",
+    "Орыс әдебиеті": "Русская литература",
+    "Қазақ тілі мен әдебиеті": "Казахский язык и литература",
+    "Шетел тілі": "Иностранный язык",
+    "Математика": "Математика",
+    "Информатика": "Информатика",
+    "Жаратылыстану": "Естествознание",
+    "Қазақстан тарихы": "История Казахстана",
+    "Дүниежүзі тарихы": "Всемирная история",
+}
 
-def normalize_subject_name(raw: str) -> str:
-    """Приводит название предмета к каноническому виду: убирает суффикс (N) и дублирование строки."""
+
+def _base_normalize_subject_name(raw: str) -> str:
+    """Убирает суффикс подгруппы (N) и точное дублирование строки в названии."""
     name = _SUBGROUP_RE.sub("", raw).strip()
 
     half = len(name) // 2
@@ -41,6 +54,41 @@ def normalize_subject_name(raw: str) -> str:
             name = left
 
     return name
+
+
+def _apply_subject_aliases(name: str, aliases: dict[str, str]) -> str:
+    """Сопоставляет название со словарём: билингвальные и казахские варианты → канон."""
+    name_stripped = name.strip()
+    if not name_stripped or not aliases:
+        return name_stripped
+
+    canonicals = set(aliases.values())
+    for canonical in sorted(canonicals, key=len, reverse=True):
+        if name_stripped == canonical:
+            return canonical
+        suffix = " " + canonical
+        if name_stripped.endswith(suffix):
+            return canonical
+
+    for alias, canonical in sorted(aliases.items(), key=lambda x: len(x[0]), reverse=True):
+        if alias and alias.lower() in name_stripped.lower():
+            return canonical
+
+    return name_stripped
+
+
+def normalize_subject_name(raw: str, school_id: int | None = None) -> str:
+    """
+    Приводит название предмета к каноническому виду.
+    При переданном school_id учитывает словарь школы из БД.
+    """
+    if school_id is not None:
+        from .services.subject_aliases import normalize_subject_name as _norm_school
+
+        return _norm_school(raw, school_id)
+
+    name = _base_normalize_subject_name(raw)
+    return _apply_subject_aliases(name, DEFAULT_SUBJECT_ALIASES)
 
 
 def kazakh_sort_key(raw: str | None) -> tuple:
