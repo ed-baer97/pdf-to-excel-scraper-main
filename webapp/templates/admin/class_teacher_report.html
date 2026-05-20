@@ -41,6 +41,7 @@
             {% for i in range(1, 5) %}
               <option value="{{ i }}" {% if period_number == i %}selected{% endif %}>{{ i }} {{ _('quarter_suffix') }}</option>
             {% endfor %}
+            <option value="5" {% if period_number == 5 %}selected{% endif %}>{{ _('period_year') }}</option>
           </select>
         </div>
         <div class="col-md-4">

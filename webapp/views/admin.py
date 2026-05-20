@@ -37,15 +37,18 @@ from ..security import decrypt_password, encrypt_password
 from ..constants import kazakh_sort_key, normalize_subject_name
 from ..services.admin_common import apply_analytics_filters, redirect_back
 from ..services.admin_dashboard import (
+    YEAR_UI_PERIOD,
     aggregate_class_metrics,
     aggregate_year_metrics,
     chart_series_from_class_totals,
     class_accordion_group,
     class_name_sort_key,
-    get_quarter_reports,
+    get_period_reports,
     parse_class_grade,
+    parse_ui_period_number,
     student_class_summary_category,
     teacher_accordion_group,
+    ui_period_display_name,
 )
 from ..services.auth_guards import admin_or_superadmin_required as admin_required
 from ..translator import gettext as translate_gettext
@@ -103,9 +106,7 @@ def _management_list_context(school_id: int) -> dict:
 @bp.get("/")
 @admin_required
 def dashboard():
-    period_number = int(request.args.get("period_number", 2))
-    if period_number < 1 or period_number > 4:
-        period_number = 2
+    period_number = parse_ui_period_number(request.args.get("period_number", 2))
     classes = Class.query.filter_by(school_id=current_user.school_id).all()
     active_class_names = {c.name for c in classes}
     school_metrics = aggregate_class_metrics(current_user.school_id, period_number, active_class_names)
@@ -138,7 +139,7 @@ def management():
 @admin_required
 def class_metrics_charts():
     """Статистика качества и успеваемости по классам в виде диаграмм."""
-    period_number = int(request.args.get("period_number", 2))
+    period_number = parse_ui_period_number(request.args.get("period_number", 2))
     active_class_names = {
         row.name
         for row in Class.query.filter_by(school_id=current_user.school_id).with_entities(Class.name).all()
@@ -251,12 +252,7 @@ def download_class_metrics_charts_excel_legacy():
     sk = (request.args.get("scope") or "overall").strip().lower()
     if sk not in ("overall", "parallel"):
         sk = "overall"
-    try:
-        pn = int(request.args.get("period_number", 2))
-    except (TypeError, ValueError):
-        pn = 2
-    if pn < 1 or pn > 4:
-        pn = 2
+    pn = parse_ui_period_number(request.args.get("period_number", 2))
     return redirect(
         url_for("admin.download_class_metrics_charts_excel", export_kind=sk, period_number=pn),
         code=302,
@@ -267,9 +263,7 @@ def download_class_metrics_charts_excel_legacy():
 @admin_required
 def download_class_metrics_charts_excel(export_kind: str):
     """Книга Excel: лист «Таблицы» — все числа; далее по одному листу на гистограмму. export_kind=overall — «Общее» + сводка; parallel — «По параллелям»."""
-    period_number = int(request.args.get("period_number", 2))
-    if period_number < 1 or period_number > 4:
-        period_number = 2
+    period_number = parse_ui_period_number(request.args.get("period_number", 2))
     export_kind = (export_kind or "").strip().lower()
     if export_kind not in ("overall", "parallel"):
         abort(404)
@@ -338,7 +332,9 @@ def download_class_metrics_charts_excel(export_kind: str):
     ws.sheet_view.showGridLines = False
     chart_specs: list[dict] = []
 
-    if 1 <= period_number <= 4:
+    if period_number == YEAR_UI_PERIOD:
+        period_label = tr("metrics_excel_period_year")
+    elif 1 <= period_number <= 4:
         period_label = tr(f"metrics_excel_period_q{period_number}")
     else:
         period_label = tr("metrics_excel_period_fallback").format(n=period_number)
@@ -1089,7 +1085,7 @@ def grades_overview():
     """Обзор оценок: список классов со сводкой"""
     
     # Параметры фильтрации (только четверти)
-    period_number = int(request.args.get("period_number", 2))
+    period_number = parse_ui_period_number(request.args.get("period_number", 2))
 
     active_class_names = {
         row.name
@@ -1097,7 +1093,7 @@ def grades_overview():
     }
     
     # Получаем отчёты (включая полугодовые для четвертей 2/4)
-    reports = get_quarter_reports(current_user.school_id, period_number)
+    reports = get_period_reports(current_user.school_id, period_number)
     
     # Группируем по классам (только классы из актуального списка школы — как на диаграммах)
     classes_data = {}
@@ -1152,7 +1148,7 @@ def grades_class(class_name: str):
     """Сводная таблица оценок класса: ученик × предмет"""
     
     # Параметры (только четверти)
-    period_number = int(request.args.get("period_number", 2))
+    period_number = parse_ui_period_number(request.args.get("period_number", 2))
 
     if not Class.query.filter_by(school_id=current_user.school_id, name=class_name).first():
         flash(
@@ -1162,7 +1158,7 @@ def grades_class(class_name: str):
         return redirect(url_for("admin.grades_overview", period_number=period_number))
     
     # Получаем все отчёты для этого класса (включая полугодовые для 2/4)
-    reports = get_quarter_reports(current_user.school_id, period_number, class_name=class_name)
+    reports = get_period_reports(current_user.school_id, period_number, class_name=class_name)
     
     # Собираем данные
     subjects = set()
@@ -1293,10 +1289,7 @@ def delete_subject_from_class(class_name: str):
 
     subject_name = (request.form.get("subject_name") or "").strip()
     period_raw = request.form.get("period_number", "2")
-    try:
-        period_number = int(period_raw)
-    except (TypeError, ValueError):
-        period_number = 2
+    period_number = parse_ui_period_number(period_raw)
 
     if not subject_name:
         flash("Не указан предмет для удаления.", "danger")
@@ -1311,11 +1304,14 @@ def delete_subject_from_class(class_name: str):
         class_name=class_name,
     ).all()
 
-    allowed_periods = {("quarter", period_number)}
-    if period_number == 2:
-        allowed_periods.add(("semester", 1))
-    elif period_number == 4:
-        allowed_periods.add(("semester", 2))
+    if period_number == YEAR_UI_PERIOD:
+        allowed_periods = {("year", 1)}
+    else:
+        allowed_periods = {("quarter", period_number)}
+        if period_number == 2:
+            allowed_periods.add(("semester", 1))
+        elif period_number == 4:
+            allowed_periods.add(("semester", 2))
 
     reports_to_delete = [
         r for r in reports
@@ -1362,11 +1358,11 @@ def analytics_home():
     """
     
     # Параметры (только четверти)
-    period_number = int(request.args.get("period_number", 2))
+    period_number = parse_ui_period_number(request.args.get("period_number", 2))
     segment = request.args.get("segment")  # '1-4' или '5-11' или None
     
     # Получаем отчёты (включая полугодовые для четвертей 2/4)
-    reports = get_quarter_reports(current_user.school_id, period_number)
+    reports = get_period_reports(current_user.school_id, period_number)
     active_class_names = {
         row.name
         for row in Class.query.filter_by(school_id=current_user.school_id).with_entities(Class.name).all()
@@ -1526,13 +1522,14 @@ def _apply_analytics_filters(subjects_data_sor, subjects_data_soch, subjects_dat
 def download_analytics_excel():
     """Скачать аналитику СОР/СОЧ/Оценки в Excel (с учётом фильтров subject/class/teacher)"""
     
-    period_number = int(request.args.get("period_number", 2))
+    period_number = parse_ui_period_number(request.args.get("period_number", 2))
     filter_subject = request.args.get("subject", "").strip() or None
     filter_class = request.args.get("class", "").strip() or None
     filter_teacher = request.args.get("teacher", "").strip() or None
-    period_name = f"{period_number} четверть"
+    lang = session.get("language", "ru")
+    period_name = ui_period_display_name(period_number, lambda k: translate_gettext(k, lang))
     
-    reports = get_quarter_reports(current_user.school_id, period_number)
+    reports = get_period_reports(current_user.school_id, period_number)
     active_class_names = {
         row.name
         for row in Class.query.filter_by(school_id=current_user.school_id).with_entities(Class.name).all()
@@ -1765,11 +1762,11 @@ def class_teacher_report():
     """
     
     # Параметры (только четверти)
-    period_number = int(request.args.get("period_number", 2))
+    period_number = parse_ui_period_number(request.args.get("period_number", 2))
     segment = request.args.get("segment")  # '1-4' или '5-11' или None
     
     # Получаем все отчёты (включая полугодовые для 2/4)
-    all_reports = get_quarter_reports(current_user.school_id, period_number)
+    all_reports = get_period_reports(current_user.school_id, period_number)
     active_class_names = {
         row.name
         for row in Class.query.filter_by(school_id=current_user.school_id).with_entities(Class.name).all()
@@ -2008,10 +2005,10 @@ def download_grades_class_excel(class_name: str):
     """Скачать сводную таблицу оценок класса в Excel"""
     
     # Параметры (только четверти)
-    period_number = int(request.args.get("period_number", 2))
+    period_number = parse_ui_period_number(request.args.get("period_number", 2))
     
     # Получаем все отчёты для этого класса (включая полугодовые для 2/4)
-    reports = get_quarter_reports(current_user.school_id, period_number, class_name=class_name)
+    reports = get_period_reports(current_user.school_id, period_number, class_name=class_name)
     
     # Собираем данные
     subjects = set()
@@ -2092,7 +2089,8 @@ def download_grades_class_excel(class_name: str):
     center_align = Alignment(horizontal="center")
     
     # Заголовок
-    period_name = f"{period_number} четверть"
+    lang = session.get("language", "ru")
+    period_name = ui_period_display_name(period_number, lambda k: translate_gettext(k, lang))
     total_cols = len(subjects_list) + 6  # №, ФИО, предметы..., Кол5, Кол4, Кол3, Кол2
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=total_cols)
     ws["A1"] = f"Сводная таблица оценок: {class_name} ({period_name})"
@@ -2295,7 +2293,8 @@ def download_grades_class_excel(class_name: str):
     wb.save(output)
     output.seek(0)
     
-    filename = f"Оценки_{class_name}_{period_number}_четверть.xlsx"
+    period_slug = "учебный_год" if period_number == YEAR_UI_PERIOD else f"{period_number}_четверть"
+    filename = f"Оценки_{class_name}_{period_slug}.xlsx"
     
     return send_file(
         output,
@@ -2310,11 +2309,12 @@ def download_grades_class_excel(class_name: str):
 def download_class_teacher_report_excel():
     """Скачать отчёт классного руководителя в Excel — все классы, по категориям"""
     
-    period_number = int(request.args.get("period_number", 2))
-    period_name = f"{period_number} четверть"
+    period_number = parse_ui_period_number(request.args.get("period_number", 2))
+    lang = session.get("language", "ru")
+    period_name = ui_period_display_name(period_number, lambda k: translate_gettext(k, lang))
     
     # --- Собираем данные (повторяем логику class_teacher_report) ---
-    all_reports = get_quarter_reports(current_user.school_id, period_number)
+    all_reports = get_period_reports(current_user.school_id, period_number)
     class_names = sorted({r.class_name for r in all_reports}, key=kazakh_sort_key)
     
     categories_data = {

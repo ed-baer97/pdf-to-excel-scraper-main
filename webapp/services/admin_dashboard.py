@@ -9,6 +9,39 @@ from ..extensions import db
 from ..models import GradeReport
 from ..constants import normalize_subject_name
 
+# UI period_number=5 → GradeReport period_type="year", period_number=1 (вкладка Mektep #chetvert_5)
+YEAR_UI_PERIOD = 5
+
+
+def parse_ui_period_number(raw, default: int = 2) -> int:
+    """Нормализует period_number из query/form: 1–4 четверти, 5 — учебный год."""
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return default
+    return n if 1 <= n <= YEAR_UI_PERIOD else default
+
+
+def get_period_reports(school_id: int, period_number: int, **extra_filters):
+    """Отчёты за четверть/полугодие (1–4) или за учебный год (5)."""
+    if period_number == YEAR_UI_PERIOD:
+        return GradeReport.query.filter_by(
+            school_id=school_id,
+            period_type="year",
+            period_number=1,
+            **extra_filters,
+        ).all()
+    return get_quarter_reports(school_id, period_number, **extra_filters)
+
+
+def ui_period_display_name(period_number: int, gettext_func) -> str:
+    """Подпись периода для заголовков и Excel."""
+    if period_number == YEAR_UI_PERIOD:
+        return gettext_func("period_year")
+    if 1 <= period_number <= 4:
+        return f"{period_number} {gettext_func('quarter_suffix')}"
+    return str(period_number)
+
 
 def parse_class_grade(class_name: str) -> int | None:
     """Extract numeric grade from class name (e.g. 1A -> 1)."""
@@ -255,6 +288,8 @@ def aggregate_class_metrics(school_id: int, period_number: int, active_class_nam
       parallel (1-4, 5-9, 10-11): optional floats,
       classes_with_data, total_weight, has_data.
     """
+    if period_number == YEAR_UI_PERIOD:
+        return aggregate_year_metrics(school_id, active_class_names)
     reports = get_quarter_reports(school_id, period_number)
     return _build_metrics_from_reports(reports, active_class_names)
 

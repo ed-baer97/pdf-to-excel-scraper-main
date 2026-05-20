@@ -21,7 +21,7 @@ from ..services.api_helpers import (
     auto_create_class_and_subject,
     find_school_by_org_name,
     generate_jwt_token,
-    get_quarter_reports_api,
+    get_period_reports_api,
     require_jwt,
 )
 from ..constants import MIN_DESKTOP_VERSION, normalize_subject_name, kazakh_sort_key
@@ -711,7 +711,7 @@ def api_get_class_grades(class_name: str):
     period_number = int(request.args.get("period_number", 2))
     
     # Получаем все отчёты для этого класса (включая полугодовые для 2/4)
-    reports = get_quarter_reports_api(user.school_id, period_number, class_name=class_name)
+    reports = get_period_reports_api(user.school_id, period_number, class_name=class_name)
     
     if not reports:
         return jsonify({
@@ -909,7 +909,7 @@ def api_teacher_subject_report():
     period_number = int(request.args.get("period_number", 2))
     
     # Получаем отчёты текущего учителя за период (включая полугодовые для 2/4)
-    reports = get_quarter_reports_api(user.school_id, period_number, teacher_id=user.id)
+    reports = get_period_reports_api(user.school_id, period_number, teacher_id=user.id)
     
     # Группируем по предмету → классу
     subjects_map = {}  # subject_name -> {class_name -> report}
@@ -1035,7 +1035,7 @@ def api_teacher_class_teacher_report():
         cls_name = cls_obj.name
         
         # Все отчёты по этому классу за период (включая полугодовые для 2/4)
-        reports = get_quarter_reports_api(user.school_id, period_number, class_name=cls_name)
+        reports = get_period_reports_api(user.school_id, period_number, class_name=cls_name)
         
         if not reports:
             continue

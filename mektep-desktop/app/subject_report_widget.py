@@ -17,6 +17,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFont
 
 from .loading_overlay import LoadingOverlay, ApiWorker
+from .period_ui import period_combo_items
 from .translator import get_translator
 
 if TYPE_CHECKING:
@@ -25,13 +26,6 @@ if TYPE_CHECKING:
 
 class SubjectReportWidget(QWidget):
     """Отчёт предметника"""
-
-    PERIOD_ITEMS = [
-        ("1 четверть", 1),
-        ("2 четверть", 2),
-        ("3 четверть", 3),
-        ("4 четверть", 4),
-    ]
 
     def __init__(self, api_client: Optional["MektepAPIClient"] = None):
         super().__init__()
@@ -49,7 +43,7 @@ class SubjectReportWidget(QWidget):
         filter_bar = QHBoxLayout()
         filter_bar.addWidget(QLabel(self.tr.tr('period')))
         self.period_combo = QComboBox()
-        for label, *_ in self.PERIOD_ITEMS:
+        for label, *_ in period_combo_items(self.tr):
             self.period_combo.addItem(label)
         self.period_combo.setCurrentIndex(1)
         filter_bar.addWidget(self.period_combo)
@@ -116,7 +110,7 @@ class SubjectReportWidget(QWidget):
         if not self.api_client or not self.api_client.is_authenticated():
             return
 
-        _, period_number = self.PERIOD_ITEMS[self.period_combo.currentIndex()]
+        _, period_number = period_combo_items(self.tr)[self.period_combo.currentIndex()]
 
         self.loading_overlay.show_overlay(self.tr.tr('loading_subject_report'))
         self.refresh_btn.setEnabled(False)

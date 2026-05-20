@@ -21,6 +21,21 @@ from ..models import (
 )
 
 
+YEAR_UI_PERIOD = 5
+
+
+def get_period_reports_api(school_id: int, period_number: int, **extra_filters):
+    """Отчёты за четверть/полугодие (1–4) или за учебный год (5)."""
+    if period_number == YEAR_UI_PERIOD:
+        return GradeReport.query.filter_by(
+            school_id=school_id,
+            period_type="year",
+            period_number=1,
+            **extra_filters,
+        ).all()
+    return get_quarter_reports_api(school_id, period_number, **extra_filters)
+
+
 def get_quarter_reports_api(school_id: int, period_number: int, **extra_filters):
     """Quarter-aware query that blends semester reports for quarters 2/4."""
     reports = GradeReport.query.filter_by(
