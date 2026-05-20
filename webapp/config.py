@@ -75,7 +75,7 @@ class Config:
     # (tag-URL открывает веб-страницу, файл по нему не качается).
     DESKTOP_DOWNLOAD_URL = os.getenv(
         "DESKTOP_DOWNLOAD_URL",
-        "https://github.com/ed-baer97/mektep-desktop-releases/releases/download/v1.1.6/Mektep.Desktop.exe",
+        "https://github.com/ed-baer97/mektep-desktop-releases/releases/download/v1.1.7/Mektep.Desktop.exe",
     )
 
 
