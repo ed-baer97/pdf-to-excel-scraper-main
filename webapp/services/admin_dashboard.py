@@ -8,9 +8,13 @@ import re
 from ..extensions import db
 from ..models import GradeReport
 from ..constants import normalize_subject_name
+from .year_grades import (
+    YEAR_UI_PERIOD,
+    aggregate_year_metrics as _aggregate_year_metrics,
+    build_synthetic_year_reports,
+)
 
-# UI period_number=5 → GradeReport period_type="year", period_number=1 (вкладка Mektep #chetvert_5)
-YEAR_UI_PERIOD = 5
+# UI period_number=5 — учебный год (расчёт из четвертей 1–4, без отдельного скрапа)
 
 
 def parse_ui_period_number(raw, default: int = 2) -> int:
@@ -23,14 +27,11 @@ def parse_ui_period_number(raw, default: int = 2) -> int:
 
 
 def get_period_reports(school_id: int, period_number: int, **extra_filters):
-    """Отчёты за четверть/полугодие (1–4) или за учебный год (5)."""
+    """Отчёты за четверть/полугодие (1–4) или синтетические за учебный год (5)."""
     if period_number == YEAR_UI_PERIOD:
-        return GradeReport.query.filter_by(
-            school_id=school_id,
-            period_type="year",
-            period_number=1,
-            **extra_filters,
-        ).all()
+        return build_synthetic_year_reports(
+            school_id, get_quarter_reports, **extra_filters
+        )
     return get_quarter_reports(school_id, period_number, **extra_filters)
 
 
@@ -292,25 +293,18 @@ def aggregate_class_metrics(school_id: int, period_number: int, active_class_nam
       classes_with_data, total_weight, has_data.
     """
     if period_number == YEAR_UI_PERIOD:
-        return aggregate_year_metrics(school_id, active_class_names)
+        return _aggregate_year_metrics(
+            school_id, active_class_names, get_quarter_reports
+        )
     reports = get_quarter_reports(school_id, period_number)
     return _build_metrics_from_reports(reports, active_class_names)
 
 
 def aggregate_year_metrics(school_id: int, active_class_names: set[str]) -> dict:
-    """
-    Качество/успеваемость по классам и по школе за учебный год.
-
-    Берёт отчёты ``period_type="year"`` (заполняется скрапером со вкладки
-    ``#chetvert_5`` на Mektep), агрегация — простое среднее арифметическое,
-    структура результата совпадает с :func:`aggregate_class_metrics`.
-    """
-    reports = GradeReport.query.filter_by(
-        school_id=school_id,
-        period_type="year",
-        period_number=1,
-    ).all()
-    return _build_metrics_from_reports(reports, active_class_names)
+    """KPI за учебный год (расчёт из четвертей). См. :mod:`year_grades`."""
+    return _aggregate_year_metrics(
+        school_id, active_class_names, get_quarter_reports
+    )
 
 
 def chart_series_from_class_totals(class_totals: dict) -> tuple[list[str], list[float], list[float]]:
@@ -327,10 +321,8 @@ def chart_series_from_class_totals(class_totals: dict) -> tuple[list[str], list[
         if report_count <= 0:
             continue
         labels.append(class_name)
-        quality_values.append(
-            round(class_totals[class_name]["quality_sum"] / report_count, 1)
-        )
-        success_values.append(
-            round(class_totals[class_name]["success_sum"] / report_count, 1)
-        )
+        q_val = class_totals[class_name]["quality_sum"] / report_count
+        s_val = class_totals[class_name]["success_sum"] / report_count
+        quality_values.append(round(q_val, 1) if report_count > 1 else q_val)
+        success_values.append(round(s_val, 1) if report_count > 1 else s_val)
     return labels, quality_values, success_values

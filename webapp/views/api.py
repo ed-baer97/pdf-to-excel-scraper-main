@@ -22,7 +22,14 @@ from ..services.api_helpers import (
     find_school_by_org_name,
     generate_jwt_token,
     get_period_reports_api,
+    get_quarter_reports_api,
     require_jwt,
+)
+from ..services.year_grades import (
+    YEAR_UI_PERIOD,
+    build_year_student_subjects,
+    quality_success_from_grades,
+    students_data_from_year_map,
 )
 from ..constants import MIN_DESKTOP_VERSION, normalize_subject_name, kazakh_sort_key
 
@@ -417,17 +424,19 @@ def api_upload_report():
     grades_payload = data.get("grades_json")
     analytics_payload = data.get("analytics_json")
     
-    # Валидация period_type
-    if period_type not in ("quarter", "semester", "year"):
-        return jsonify({"error": "period_type должен быть 'quarter', 'semester' или 'year'"}), 400
-    
-    # Валидация period_number
+    if period_type == "year":
+        return jsonify({
+            "error": "Годовые оценки вычисляются автоматически из четвертей 1–4. "
+                     "Загрузите отчёты за четверть или полугодие.",
+        }), 400
+
+    if period_type not in ("quarter", "semester"):
+        return jsonify({"error": "period_type должен быть 'quarter' или 'semester'"}), 400
+
     if period_type == "quarter":
         max_period = 4
-    elif period_type == "semester":
-        max_period = 2
     else:
-        max_period = 1
+        max_period = 2
     if not (1 <= period_number <= max_period):
         return jsonify({"error": f"period_number должен быть от 1 до {max_period}"}), 400
     
@@ -710,54 +719,75 @@ def api_get_class_grades(class_name: str):
     # Параметры (только четверти)
     period_number = int(request.args.get("period_number", 2))
     
-    # Получаем все отчёты для этого класса (включая полугодовые для 2/4)
-    reports = get_period_reports_api(user.school_id, period_number, class_name=class_name)
-    
-    if not reports:
-        return jsonify({
-            "success": True,
-            "class_name": class_name,
-            "period_number": period_number,
-            "subjects": [],
-            "students": [],
-            "summary": {
-                "total_students": 0,
-                "quality_percent": 0,
-                "success_percent": 0
-            }
-        }), 200
-    
-    # Собираем данные
-    subjects = set()
-    students_data = {}  # name -> {subject -> {percent, grade}}
-    
-    for report in reports:
-        subj = normalize_subject_name(report.subject_name, user.school_id)
-        subjects.add(subj)
-        
-        if report.grades_json:
-            try:
-                grades_data = json.loads(report.grades_json)
-                students_list = grades_data.get("students", [])
-                
-                for student in students_list:
-                    name = student.get("name")
-                    if not name:
-                        continue
-                    
-                    if name not in students_data:
-                        students_data[name] = {}
-                    
-                    existing = students_data[name].get(subj)
-                    new_grade = {"percent": student.get("percent"), "grade": student.get("grade")}
-                    if existing is None or existing.get("grade") is None:
-                        students_data[name][subj] = new_grade
-                    elif new_grade.get("grade") is not None and new_grade["grade"] > existing.get("grade", 0):
-                        students_data[name][subj] = new_grade
-            except json.JSONDecodeError:
-                current_app.logger.error(f"Invalid JSON in report {report.id}")
-    
-    # Формируем ответ
+    school_id = user.school_id
+
+    if period_number == YEAR_UI_PERIOD:
+        year_map = build_year_student_subjects(
+            school_id, class_name, get_quarter_reports_api
+        )
+        students_data = students_data_from_year_map(year_map)
+        if not students_data:
+            return jsonify({
+                "success": True,
+                "class_name": class_name,
+                "period_number": period_number,
+                "subjects": [],
+                "students": [],
+                "summary": {
+                    "total_students": 0,
+                    "quality_percent": 0,
+                    "success_percent": 0,
+                },
+            }), 200
+    else:
+        reports = get_period_reports_api(school_id, period_number, class_name=class_name)
+        if not reports:
+            return jsonify({
+                "success": True,
+                "class_name": class_name,
+                "period_number": period_number,
+                "subjects": [],
+                "students": [],
+                "summary": {
+                    "total_students": 0,
+                    "quality_percent": 0,
+                    "success_percent": 0,
+                },
+            }), 200
+        students_data = {}
+        subjects = set()
+
+    if period_number != YEAR_UI_PERIOD:
+        for report in reports:
+            subj = normalize_subject_name(report.subject_name, school_id)
+            subjects.add(subj)
+
+            if report.grades_json:
+                try:
+                    grades_data = json.loads(report.grades_json)
+                    for student in grades_data.get("students", []):
+                        name = student.get("name")
+                        if not name:
+                            continue
+                        if name not in students_data:
+                            students_data[name] = {}
+                        existing = students_data[name].get(subj)
+                        new_grade = {
+                            "percent": student.get("percent"),
+                            "grade": student.get("grade"),
+                        }
+                        if existing is None or existing.get("grade") is None:
+                            students_data[name][subj] = new_grade
+                        elif (
+                            new_grade.get("grade") is not None
+                            and new_grade["grade"] > existing.get("grade", 0)
+                        ):
+                            students_data[name][subj] = new_grade
+                except json.JSONDecodeError:
+                    current_app.logger.error(f"Invalid JSON in report {report.id}")
+    else:
+        subjects = {subj for subjs in students_data.values() for subj in subjs}
+
     subjects_list = sorted(subjects, key=kazakh_sort_key)
     students_list = [
         {
@@ -786,10 +816,26 @@ def api_get_class_grades(class_name: str):
     
     quality_percent = 0
     success_percent = 0
-    if total_students > 0:
-        quality_percent = round((grades_count["5"] + grades_count["4"]) / total_students * 100, 1)
-        success_percent = round((grades_count["5"] + grades_count["4"] + grades_count["3"]) / total_students * 100, 1)
-    
+    if period_number == YEAR_UI_PERIOD:
+        all_cells = [
+            g.get("grade")
+            for grades in students_data.values()
+            for g in grades.values()
+            if g.get("grade") is not None
+        ]
+        if all_cells:
+            quality_percent, success_percent = quality_success_from_grades(all_cells)
+    elif total_students > 0:
+        quality_percent = round(
+            (grades_count["5"] + grades_count["4"]) / total_students * 100, 1
+        )
+        success_percent = round(
+            (grades_count["5"] + grades_count["4"] + grades_count["3"])
+            / total_students
+            * 100,
+            1,
+        )
+
     return jsonify({
         "success": True,
         "class_name": class_name,

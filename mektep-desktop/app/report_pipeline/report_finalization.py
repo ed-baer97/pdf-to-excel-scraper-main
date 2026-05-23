@@ -298,9 +298,7 @@ class ReportFinalizer:
                     )
                     return report_data
 
-                # Четверть/полугодие: нужна секция СОЧ или колонки «Сумма%»+«Оценка».
-                # Годовой отчёт — только оценки, без СОЧ.
-                if period_type != "year" and not can_upload:
+                if not can_upload:
                     print(
                         f"[DEBUG] Пропуск загрузки: нет СОЧ и нет колонок итога: "
                         f"{class_name} {subject_name}"
@@ -309,17 +307,13 @@ class ReportFinalizer:
                     report_data["upload_skip_reason"] = "no_grade_table"
                     return report_data
 
-                # Для года аналитика по СОр/СОЧ отсутствует — не отправляем её,
-                # чтобы серверная валидация и админ-дашборд не получали мусорные данные.
-                effective_analytics = None if period_type == "year" else analytics_data
-
                 upload_result = self.api_client.upload_report(
                     class_name=class_name,
                     subject_name=subject_name,
                     period_type=period_type,
                     period_number=period_number,
                     grades_data=grades_data,
-                    analytics_data=effective_analytics,
+                    analytics_data=analytics_data,
                     org_name=self._scraped_org_name,
                     has_grade_summary_columns=has_grade_summary_columns(subdir),
                 )
@@ -345,7 +339,7 @@ class ReportFinalizer:
                             period_type=period_type,
                             period_number=period_number,
                             grades_data=grades_data,
-                            analytics_data=effective_analytics,
+                            analytics_data=analytics_data,
                             org_name=self._scraped_org_name,
                         )
                         dbg_log(

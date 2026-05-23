@@ -167,7 +167,6 @@ except ImportError:
         "2": "2 четверть (1 полугодие)",
         "3": "3 четверть",
         "4": "4 четверть (2 полугодие)",
-        "5": "Учебный год",
     }
 
 def _safe_slug(s: str) -> str:
@@ -377,9 +376,8 @@ def _get_org_name(page) -> str | None:
 
 def _choose_period() -> tuple[str, str]:
     """
-    Возвращает (код периода, подпись): из MEKTEP_PERIOD или интерактивный ввод 1–5.
+    Возвращает (код периода, подпись): из MEKTEP_PERIOD или интерактивный ввод 1–4.
     Правило: 2-я четверть соответствует 1 полугодию в подписи PERIOD_MAP.
-    Код 5 — «Учебный год» (вкладка #chetvert_5).
     """
     chosen = os.getenv("MEKTEP_PERIOD", "").strip()
     if chosen in PERIOD_MAP:
@@ -390,10 +388,9 @@ def _choose_period() -> tuple[str, str]:
     print("  2 - 2 четверть (1 полугодие, если нет 2 четверти)")
     print("  3 - 3 четверть")
     print("  4 - 4 четверть (2 полугодие)")
-    print("  5 - Учебный год")
-    chosen = input("Выбор (1/2/3/4/5) [2]: ").strip() or "2"
+    chosen = input("Выбор (1/2/3/4) [2]: ").strip() or "2"
     if chosen not in PERIOD_MAP:
-        raise ValueError("Unknown period. Use: 1,2,3,4,5")
+        raise ValueError("Unknown period. Use: 1,2,3,4")
     return chosen, PERIOD_MAP[chosen]
 
 

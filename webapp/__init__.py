@@ -87,6 +87,21 @@ def create_app(config_object=None) -> Flask:
     with app.app_context():
         db.create_all()
 
+        try:
+            from .services.year_grades import purge_legacy_year_reports
+
+            removed = purge_legacy_year_reports()
+            if removed:
+                app.logger.info(
+                    "Removed %s legacy year period grade/report file rows", removed
+                )
+        except Exception as e:
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+            app.logger.warning("purge_legacy_year_reports skipped: %s", e)
+
         # ---- Lightweight runtime schema upgrades (SQLite + PostgreSQL compatible) ----
         # This repo historically used db.create_all() without proper migrations.
         # We keep it robust by adding new columns/indexes when missing.

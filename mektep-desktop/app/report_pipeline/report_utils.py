@@ -96,15 +96,11 @@ def resolve_period(period_code: str, batch_subdir: Path) -> Tuple[str, int, bool
     Возвращает кортеж (period_type, period_number, skip).
 
     Коды 1..4 — четверти (с автоматическим переключением на полугодия для
-    соответствующих предметов). Код 5 — годовой отчёт (period_type="year",
-    period_number=1); для него полугодовой разрез не применяется.
+    соответствующих предметов). Учебный год на сервере считается из четвертей.
     """
     normalized_period = normalize_period_code(period_code)
     if normalized_period is None:
         return "quarter", 1, True
-
-    if normalized_period == "5":
-        return "year", 1, False
 
     is_sem = is_semester_subject(batch_subdir)
 
@@ -138,8 +134,8 @@ def can_upload_period_grades(has_soch_section: bool, batch_subdir: Path) -> bool
 
 
 def normalize_period_code(period_code: Any) -> Optional[str]:
-    """Normalize period code to one of '1'..'5' ('5' = учебный год)."""
+    """Normalize period code to one of '1'..'4'."""
     if period_code is None:
         return None
     value = str(period_code).strip()
-    return value if value in {"1", "2", "3", "4", "5"} else None
+    return value if value in {"1", "2", "3", "4"} else None

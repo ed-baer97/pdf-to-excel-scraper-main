@@ -84,6 +84,7 @@ def test_resolve_period_semester_from_tabs(tmp_path):
         (" 4 ", "4"),
         (2, "2"),
         ("0", None),
+        ("5", None),
         ("q1", None),
         (None, None),
     ],

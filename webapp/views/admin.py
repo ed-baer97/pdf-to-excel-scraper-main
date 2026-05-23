@@ -44,6 +44,7 @@ from ..services.admin_dashboard import (
     class_accordion_group,
     class_name_sort_key,
     get_period_reports,
+    get_quarter_reports,
     parse_class_grade,
     parse_ui_period_number,
     student_class_summary_category,
@@ -52,6 +53,12 @@ from ..services.admin_dashboard import (
 )
 from ..services.auth_guards import admin_or_superadmin_required as admin_required
 from ..services.subject_aliases import ensure_default_aliases, restore_default_aliases
+from ..services.year_grades import (
+    build_year_student_subjects,
+    math_round_percent,
+    quality_success_from_grades,
+    students_data_from_year_map,
+)
 from ..translator import gettext as translate_gettext
 
 from iin_utils import normalize_kz_iin
@@ -1218,40 +1225,48 @@ def grades_class(class_name: str):
             "warning",
         )
         return redirect(url_for("admin.grades_overview", period_number=period_number))
-    
-    # Получаем все отчёты для этого класса (включая полугодовые для 2/4)
-    reports = get_period_reports(current_user.school_id, period_number, class_name=class_name)
-    
-    # Собираем данные
-    subjects = set()
-    students_data = {}  # name -> {subject -> {percent, grade}}
-    
-    for report in reports:
-        subj = normalize_subject_name(report.subject_name, current_user.school_id)
-        subjects.add(subj)
-        
-        if report.grades_json:
-            try:
-                grades_data = json.loads(report.grades_json)
-                students_list = grades_data.get("students", [])
-                
-                for student in students_list:
-                    name = student.get("name")
-                    if not name:
-                        continue
-                    
-                    if name not in students_data:
-                        students_data[name] = {}
-                    
-                    existing = students_data[name].get(subj)
-                    new_grade = {"percent": student.get("percent"), "grade": student.get("grade")}
-                    if existing is None or existing.get("grade") is None:
-                        students_data[name][subj] = new_grade
-                    elif new_grade.get("grade") is not None and new_grade["grade"] > existing.get("grade", 0):
-                        students_data[name][subj] = new_grade
-            except json.JSONDecodeError:
-                pass
-    
+
+    school_id = current_user.school_id
+
+    if period_number == YEAR_UI_PERIOD:
+        year_map = build_year_student_subjects(
+            school_id, class_name, get_quarter_reports
+        )
+        students_data = students_data_from_year_map(year_map)
+        subjects = {subj for subjs in students_data.values() for subj in subjs}
+    else:
+        reports = get_period_reports(school_id, period_number, class_name=class_name)
+        subjects = set()
+        students_data = {}
+
+        for report in reports:
+            subj = normalize_subject_name(report.subject_name, school_id)
+            subjects.add(subj)
+
+            if report.grades_json:
+                try:
+                    grades_data = json.loads(report.grades_json)
+                    for student in grades_data.get("students", []):
+                        name = student.get("name")
+                        if not name:
+                            continue
+                        if name not in students_data:
+                            students_data[name] = {}
+                        existing = students_data[name].get(subj)
+                        new_grade = {
+                            "percent": student.get("percent"),
+                            "grade": student.get("grade"),
+                        }
+                        if existing is None or existing.get("grade") is None:
+                            students_data[name][subj] = new_grade
+                        elif (
+                            new_grade.get("grade") is not None
+                            and new_grade["grade"] > existing.get("grade", 0)
+                        ):
+                            students_data[name][subj] = new_grade
+                except json.JSONDecodeError:
+                    pass
+
     # Формируем списки для шаблона
     subjects_list = sorted(subjects, key=kazakh_sort_key)
     students_list = []
@@ -1292,8 +1307,12 @@ def grades_class(class_name: str):
                     s3 += 1
                 else:
                     s2 += 1
-        quality = round((s5 + s4) / total_in_subj * 100, 1) if total_in_subj else 0
-        success = round((s5 + s4 + s3) / total_in_subj * 100, 1) if total_in_subj else 0
+        if period_number == YEAR_UI_PERIOD:
+            quality = math_round_percent(s5 + s4, total_in_subj) if total_in_subj else 0
+            success = math_round_percent(s5 + s4 + s3, total_in_subj) if total_in_subj else 0
+        else:
+            quality = round((s5 + s4) / total_in_subj * 100, 1) if total_in_subj else 0
+            success = round((s5 + s4 + s3) / total_in_subj * 100, 1) if total_in_subj else 0
         subject_stats[subj] = {
             "count_5": s5, "count_4": s4, "count_3": s3, "count_2": s2,
             "total": total_in_subj,
@@ -1317,7 +1336,16 @@ def grades_class(class_name: str):
 
     quality_percent = 0
     success_percent = 0
-    if total_students > 0:
+    if period_number == YEAR_UI_PERIOD:
+        all_cells = [
+            g.get("grade")
+            for grades in students_data.values()
+            for g in grades.values()
+            if g.get("grade") is not None
+        ]
+        if all_cells:
+            quality_percent, success_percent = quality_success_from_grades(all_cells)
+    elif total_students > 0:
         quality_percent = round(
             (grades_count["5"] + grades_count["4"]) / total_students * 100, 1
         )
@@ -1327,7 +1355,7 @@ def grades_class(class_name: str):
             * 100,
             1,
         )
-    
+
     return render_template(
         "admin/grades_class.html",
         class_name=class_name,
@@ -1367,7 +1395,14 @@ def delete_subject_from_class(class_name: str):
     ).all()
 
     if period_number == YEAR_UI_PERIOD:
-        allowed_periods = {("year", 1)}
+        allowed_periods = {
+            ("quarter", 1),
+            ("quarter", 2),
+            ("quarter", 3),
+            ("quarter", 4),
+            ("semester", 1),
+            ("semester", 2),
+        }
     else:
         allowed_periods = {("quarter", period_number)}
         if period_number == 2:
@@ -1381,16 +1416,19 @@ def delete_subject_from_class(class_name: str):
         and (r.period_type, r.period_number) in allowed_periods
     ]
 
-    # Удаляем связанные записи ReportFile только за выбранную четверть.
-    # ReportFile хранит period_code как код четверти (1..4).
+    # ReportFile: код четверти 1..4; при удалении «учебного года» — все четверти.
     report_files = ReportFile.query.filter_by(
         school_id=current_user.school_id,
         class_name=class_name,
     ).all()
+    if period_number == YEAR_UI_PERIOD:
+        period_codes = {"1", "2", "3", "4"}
+    else:
+        period_codes = {str(period_number)}
     files_to_delete = [
         rf for rf in report_files
         if normalize_subject_name(rf.subject, current_user.school_id) == target_subject
-        and str(rf.period_code) == str(period_number)
+        and str(rf.period_code) in period_codes
     ]
 
     if not reports_to_delete and not files_to_delete:
