@@ -17,7 +17,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFont
 
 from .loading_overlay import LoadingOverlay, ApiWorker
-from .period_ui import period_combo_items
+from .period_ui import period_combo_items_grades_view
 from .translator import get_translator
 
 if TYPE_CHECKING:
@@ -43,7 +43,7 @@ class SubjectReportWidget(QWidget):
         filter_bar = QHBoxLayout()
         filter_bar.addWidget(QLabel(self.tr.tr('period')))
         self.period_combo = QComboBox()
-        for label, *_ in period_combo_items(self.tr):
+        for label, *_ in period_combo_items_grades_view(self.tr):
             self.period_combo.addItem(label)
         self.period_combo.setCurrentIndex(1)
         filter_bar.addWidget(self.period_combo)
@@ -110,7 +110,9 @@ class SubjectReportWidget(QWidget):
         if not self.api_client or not self.api_client.is_authenticated():
             return
 
-        _, period_number = period_combo_items(self.tr)[self.period_combo.currentIndex()]
+        _, period_number = period_combo_items_grades_view(self.tr)[
+            self.period_combo.currentIndex()
+        ]
 
         self.loading_overlay.show_overlay(self.tr.tr('loading_subject_report'))
         self.refresh_btn.setEnabled(False)

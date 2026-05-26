@@ -34,26 +34,32 @@ def test_quality_success_from_grades():
     assert success == 75
 
 
-def test_year_grade_quarter_all_four():
+def test_year_grade_all_four():
     grades = {1: 5, 2: 4, 3: 4, 4: 5}
-    assert compute_year_grade_from_periods(grades, is_semester=False) == 5
+    assert compute_year_grade_from_periods(grades) == 5
 
 
-def test_year_grade_quarter_missing_one():
+def test_year_grade_three_quarters():
     grades = {1: 5, 2: 4, 3: None, 4: 5}
-    assert compute_year_grade_from_periods(grades, is_semester=False) is None
+    assert compute_year_grade_from_periods(grades) == 5
 
 
-def test_year_grade_semester_both_halves():
-    grades = {2: 4, 4: 5}
-    assert compute_year_grade_from_periods(grades, is_semester=True) == 5
+def test_year_grade_two_quarters():
+    grades = {1: None, 2: 4, 3: None, 4: 5}
+    assert compute_year_grade_from_periods(grades) == 5
 
 
-def test_year_grade_semester_missing_half():
-    grades = {2: 4, 4: None}
-    assert compute_year_grade_from_periods(grades, is_semester=True) is None
+def test_year_grade_one_quarter():
+    grades = {1: None, 2: 4, 3: None, 4: None}
+    assert compute_year_grade_from_periods(grades) == 4
 
 
-def test_year_grade_semester_ignores_q1_q3():
-    grades = {1: 2, 2: 4, 3: 2, 4: 4}
-    assert compute_year_grade_from_periods(grades, is_semester=True) == 4
+def test_year_grade_none_when_empty():
+    grades = {1: None, 2: None, 3: None, 4: None}
+    assert compute_year_grade_from_periods(grades) is None
+
+
+def test_year_grade_semester_slots_only():
+    """Полугодовой предмет в БД: обычно только слоты 2 и 4."""
+    grades = {1: None, 2: 4, 3: None, 4: 4}
+    assert compute_year_grade_from_periods(grades) == 4

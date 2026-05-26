@@ -16,7 +16,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFont
 
 from .loading_overlay import LoadingOverlay, ApiWorker
-from .period_ui import period_combo_items
+from .period_ui import period_combo_items_grades_view
 from .sort_utils import kazakh_sort_key
 from .translator import get_translator
 
@@ -60,7 +60,7 @@ class GradesWidget(QWidget):
 
         filter_bar.addWidget(QLabel(self.tr.tr('period')))
         self.period_combo = QComboBox()
-        for label, *_ in period_combo_items(self.tr):
+        for label, *_ in period_combo_items_grades_view(self.tr):
             self.period_combo.addItem(label)
         self.period_combo.setCurrentIndex(1)
         self.period_combo.currentIndexChanged.connect(self._on_period_changed)
@@ -224,7 +224,9 @@ class GradesWidget(QWidget):
             self.stack.setCurrentIndex(0)
             return
 
-        _, period_number = period_combo_items(self.tr)[self.period_combo.currentIndex()]
+        _, period_number = period_combo_items_grades_view(self.tr)[
+            self.period_combo.currentIndex()
+        ]
 
         self.loading_overlay.show_overlay(self.tr.tr('loading_grades', class_name))
         self.refresh_btn.setEnabled(False)

@@ -36,16 +36,6 @@ def quality_success_from_grades(grades: list[int]) -> tuple[int, int]:
     return quality, success
 
 
-def get_semester_subject_pairs(school_id: int) -> set[tuple[str, str]]:
-    rows = (
-        db.session.query(GradeReport.class_name, GradeReport.subject_name)
-        .filter_by(school_id=school_id, period_type="semester")
-        .distinct()
-        .all()
-    )
-    return {(r.class_name, normalize_subject_name(r.subject_name, school_id)) for r in rows}
-
-
 def _parse_grade(raw: Any) -> int | None:
     if raw is None:
         return None
@@ -82,22 +72,20 @@ def grades_map_from_reports(reports: list, school_id: int) -> dict[str, dict[str
 
 def compute_year_grade_from_periods(
     period_grades: dict[int, int | None],
-    *,
-    is_semester: bool,
 ) -> int | None:
     """
-    Четвертной предмет: строго все четверти 1–4.
-    Полугодовой: строго «2» и «4» (semester 1 и 2 в отчётах за 2/4 четверть).
+    Годовая оценка: среднее по имеющимся четвертям 1–4, int(mean + 0.5).
+
+    0 четвертей → None; 1 → эта оценка; 2 → /2; 3 → /3; 4 → /4.
     """
-    if is_semester:
-        g2, g4 = period_grades.get(2), period_grades.get(4)
-        if g2 is None or g4 is None:
-            return None
-        return math_round((g2 + g4) / 2)
-    vals = [period_grades.get(pn) for pn in (1, 2, 3, 4)]
-    if any(v is None for v in vals):
+    present = [
+        g
+        for pn in (1, 2, 3, 4)
+        if (g := period_grades.get(pn)) is not None
+    ]
+    if not present:
         return None
-    return math_round(sum(vals) / 4)
+    return math_round(sum(present) / len(present))
 
 
 def build_period_grade_maps(
@@ -120,7 +108,6 @@ def build_year_student_subjects(
     get_quarter_reports: GetQuarterReportsFn,
 ) -> dict[str, dict[str, int]]:
     """Ученик → предмет → годовая оценка."""
-    semester_pairs = get_semester_subject_pairs(school_id)
     period_maps = build_period_grade_maps(school_id, class_name, get_quarter_reports)
 
     all_students: set[str] = set()
@@ -134,14 +121,11 @@ def build_year_student_subjects(
     for student in all_students:
         student_grades: dict[str, int] = {}
         for subj in all_subjects:
-            is_semester = (class_name, subj) in semester_pairs
             period_grades = {
                 pn: period_maps[pn].get(student, {}).get(subj)
                 for pn in (1, 2, 3, 4)
             }
-            year_grade = compute_year_grade_from_periods(
-                period_grades, is_semester=is_semester
-            )
+            year_grade = compute_year_grade_from_periods(period_grades)
             if year_grade is not None:
                 student_grades[subj] = year_grade
         if student_grades:
