@@ -20,6 +20,7 @@ from .report_utils import (
     parse_number,
     resolve_period,
     sanitize_filename,
+    visible_soch_column,
 )
 
 if TYPE_CHECKING:
@@ -316,6 +317,7 @@ class ReportFinalizer:
                     analytics_data=analytics_data,
                     org_name=self._scraped_org_name,
                     has_grade_summary_columns=has_grade_summary_columns(subdir),
+                    visible_soch_column=visible_soch_column(subdir),
                 )
                 dbg_log(
                     "report_finalization:_process_batch_subdir",
@@ -341,6 +343,8 @@ class ReportFinalizer:
                             grades_data=grades_data,
                             analytics_data=analytics_data,
                             org_name=self._scraped_org_name,
+                            has_grade_summary_columns=has_grade_summary_columns(subdir),
+                            visible_soch_column=visible_soch_column(subdir),
                         )
                         dbg_log(
                             "report_finalization:_process_batch_subdir",
@@ -551,6 +555,8 @@ class ReportFinalizer:
             soch_data = None
 
             for sec in sorted(sections_present):
+                if sec == 0 and not visible_soch_column(batch_subdir):
+                    continue
                 max_val = max_points.get(sec)
                 if not max_val or max_val <= 0:
                     continue
@@ -589,8 +595,7 @@ class ReportFinalizer:
                     entry["name"] = f"СОр {sec}"
                     sor_list.append(entry)
 
-            has_soch_section = 0 in sections_present
-            can_upload = can_upload_period_grades(has_soch_section, batch_subdir)
+            can_upload = can_upload_period_grades(batch_subdir)
             analytics_data = None
             if sor_list or soch_data:
                 analytics_data = {}

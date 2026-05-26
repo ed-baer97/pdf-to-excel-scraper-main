@@ -110,15 +110,27 @@ def test_is_semester_from_context(tmp_path):
 
 
 def test_has_grade_summary_columns_from_context(tmp_path):
+    ctx = {"visible_grade_summary_columns": True}
+    (tmp_path / "criteria_context.json").write_text(json.dumps(ctx), encoding="utf-8")
+    assert has_grade_summary_columns(tmp_path) is True
+    assert can_upload_period_grades(tmp_path) is True
+
+
+def test_can_upload_with_visible_soch_only(tmp_path):
+    ctx = {"visible_soch_column": True}
+    (tmp_path / "criteria_context.json").write_text(json.dumps(ctx), encoding="utf-8")
+    assert can_upload_period_grades(tmp_path) is True
+
+
+def test_can_upload_denied_without_visible_signals(tmp_path):
+    assert can_upload_period_grades(tmp_path) is False
+
+
+def test_has_grade_summary_columns_legacy_key(tmp_path):
     ctx = {"has_grade_summary_columns": True}
     (tmp_path / "criteria_context.json").write_text(json.dumps(ctx), encoding="utf-8")
     assert has_grade_summary_columns(tmp_path) is True
-    assert can_upload_period_grades(False, tmp_path) is True
-
-
-def test_can_upload_with_soch_section_only(tmp_path):
-    assert can_upload_period_grades(True, tmp_path) is True
-    assert can_upload_period_grades(False, tmp_path) is False
+    assert can_upload_period_grades(tmp_path) is True
 
 
 def test_parse_schools_message():

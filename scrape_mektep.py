@@ -16,7 +16,7 @@ _scraper_dir_str = str(_SCRAPER_DIR)
 if _scraper_dir_str not in sys.path:
     sys.path.insert(0, _scraper_dir_str)
 
-from grade_table_signals import detect_grade_summary_columns
+from grade_table_signals import analyze_visible_table_headers, detect_grade_summary_columns
 
 from dotenv import load_dotenv
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -762,21 +762,28 @@ def _has_quarter_grade_header(page, tab_href: str) -> bool:
     return False
 
 
-def _has_grade_summary_columns(page, tab_href: str) -> bool:
-    """
-    Есть ли колонки «Сумма%» и «Оценка» (предмет без СОЧ, но с итоговой оценкой за период).
-    """
+def _collect_criteria_header_texts(page, tab_href: str) -> list[str]:
+    """Тексты ячеек шапки видимой таблицы критериев."""
     pane_id = tab_href.lstrip("#")
     pane = page.locator(f"div#pills-tabContent div.tab-pane#{pane_id}").first
     try:
         pane.wait_for(state="visible", timeout=5000)
     except Exception:
-        return False
+        return []
     tds = pane.locator("td")
-    texts = []
-    for i in range(tds.count()):
-        texts.append((tds.nth(i).inner_text() or "").strip())
-    return detect_grade_summary_columns(texts)
+    return [(tds.nth(i).inner_text() or "").strip() for i in range(tds.count())]
+
+
+def _analyze_visible_criteria_table(page, tab_href: str) -> dict[str, bool]:
+    """Признаки видимых колонок СОЧ / «Сумма%»+«Оценка» в таблице критериев."""
+    return analyze_visible_table_headers(_collect_criteria_header_texts(page, tab_href))
+
+
+def _has_grade_summary_columns(page, tab_href: str) -> bool:
+    """
+    Есть ли в видимой таблице колонки «Сумма%» и «Оценка».
+    """
+    return _analyze_visible_criteria_table(page, tab_href)["visible_grade_summary_columns"]
 
 
 def _extract_students_from_criteria_tab(page, tab_href: str) -> list[dict]:
@@ -951,15 +958,6 @@ def _extract_students_from_criteria_tab(page, tab_href: str) -> list[dict]:
                         soch_pct_val = cell_text
                     elif not total_pct_val:
                         total_pct_val = cell_text
-
-        if (not grade_val or "###" in str(grade_val)) and all_cells:
-            grade_val_cell = ""
-            for cell_text in all_cells[max(0, len(all_cells) - 3) :]:
-                if str(cell_text) in {"1", "2", "3", "4", "5"}:
-                    grade_val_cell = str(cell_text)
-                    break
-            if grade_val_cell:
-                grade_val = grade_val_cell
 
         # Fallback на скрытые <p>...</p> из HTML-комментариев для вкладки «Учебный год»:
         # сайт отдаёт `###` в ячейках, а реальные значения лежат в
@@ -1811,8 +1809,14 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
                 has_quarter_grade_header = _has_quarter_grade_header(page, selected_tab)
             log_info(f'[{class_name} - {subject_name}] Заголовок четвертной оценки: {"да" if has_quarter_grade_header else "нет"}')
 
-            with timing_block(f"_has_grade_summary_columns [{class_name} — {subject_name}]"):
-                has_grade_summary_columns = _has_grade_summary_columns(page, selected_tab)
+            with timing_block(f"_analyze_visible_criteria_table [{class_name} — {subject_name}]"):
+                visible_table = _analyze_visible_criteria_table(page, selected_tab)
+            has_grade_summary_columns = visible_table["visible_grade_summary_columns"]
+            visible_soch_column = visible_table["visible_soch_column"]
+            log_info(
+                f'[{class_name} - {subject_name}] Видимая колонка СОЧ/ТЖБ: '
+                f'{"да" if visible_soch_column else "нет"}'
+            )
             log_info(
                 f'[{class_name} - {subject_name}] Колонки «Сумма%»/«Оценка»: '
                 f'{"да" if has_grade_summary_columns else "нет"}'
@@ -1845,6 +1849,8 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
                 "criteria_url": page.url,
                 "has_quarter_grade_header": has_quarter_grade_header,
                 "has_grade_summary_columns": has_grade_summary_columns,
+                "visible_soch_column": visible_soch_column,
+                "visible_grade_summary_columns": has_grade_summary_columns,
             }
             (batch_subdir / "criteria_context.json").write_text(json.dumps(ctx, ensure_ascii=False, indent=2), encoding="utf-8")
 

@@ -113,24 +113,39 @@ def resolve_period(period_code: str, batch_subdir: Path) -> Tuple[str, int, bool
     return "quarter", int(normalized_period), False
 
 
-def has_grade_summary_columns(batch_subdir: Path) -> bool:
-    """Колонки «Сумма%» и «Оценка» в критериях (предмет без СОЧ, но с итоговой оценкой)."""
+def _load_criteria_context(batch_subdir: Path) -> dict:
     ctx_file = batch_subdir / "criteria_context.json"
     if not ctx_file.exists():
-        return False
+        return {}
     try:
         with open(ctx_file, "r", encoding="utf-8") as f:
             ctx = json.load(f)
-        if isinstance(ctx, dict) and "has_grade_summary_columns" in ctx:
-            return bool(ctx["has_grade_summary_columns"])
+        return ctx if isinstance(ctx, dict) else {}
     except Exception:
-        pass
+        return {}
+
+
+def visible_soch_column(batch_subdir: Path) -> bool:
+    """В видимой таблице критериев есть колонка СОЧ / ТЖБ."""
+    ctx = _load_criteria_context(batch_subdir)
+    if "visible_soch_column" in ctx:
+        return bool(ctx["visible_soch_column"])
     return False
 
 
-def can_upload_period_grades(has_soch_section: bool, batch_subdir: Path) -> bool:
-    """Можно загружать оценки на сервер: есть СОЧ или колонки итога без СОЧ."""
-    return has_soch_section or has_grade_summary_columns(batch_subdir)
+def has_grade_summary_columns(batch_subdir: Path) -> bool:
+    """В видимой таблице есть колонки «Сумма%» и «Оценка»."""
+    ctx = _load_criteria_context(batch_subdir)
+    if "visible_grade_summary_columns" in ctx:
+        return bool(ctx["visible_grade_summary_columns"])
+    if "has_grade_summary_columns" in ctx:
+        return bool(ctx["has_grade_summary_columns"])
+    return False
+
+
+def can_upload_period_grades(batch_subdir: Path) -> bool:
+    """Можно загружать оценки на сервер: в видимой таблице есть СОЧ или «Сумма%»+«Оценка»."""
+    return visible_soch_column(batch_subdir) or has_grade_summary_columns(batch_subdir)
 
 
 def normalize_period_code(period_code: Any) -> Optional[str]:

@@ -489,8 +489,9 @@ def api_upload_report():
                     has_grades = True
                     break
         has_soch = isinstance(analytics_payload, dict) and isinstance(analytics_payload.get("soch"), dict)
+        visible_soch_column = bool(data.get("visible_soch_column"))
         has_grade_summary_columns = bool(data.get("has_grade_summary_columns"))
-        if has_grades and not has_soch and not has_grade_summary_columns:
+        if has_grades and not has_soch and not has_grade_summary_columns and not visible_soch_column:
             return jsonify({
                 "error": "Отчёт не содержит страницу СОЧ и нет колонок итоговой оценки. "
                          "Загрузка оценок по предмету запрещена.",
