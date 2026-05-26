@@ -982,17 +982,13 @@ def _extract_students_from_criteria_tab(page, tab_href: str) -> list[dict]:
         if not str(num_txt).isdigit():
             continue
 
-        visible_cell_texts = [
-            (c.get("text") or "").strip()
+        all_cells = [
+            (c.get("text") or "").strip() if isinstance(c, dict) else str(c).strip()
             for c in cell_items
-            if isinstance(c, dict) and c.get("visible")
         ]
-        all_cells = visible_cell_texts
 
         p_map: dict[str, str] = {}
         for p in row.get("pNodes") or []:
-            if not p.get("visible", False):
-                continue
             pid = (p.get("id") or "").strip()
             if pid:
                 p_map[pid] = (p.get("text") or "").strip()

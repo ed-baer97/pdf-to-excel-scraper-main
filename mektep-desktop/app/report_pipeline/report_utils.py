@@ -125,6 +125,15 @@ def _load_criteria_context(batch_subdir: Path) -> dict:
         return {}
 
 
+def has_quarter_grade_header(batch_subdir: Path) -> bool:
+    """
+    В таблице критериев есть заголовок «Расчет оценки за …» / «Бағаны есептеу: …».
+    Признак полной таблицы с итоговой оценкой за период (upload на сервер).
+    """
+    ctx = _load_criteria_context(batch_subdir)
+    return bool(ctx.get("has_quarter_grade_header"))
+
+
 def visible_soch_column(batch_subdir: Path) -> bool:
     """В видимой таблице критериев есть колонка СОЧ / ТЖБ."""
     ctx = _load_criteria_context(batch_subdir)
@@ -144,8 +153,8 @@ def has_grade_summary_columns(batch_subdir: Path) -> bool:
 
 
 def can_upload_period_grades(batch_subdir: Path) -> bool:
-    """Можно загружать оценки на сервер: в видимой таблице есть СОЧ или «Сумма%»+«Оценка»."""
-    return visible_soch_column(batch_subdir) or has_grade_summary_columns(batch_subdir)
+    """Можно загружать оценки на сервер: есть заголовок расчёта оценки за период."""
+    return has_quarter_grade_header(batch_subdir)
 
 
 def normalize_period_code(period_code: Any) -> Optional[str]:

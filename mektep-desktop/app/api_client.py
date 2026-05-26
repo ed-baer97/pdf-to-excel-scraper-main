@@ -556,8 +556,7 @@ class MektepAPIClient:
         grades_data: Optional[Dict] = None,
         analytics_data: Optional[Dict] = None,
         org_name: Optional[str] = None,
-        has_grade_summary_columns: bool = False,
-        visible_soch_column: bool = False,
+        has_quarter_grade_header: bool = False,
     ) -> Dict:
         """
         Загрузка/обновление отчёта с оценками на сервер (UPSERT)
@@ -596,10 +595,8 @@ class MektepAPIClient:
                 payload["analytics_json"] = analytics_data
             if org_name:
                 payload["org_name"] = org_name
-            if has_grade_summary_columns:
-                payload["has_grade_summary_columns"] = True
-            if visible_soch_column:
-                payload["visible_soch_column"] = True
+            if has_quarter_grade_header:
+                payload["has_quarter_grade_header"] = True
 
             response = self.session.post(
                 f"{self.base_url}/api/reports/upload",

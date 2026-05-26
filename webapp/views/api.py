@@ -478,8 +478,7 @@ def api_upload_report():
             "error": "Не удалось определить организацию. Укажите org_name или привяжите пользователя к школе."
         }), 400
     
-    # Четверть/полугодие: оценки допустимы при наличии СОЧ или колонок «Сумма%»+«Оценка»
-    # (предметы без СОЧ, но с итоговой оценкой). Год — без требования СОЧ.
+    # Четверть/полугодие: upload допустим при заголовке «Расчет оценки за …» / «Бағаны есептеу: …».
     if period_type in ("quarter", "semester"):
         has_grades = False
         if isinstance(grades_payload, dict):
@@ -488,14 +487,21 @@ def api_upload_report():
                 if grade not in (None, "", "0", 0):
                     has_grades = True
                     break
+        has_quarter_grade_header = bool(data.get("has_quarter_grade_header"))
         has_soch = isinstance(analytics_payload, dict) and isinstance(analytics_payload.get("soch"), dict)
-        visible_soch_column = bool(data.get("visible_soch_column"))
         has_grade_summary_columns = bool(data.get("has_grade_summary_columns"))
-        if has_grades and not has_soch and not has_grade_summary_columns and not visible_soch_column:
+        visible_soch_column = bool(data.get("visible_soch_column"))
+        upload_allowed = (
+            has_quarter_grade_header
+            or has_soch
+            or has_grade_summary_columns
+            or visible_soch_column
+        )
+        if has_grades and not upload_allowed:
             return jsonify({
-                "error": "Отчёт не содержит страницу СОЧ и нет колонок итоговой оценки. "
+                "error": "Отчёт без заголовка расчёта оценки за период. "
                          "Загрузка оценок по предмету запрещена.",
-                "missing_soch": True
+                "missing_grade_header": True
             }), 422
 
     # Преобразуем JSON данные в строки

@@ -14,13 +14,12 @@ from ..debug_log import dbg_log
 from .period_map import PERIOD_MAP
 from .report_utils import (
     can_upload_period_grades,
-    has_grade_summary_columns,
+    has_quarter_grade_header,
     move_file,
     parse_class_liter,
     parse_number,
     resolve_period,
     sanitize_filename,
-    visible_soch_column,
 )
 
 if TYPE_CHECKING:
@@ -301,7 +300,7 @@ class ReportFinalizer:
 
                 if not can_upload:
                     print(
-                        f"[DEBUG] Пропуск загрузки: нет СОЧ/итоговых колонок или нет оценок: "
+                        f"[DEBUG] Пропуск загрузки: нет заголовка расчёта оценки за период: "
                         f"{class_name} {subject_name}"
                     )
                     report_data["upload_skipped"] = True
@@ -316,8 +315,7 @@ class ReportFinalizer:
                     grades_data=grades_data,
                     analytics_data=analytics_data,
                     org_name=self._scraped_org_name,
-                    has_grade_summary_columns=has_grade_summary_columns(subdir),
-                    visible_soch_column=visible_soch_column(subdir),
+                    has_quarter_grade_header=has_quarter_grade_header(subdir),
                 )
                 dbg_log(
                     "report_finalization:_process_batch_subdir",
@@ -343,8 +341,7 @@ class ReportFinalizer:
                             grades_data=grades_data,
                             analytics_data=analytics_data,
                             org_name=self._scraped_org_name,
-                            has_grade_summary_columns=has_grade_summary_columns(subdir),
-                            visible_soch_column=visible_soch_column(subdir),
+                            has_quarter_grade_header=has_quarter_grade_header(subdir),
                         )
                         dbg_log(
                             "report_finalization:_process_batch_subdir",
@@ -555,7 +552,7 @@ class ReportFinalizer:
             soch_data = None
 
             for sec in sorted(sections_present):
-                if sec == 0 and not visible_soch_column(batch_subdir):
+                if sec == 0 and not has_quarter_grade_header(batch_subdir):
                     continue
                 max_val = max_points.get(sec)
                 if not max_val or max_val <= 0:
@@ -596,8 +593,6 @@ class ReportFinalizer:
                     sor_list.append(entry)
 
             can_upload = can_upload_period_grades(batch_subdir)
-            if can_upload and not any(s.get("grade") for s in grades_students):
-                can_upload = False
             analytics_data = None
             if sor_list or soch_data:
                 analytics_data = {}
