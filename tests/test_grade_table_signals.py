@@ -40,9 +40,24 @@ def test_detect_visible_soch_column(texts, expected):
     assert detect_visible_soch_column(texts) is expected
 
 
-def test_summativnoe_za_razdel_does_not_trigger_summa_column():
-    texts = ["№", "Ф.И.О.", "Суммативное оценивание за раздел 25%", "СОр 1"]
+def test_world_history_sor_only_headers_no_upload():
+    """Как «Всемирная история» 5Б, 1 четверть: только СОР, без итоговых колонок."""
+    texts = [
+        "№",
+        "Ф.И.О. ученика",
+        "Суммативное оценивание за раздел 25%",
+        "Раздел 1. СОр 1",
+    ]
     analysis = analyze_visible_table_headers(texts)
     assert analysis["visible_grade_summary_columns"] is False
     assert analysis["visible_soch_column"] is False
     assert can_upload_from_visible_headers(texts) is False
+
+
+def test_hidden_grade_headers_must_not_be_passed():
+    """В analyze передаём только видимые ячейки — скрытые «Оценка»/«Сумма%» не должны попадать."""
+    visible_only = ["№", "Ф.И.О.", "Суммативное оценивание за раздел 25%", "СОр 1"]
+    assert can_upload_from_visible_headers(visible_only) is False
+    # Если бы скрытые колонки ошибочно попали в список:
+    with_hidden = visible_only + ["Сумма%", "Оценка"]
+    assert can_upload_from_visible_headers(with_hidden) is True

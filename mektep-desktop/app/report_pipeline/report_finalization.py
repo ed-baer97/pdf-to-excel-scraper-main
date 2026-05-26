@@ -301,7 +301,7 @@ class ReportFinalizer:
 
                 if not can_upload:
                     print(
-                        f"[DEBUG] Пропуск загрузки: нет СОЧ и нет колонок итога: "
+                        f"[DEBUG] Пропуск загрузки: нет СОЧ/итоговых колонок или нет оценок: "
                         f"{class_name} {subject_name}"
                     )
                     report_data["upload_skipped"] = True
@@ -596,6 +596,8 @@ class ReportFinalizer:
                     sor_list.append(entry)
 
             can_upload = can_upload_period_grades(batch_subdir)
+            if can_upload and not any(s.get("grade") for s in grades_students):
+                can_upload = False
             analytics_data = None
             if sor_list or soch_data:
                 analytics_data = {}

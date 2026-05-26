@@ -753,30 +753,109 @@ def _has_quarter_grade_header(page, tab_href: str) -> bool:
         pane.wait_for(state="visible", timeout=5000)
     except Exception:
         return False
-    tds = pane.locator("td")
-    n = tds.count()
-    for i in range(n):
-        txt = (tds.nth(i).inner_text() or "").strip()
-        if "Расчет оценки за" in txt or "Бағаны есептеу:" in txt:
-            return True
-    return False
+    try:
+        return bool(
+            pane.evaluate(
+                """
+                (paneEl) => {
+                  const norm = (s) => (s || "").replace(/\\s+/g, " ").trim();
+                  const isVisible = (el) => {
+                    if (!el) return false;
+                    for (let node = el; node && node !== document.body; node = node.parentElement) {
+                      const st = window.getComputedStyle(node);
+                      if (st.display === "none" || st.visibility === "hidden" || st.opacity === "0") return false;
+                      if (node.getAttribute && node.getAttribute("aria-hidden") === "true") return false;
+                    }
+                    const r = el.getBoundingClientRect();
+                    return r.width > 0 && r.height > 0;
+                  };
+                  for (const td of paneEl.querySelectorAll("td, th")) {
+                    if (!isVisible(td)) continue;
+                    const txt = norm(td.innerText);
+                    if (txt.includes("Расчет оценки за") || txt.includes("Бағаны есептеу:")) return true;
+                  }
+                  return false;
+                }
+                """
+            )
+        )
+    except Exception:
+        return False
 
 
 def _collect_criteria_header_texts(page, tab_href: str) -> list[str]:
-    """Тексты ячеек шапки видимой таблицы критериев."""
+    """Тексты ячеек шапки видимой таблицы критериев (без скрытых колонок DOM)."""
     pane_id = tab_href.lstrip("#")
     pane = page.locator(f"div#pills-tabContent div.tab-pane#{pane_id}").first
     try:
         pane.wait_for(state="visible", timeout=5000)
     except Exception:
         return []
-    tds = pane.locator("td")
-    return [(tds.nth(i).inner_text() or "").strip() for i in range(tds.count())]
+    try:
+        texts = pane.evaluate(
+            """
+            (paneEl) => {
+              const norm = (s) => (s || "").replace(/\\s+/g, " ").trim();
+              const isVisible = (el) => {
+                if (!el) return false;
+                for (let node = el; node && node !== document.body; node = node.parentElement) {
+                  const st = window.getComputedStyle(node);
+                  if (st.display === "none" || st.visibility === "hidden" || st.opacity === "0") return false;
+                  if (node.getAttribute && node.getAttribute("aria-hidden") === "true") return false;
+                }
+                const r = el.getBoundingClientRect();
+                return r.width > 0 && r.height > 0;
+              };
+
+              let table = null;
+              const gradeP = paneEl.querySelector('p[id^="ocenka_"]');
+              if (gradeP) table = gradeP.closest("table");
+              if (!table) {
+                for (const t of paneEl.querySelectorAll("table.table, form table, table")) {
+                  if (t.querySelector("tbody tr, tr")) {
+                    table = t;
+                    break;
+                  }
+                }
+              }
+              if (!table) return [];
+
+              const headerRows = [];
+              table.querySelectorAll("thead tr").forEach((tr) => headerRows.push(tr));
+              if (headerRows.length === 0) {
+                for (const tr of table.querySelectorAll("tr")) {
+                  if (tr.querySelector('input[id^="chetvert_"]')) continue;
+                  const sample = norm(tr.innerText || "");
+                  if (/№|ф\\.?\\s*и\\.?\\s*о|f\\.?\\s*i\\.?\\s*o/i.test(sample)) {
+                    headerRows.push(tr);
+                  }
+                  if (headerRows.length >= 2) break;
+                }
+              }
+
+              const texts = [];
+              for (const tr of headerRows) {
+                tr.querySelectorAll("th, td").forEach((cell) => {
+                  if (!isVisible(cell)) return;
+                  const t = norm(cell.innerText);
+                  if (t) texts.push(t);
+                });
+              }
+              return texts;
+            }
+            """
+        )
+        return texts if isinstance(texts, list) else []
+    except Exception:
+        return []
 
 
-def _analyze_visible_criteria_table(page, tab_href: str) -> dict[str, bool]:
+def _analyze_visible_criteria_table(page, tab_href: str) -> dict[str, bool | list[str]]:
     """Признаки видимых колонок СОЧ / «Сумма%»+«Оценка» в таблице критериев."""
-    return analyze_visible_table_headers(_collect_criteria_header_texts(page, tab_href))
+    header_texts = _collect_criteria_header_texts(page, tab_href)
+    signals = analyze_visible_table_headers(header_texts)
+    signals["visible_header_texts"] = header_texts
+    return signals
 
 
 def _has_grade_summary_columns(page, tab_href: str) -> bool:
@@ -855,10 +934,24 @@ def _extract_students_from_criteria_tab(page, tab_href: str) -> list[dict]:
         """
         (rows) => rows.map((tr) => {
           const norm = (s) => (s || "").replace(/\\s+/g, " ").trim();
-          const cells = Array.from(tr.querySelectorAll("td"), (td) => norm(td.innerText));
+          const isVisible = (el) => {
+            if (!el) return false;
+            for (let node = el; node && node !== document.body; node = node.parentElement) {
+              const st = window.getComputedStyle(node);
+              if (st.display === "none" || st.visibility === "hidden" || st.opacity === "0") return false;
+              if (node.getAttribute && node.getAttribute("aria-hidden") === "true") return false;
+            }
+            const r = el.getBoundingClientRect();
+            return r.width > 0 && r.height > 0;
+          };
+          const cells = Array.from(tr.querySelectorAll("td"), (td) => ({
+            text: norm(td.innerText),
+            visible: isVisible(td),
+          }));
           const pNodes = Array.from(tr.querySelectorAll("p[id]"), (p) => ({
             id: p.id || "",
             text: norm(p.innerText),
+            visible: isVisible(p),
           }));
           const points = {};
           for (const inp of tr.querySelectorAll('input[id^="chetvert_"][id*="_razdel_"]')) {
@@ -880,17 +973,26 @@ def _extract_students_from_criteria_tab(page, tab_href: str) -> list[dict]:
 
     out: list[dict] = []
     for i, row in enumerate(row_payload):
-        all_cells = row.get("cells") or []
-        if len(all_cells) < 2:
+        cell_items = row.get("cells") or []
+        if len(cell_items) < 2:
             continue
 
-        num_txt = all_cells[0]
-        fio_txt = all_cells[1]
+        num_txt = cell_items[0].get("text", "") if isinstance(cell_items[0], dict) else str(cell_items[0])
+        fio_txt = cell_items[1].get("text", "") if isinstance(cell_items[1], dict) else str(cell_items[1])
         if not str(num_txt).isdigit():
             continue
 
+        visible_cell_texts = [
+            (c.get("text") or "").strip()
+            for c in cell_items
+            if isinstance(c, dict) and c.get("visible")
+        ]
+        all_cells = visible_cell_texts
+
         p_map: dict[str, str] = {}
         for p in row.get("pNodes") or []:
+            if not p.get("visible", False):
+                continue
             pid = (p.get("id") or "").strip()
             if pid:
                 p_map[pid] = (p.get("text") or "").strip()
@@ -1851,6 +1953,7 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
                 "has_grade_summary_columns": has_grade_summary_columns,
                 "visible_soch_column": visible_soch_column,
                 "visible_grade_summary_columns": has_grade_summary_columns,
+                "visible_header_texts": visible_table.get("visible_header_texts") or [],
             }
             (batch_subdir / "criteria_context.json").write_text(json.dumps(ctx, ensure_ascii=False, indent=2), encoding="utf-8")
 
