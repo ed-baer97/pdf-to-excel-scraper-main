@@ -46,6 +46,7 @@ class SubjectReportWidget(QWidget):
         for label, *_ in period_combo_items_grades_view(self.tr):
             self.period_combo.addItem(label)
         self.period_combo.setCurrentIndex(1)
+        self.period_combo.currentIndexChanged.connect(lambda _: self.load_data())
         filter_bar.addWidget(self.period_combo)
 
         filter_bar.addSpacing(15)

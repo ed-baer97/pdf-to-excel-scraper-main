@@ -22,15 +22,18 @@ from ..services.api_helpers import (
     find_school_by_org_name,
     generate_jwt_token,
     get_period_reports_api,
-    get_quarter_reports_api,
     require_jwt,
 )
-from ..services.year_grades import (
-    YEAR_UI_PERIOD,
-    build_year_student_subjects,
-    quality_success_from_grades,
-    students_data_from_year_map,
+from ..services.class_grades_matrix import (
+    build_class_grades_matrix,
+    build_teacher_analytics_map,
+    categorize_students,
+    class_grades_summary,
+    get_teacher_subject_class_pairs,
+    students_with_grades_count,
+    subject_column_stats,
 )
+from ..services.year_grades import YEAR_UI_PERIOD
 from ..constants import MIN_DESKTOP_VERSION, normalize_subject_name, kazakh_sort_key
 
 bp = Blueprint("api", __name__, url_prefix="/api")
@@ -722,138 +725,40 @@ def api_get_class_grades(class_name: str):
         }
     """
     user = request.current_user
-    
-    # Параметры (только четверти)
     period_number = int(request.args.get("period_number", 2))
-    
     school_id = user.school_id
 
-    if period_number == YEAR_UI_PERIOD:
-        year_map = build_year_student_subjects(
-            school_id, class_name, get_quarter_reports_api
-        )
-        students_data = students_data_from_year_map(year_map)
-        if not students_data:
-            return jsonify({
-                "success": True,
-                "class_name": class_name,
-                "period_number": period_number,
-                "subjects": [],
-                "students": [],
-                "summary": {
-                    "total_students": 0,
-                    "quality_percent": 0,
-                    "success_percent": 0,
-                },
-            }), 200
-    else:
-        reports = get_period_reports_api(school_id, period_number, class_name=class_name)
-        if not reports:
-            return jsonify({
-                "success": True,
-                "class_name": class_name,
-                "period_number": period_number,
-                "subjects": [],
-                "students": [],
-                "summary": {
-                    "total_students": 0,
-                    "quality_percent": 0,
-                    "success_percent": 0,
-                },
-            }), 200
-        students_data = {}
-        subjects = set()
+    matrix = build_class_grades_matrix(school_id, class_name, period_number)
+    if matrix["empty"]:
+        return jsonify({
+            "success": True,
+            "class_name": class_name,
+            "period_number": period_number,
+            "subjects": [],
+            "students": [],
+            "summary": {
+                "total_students": 0,
+                "quality_percent": 0,
+                "success_percent": 0,
+            },
+        }), 200
 
-    if period_number != YEAR_UI_PERIOD:
-        for report in reports:
-            subj = normalize_subject_name(report.subject_name, school_id)
-            subjects.add(subj)
-
-            if report.grades_json:
-                try:
-                    grades_data = json.loads(report.grades_json)
-                    for student in grades_data.get("students", []):
-                        name = student.get("name")
-                        if not name:
-                            continue
-                        if name not in students_data:
-                            students_data[name] = {}
-                        existing = students_data[name].get(subj)
-                        new_grade = {
-                            "percent": student.get("percent"),
-                            "grade": student.get("grade"),
-                        }
-                        if existing is None or existing.get("grade") is None:
-                            students_data[name][subj] = new_grade
-                        elif (
-                            new_grade.get("grade") is not None
-                            and new_grade["grade"] > existing.get("grade", 0)
-                        ):
-                            students_data[name][subj] = new_grade
-                except json.JSONDecodeError:
-                    current_app.logger.error(f"Invalid JSON in report {report.id}")
-    else:
-        subjects = {subj for subjs in students_data.values() for subj in subjs}
-
-    subjects_list = sorted(subjects, key=kazakh_sort_key)
+    students_data = matrix["students"]
     students_list = [
-        {
-            "name": name,
-            "grades": grades
-        }
-        for name, grades in sorted(students_data.items(), key=lambda item: kazakh_sort_key(item[0]))
+        {"name": name, "grades": grades}
+        for name, grades in sorted(
+            students_data.items(), key=lambda item: kazakh_sort_key(item[0])
+        )
     ]
-    
-    # Считаем общую статистику
-    total_students = len(students_data)
-    grades_count = {"5": 0, "4": 0, "3": 0, "2": 0}
-    
-    for name, grades in students_data.items():
-        grades_values = [g.get("grade") for g in grades.values() if g.get("grade")]
-        if grades_values:
-            avg_grade = sum(grades_values) / len(grades_values)
-            if avg_grade >= 4.5:
-                grades_count["5"] += 1
-            elif avg_grade >= 3.5:
-                grades_count["4"] += 1
-            elif avg_grade >= 2.5:
-                grades_count["3"] += 1
-            else:
-                grades_count["2"] += 1
-    
-    quality_percent = 0
-    success_percent = 0
-    if period_number == YEAR_UI_PERIOD:
-        all_cells = [
-            g.get("grade")
-            for grades in students_data.values()
-            for g in grades.values()
-            if g.get("grade") is not None
-        ]
-        if all_cells:
-            quality_percent, success_percent = quality_success_from_grades(all_cells)
-    elif total_students > 0:
-        quality_percent = round(
-            (grades_count["5"] + grades_count["4"]) / total_students * 100, 1
-        )
-        success_percent = round(
-            (grades_count["5"] + grades_count["4"] + grades_count["3"])
-            / total_students
-            * 100,
-            1,
-        )
+    summary = class_grades_summary(students_data, period_number)
 
     return jsonify({
         "success": True,
         "class_name": class_name,
         "period_number": period_number,
-        "subjects": subjects_list,
+        "subjects": matrix["subjects"],
         "students": students_list,
-        "summary": {
-            "total_students": total_students,
-            "quality_percent": quality_percent,
-            "success_percent": success_percent
-        }
+        "summary": summary,
     }), 200
 
 
@@ -960,80 +865,60 @@ def api_teacher_subject_report():
     """
     user = request.current_user
     period_number = int(request.args.get("period_number", 2))
-    
-    # Получаем отчёты текущего учителя за период (включая полугодовые для 2/4)
-    reports = get_period_reports_api(user.school_id, period_number, teacher_id=user.id)
-    
-    # Группируем по предмету → классу
-    subjects_map = {}  # subject_name -> {class_name -> report}
+    school_id = user.school_id
 
-    for report in reports:
-        subj = normalize_subject_name(report.subject_name, user.school_id)
-        cls = report.class_name
-        
-        if subj not in subjects_map:
-            subjects_map[subj] = {}
-        
-        # Считаем статистику из grades_json
+    pairs = get_teacher_subject_class_pairs(user.id, school_id)
+    if not pairs:
+        reports = get_period_reports_api(
+            school_id, period_number, teacher_id=user.id
+        )
+        seen_pairs: set[tuple[str, str]] = set()
+        for report in reports:
+            subj = normalize_subject_name(report.subject_name, school_id)
+            key = (subj, report.class_name)
+            if key not in seen_pairs:
+                seen_pairs.add(key)
+                pairs.append(key)
+
+    analytics_map = build_teacher_analytics_map(
+        school_id, user.id, period_number
+    )
+
+    subjects_map: dict[str, dict[str, dict]] = {}
+    matrix_cache: dict[str, dict] = {}
+
+    for subj, cls in pairs:
+        if cls not in matrix_cache:
+            matrix_cache[cls] = build_class_grades_matrix(
+                school_id, cls, period_number
+            )
+        matrix = matrix_cache[cls]
+        if matrix["empty"]:
+            continue
+
+        stats = subject_column_stats(matrix["students"], subj)
         class_data = {
             "class_name": cls,
-            "count_5": 0, "count_4": 0, "count_3": 0, "count_2": 0,
-            "total": 0,
-            "quality_percent": 0,
-            "success_percent": 0,
-            "analytics": None
+            **stats,
+            "analytics": analytics_map.get((cls, subj)),
         }
-        
-        if report.grades_json:
-            try:
-                grades = json.loads(report.grades_json)
-                students = grades.get("students", [])
-                for student in students:
-                    g = student.get("grade")
-                    if g is not None:
-                        class_data["total"] += 1
-                        if g == 5:
-                            class_data["count_5"] += 1
-                        elif g == 4:
-                            class_data["count_4"] += 1
-                        elif g == 3:
-                            class_data["count_3"] += 1
-                        elif g <= 2:
-                            class_data["count_2"] += 1
-                
-                total = class_data["total"]
-                if total > 0:
-                    class_data["quality_percent"] = round(
-                        (class_data["count_5"] + class_data["count_4"]) / total * 100, 1
-                    )
-                    class_data["success_percent"] = round(
-                        (total - class_data["count_2"]) / total * 100, 1
-                    )
-            except json.JSONDecodeError:
-                pass
-        
-        # Аналитика СОР/СОЧ
-        if report.analytics_json:
-            try:
-                class_data["analytics"] = json.loads(report.analytics_json)
-            except json.JSONDecodeError:
-                pass
-        
-        subjects_map[subj][cls] = class_data
-    
-    # Формируем ответ
+        subjects_map.setdefault(subj, {})[cls] = class_data
+
     subjects_list = []
-    for subj_name in sorted(subjects_map.keys()):
-        classes = sorted(subjects_map[subj_name].values(), key=lambda x: x["class_name"])
+    for subj_name in sorted(subjects_map.keys(), key=kazakh_sort_key):
+        classes = sorted(
+            subjects_map[subj_name].values(),
+            key=lambda x: x["class_name"],
+        )
         subjects_list.append({
             "subject_name": subj_name,
-            "classes": classes
+            "classes": classes,
         })
-    
+
     return jsonify({
         "success": True,
         "subjects": subjects_list,
-        "period_number": period_number
+        "period_number": period_number,
     }), 200
 
 
@@ -1086,101 +971,16 @@ def api_teacher_class_teacher_report():
     
     for cls_obj in managed_classes:
         cls_name = cls_obj.name
-        
-        # Все отчёты по этому классу за период (включая полугодовые для 2/4)
-        reports = get_period_reports_api(user.school_id, period_number, class_name=cls_name)
-        
-        if not reports:
+        matrix = build_class_grades_matrix(
+            user.school_id, cls_name, period_number
+        )
+        if matrix["empty"]:
             continue
-        
-        # Собираем оценки: student_name -> {subject -> grade}
-        students_grades = {}
-        subject_teachers = {}
-        
-        for report in reports:
-            # Учитель предмета
-            teacher_name = ""
-            if report.teacher:
-                teacher_name = report.teacher.full_name or report.teacher.username
-            subj = normalize_subject_name(report.subject_name, report.school_id)
-            subject_teachers[subj] = teacher_name
-            
-            if report.grades_json:
-                try:
-                    grades = json.loads(report.grades_json)
-                    for student in grades.get("students", []):
-                        name = student.get("name")
-                        grade = student.get("grade")
-                        if name and grade is not None:
-                            if name not in students_grades:
-                                students_grades[name] = {}
-                            prev = students_grades[name].get(subj)
-                            if prev is None or grade > prev:
-                                students_grades[name][subj] = grade
-                except json.JSONDecodeError:
-                    pass
-        
-        # Категоризация
-        categories = {
-            "excellent": [],
-            "good": [],
-            "one_4": [],
-            "satisfactory": [],
-            "one_3": [],
-            "poor": []
-        }
-        
-        for name, subj_grades in sorted(students_grades.items(), key=lambda item: kazakh_sort_key(item[0])):
-            grades_list = list(subj_grades.values())
-            if not grades_list:
-                continue
-            
-            count_5 = grades_list.count(5)
-            count_4 = grades_list.count(4)
-            count_3 = grades_list.count(3)
-            count_2 = sum(1 for g in grades_list if g <= 2)
-            
-            if count_2 > 0:
-                # Неуспевающие
-                failing_subjects = [
-                    {"subject": s, "teacher": subject_teachers.get(s, "")}
-                    for s, g in subj_grades.items() if g <= 2
-                ]
-                categories["poor"].append({
-                    "name": name,
-                    "subjects": failing_subjects
-                })
-            elif all(g >= 5 for g in grades_list):
-                # Отличники
-                categories["excellent"].append({"name": name})
-            elif count_4 == 1 and count_3 == 0:
-                # С одной 4
-                subj_with_4 = next((s for s, g in subj_grades.items() if g == 4), "")
-                categories["one_4"].append({
-                    "name": name,
-                    "subject": subj_with_4,
-                    "teacher": subject_teachers.get(subj_with_4, "")
-                })
-            elif count_3 == 0:
-                # Хорошисты
-                categories["good"].append({"name": name})
-            elif count_3 == 1:
-                # С одной 3
-                subj_with_3 = next((s for s, g in subj_grades.items() if g == 3), "")
-                categories["one_3"].append({
-                    "name": name,
-                    "subject": subj_with_3,
-                    "teacher": subject_teachers.get(subj_with_3, "")
-                })
-            else:
-                # Троечники
-                subjects_with_3 = [s for s, g in subj_grades.items() if g == 3]
-                categories["satisfactory"].append({
-                    "name": name,
-                    "subjects_with_3": subjects_with_3
-                })
-        
-        total = len(students_grades)
+
+        categories = categorize_students(
+            matrix["students"], matrix["subject_teachers"]
+        )
+        total = students_with_grades_count(matrix["students"])
         result_classes.append({
             "class_name": cls_name,
             "categories": categories,
@@ -1191,8 +991,8 @@ def api_teacher_class_teacher_report():
                 "one_4": len(categories["one_4"]),
                 "satisfactory": len(categories["satisfactory"]),
                 "one_3": len(categories["one_3"]),
-                "poor": len(categories["poor"])
-            }
+                "poor": len(categories["poor"]),
+            },
         })
     
     return jsonify({
