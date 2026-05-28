@@ -36,6 +36,7 @@ from ..models import Role, User, GradeReport, Class, ReportFile, TeacherSubject,
 from ..security import decrypt_password, encrypt_password
 from ..constants import kazakh_sort_key, normalize_subject_name
 from ..services.admin_common import apply_analytics_filters, redirect_back
+from ..services.report_teacher import get_report_teacher_name
 from ..services.admin_dashboard import (
     YEAR_UI_PERIOD,
     aggregate_class_metrics,
@@ -1494,10 +1495,7 @@ def analytics_home():
             continue
         if segment == "5-11" and not (grade_num and 5 <= grade_num <= 11):
             continue
-        teacher_name = ""
-        # Получаем имя учителя
-        if report.teacher:
-            teacher_name = report.teacher.full_name or report.teacher.username
+        teacher_name = get_report_teacher_name(report)
         
         # --- СОР / СОЧ из analytics_json ---
         if report.analytics_json:
@@ -1644,9 +1642,7 @@ def download_analytics_excel():
         cls = report.class_name
         if cls not in active_class_names:
             continue
-        teacher_name = ""
-        if report.teacher:
-            teacher_name = report.teacher.full_name or report.teacher.username
+        teacher_name = get_report_teacher_name(report)
         
         if report.analytics_json:
             try:
@@ -1923,9 +1919,7 @@ def class_teacher_report():
         
         for report in reports:
             subj = normalize_subject_name(report.subject_name, current_user.school_id)
-            teacher_name = ""
-            if report.teacher:
-                teacher_name = report.teacher.full_name or report.teacher.username
+            teacher_name = get_report_teacher_name(report)
             subject_teachers[subj] = teacher_name
             
             if report.grades_json:
@@ -2434,9 +2428,7 @@ def download_class_teacher_report_excel():
         subject_teachers = {}
         for report in reports:
             subj = normalize_subject_name(report.subject_name, current_user.school_id)
-            t_name = ""
-            if report.teacher:
-                t_name = report.teacher.full_name or report.teacher.username
+            t_name = get_report_teacher_name(report)
             subject_teachers[subj] = t_name
             if report.grades_json:
                 try:

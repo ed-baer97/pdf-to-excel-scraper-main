@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 from ..constants import normalize_subject_name
 from ..extensions import db
-from ..models import GradeReport
+from ..models import GradeReport, User
 
 YEAR_UI_PERIOD = 5
 
@@ -148,6 +148,13 @@ class SyntheticGradeReport:
     id: int | None = None
 
     @property
+    def teacher(self):
+        """Совместимость с GradeReport.teacher для шаблонов и admin-views."""
+        if not self.teacher_id:
+            return None
+        return db.session.get(User, self.teacher_id)
+
+    @property
     def subject_name_normalized(self) -> str:
         return self.subject_name
 
@@ -157,6 +164,8 @@ def _synthetic_report_for_subject(
     class_name: str,
     subject_name: str,
     student_grades: list[tuple[str, int]],
+    *,
+    teacher_id: int = 0,
 ) -> SyntheticGradeReport:
     students_payload = [
         {"name": name, "percent": None, "grade": grade}
@@ -176,6 +185,7 @@ def _synthetic_report_for_subject(
         class_name=class_name,
         subject_name=subject_name,
         grades_json=json.dumps(payload, ensure_ascii=False),
+        teacher_id=teacher_id,
     )
 
 
@@ -199,6 +209,8 @@ def build_synthetic_year_reports(
             q = q.filter(GradeReport.teacher_id == teacher_id)
         class_names = sorted({row.class_name for row in q.all()})
 
+    from .report_teacher import lookup_teacher_id_for_class_subject
+
     reports: list[SyntheticGradeReport] = []
     for cn in class_names:
         year_map = build_year_student_subjects(school_id, cn, get_quarter_reports)
@@ -209,9 +221,10 @@ def build_synthetic_year_reports(
         for subj, pairs in by_subject.items():
             if not pairs:
                 continue
-            syn = _synthetic_report_for_subject(school_id, cn, subj, pairs)
-            if teacher_id is not None:
-                syn.teacher_id = teacher_id
+            tid = teacher_id if teacher_id is not None else lookup_teacher_id_for_class_subject(
+                school_id, cn, subj, get_quarter_reports
+            )
+            syn = _synthetic_report_for_subject(school_id, cn, subj, pairs, teacher_id=tid)
             reports.append(syn)
     return reports
 

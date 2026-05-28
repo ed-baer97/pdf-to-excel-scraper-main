@@ -9,6 +9,7 @@ from flask import current_app
 
 from ..constants import kazakh_sort_key, normalize_subject_name
 from .api_helpers import get_period_reports_api, get_quarter_reports_api
+from .report_teacher import get_report_teacher_name
 from .year_grades import (
     YEAR_UI_PERIOD,
     build_year_student_subjects,
@@ -47,9 +48,7 @@ def build_subject_teachers_map(reports: list) -> dict[str, str]:
     """Предмет → ФИО учителя (из последнего отчёта в списке)."""
     subject_teachers: dict[str, str] = {}
     for report in reports:
-        teacher_name = ""
-        if report.teacher:
-            teacher_name = report.teacher.full_name or report.teacher.username
+        teacher_name = get_report_teacher_name(report)
         subj = normalize_subject_name(report.subject_name, report.school_id)
         subject_teachers[subj] = teacher_name
     return subject_teachers
