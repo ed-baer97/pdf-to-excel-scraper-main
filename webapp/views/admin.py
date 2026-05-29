@@ -32,7 +32,7 @@ from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
 
 from ..extensions import db
-from ..models import Role, User, GradeReport, Class, ReportFile, TeacherSubject, TeacherClass, SubjectNameAlias
+from ..models import Role, User, GradeReport, Class, School, ReportFile, TeacherSubject, TeacherClass, SubjectNameAlias
 from ..security import decrypt_password, encrypt_password
 from ..constants import kazakh_sort_key, normalize_subject_name
 from ..services.admin_common import apply_analytics_filters, redirect_back
@@ -53,12 +53,14 @@ from ..services.admin_dashboard import (
     ui_period_display_name,
 )
 from ..services.criteria_grades import (
+    build_criteria_period_zip,
     build_criteria_subject_summary,
     build_criteria_table,
     build_final_table,
     build_simple_grades_table,
     collect_classes_with_criteria,
     criteria_from_grades_payload,
+    criteria_period_path_slug,
     final_from_grades_payload,
     has_criteria_data,
     has_final_data,
@@ -67,6 +69,7 @@ from ..services.criteria_grades import (
     parse_grades_json,
     report_has_criteria_block,
     report_has_final_block,
+    safe_path_segment,
 )
 from ..services.auth_guards import admin_or_superadmin_required as admin_required
 from ..services.subject_aliases import ensure_default_aliases, restore_default_aliases
@@ -1443,6 +1446,53 @@ def criteria_overview():
         classes_by_accordion=classes_by_accordion,
         period_number=period_number,
     )
+
+
+@bp.get("/criteria/download-excel")
+@admin_required
+def download_criteria_period_excel():
+    """ZIP: все классы за период — {орг}/{период}/{класс}/предметы.xlsx."""
+    period_number = parse_ui_period_number(request.args.get("period_number", 2))
+
+    school = School.query.get(current_user.school_id)
+    if not school:
+        flash("Школа не найдена.", "danger")
+        return redirect(url_for("admin.criteria_overview", period_number=period_number))
+
+    active_class_names = {
+        row.name
+        for row in Class.query.filter_by(school_id=current_user.school_id).with_entities(Class.name).all()
+    }
+    reports = get_period_reports(current_user.school_id, period_number)
+
+    zip_buf = build_criteria_period_zip(
+        school.name,
+        period_number,
+        reports,
+        active_class_names,
+        current_user.school_id,
+    )
+    if not zip_buf:
+        flash("Нет данных для выгрузки за выбранный период.", "warning")
+        return redirect(url_for("admin.criteria_overview", period_number=period_number))
+
+    org_slug = safe_path_segment(school.name)
+    period_slug = criteria_period_path_slug(period_number)
+    zip_local = f"{org_slug}/{period_slug}/критериальное_оценивание.zip"
+    zip_ascii = f"criteria_{period_number}.zip"
+
+    resp = send_file(
+        zip_buf,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=zip_ascii,
+    )
+    resp.headers["Content-Disposition"] = (
+        f'attachment; filename="{zip_ascii}"; filename*=UTF-8\'\'{quote(zip_local)}'
+    )
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
 
 
 @bp.get("/criteria/class/<class_name>")

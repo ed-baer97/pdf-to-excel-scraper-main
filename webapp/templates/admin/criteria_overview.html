@@ -42,6 +42,12 @@
           <option value="6" {% if period_number == 6 %}selected{% endif %}>{{ _('period_final') }}</option>
         </select>
       </div>
+      <div class="col-auto">
+        <a href="{{ url_for('admin.download_criteria_period_excel', period_number=period_number) }}"
+           class="btn btn-success btn-sm">
+          <i class="bi bi-file-earmark-excel"></i> {{ _('criteria_download_excel_all') }}
+        </a>
+      </div>
     </form>
   </div>
 </div>
