@@ -433,13 +433,15 @@ def api_upload_report():
                      "Загрузите отчёты за четверть или полугодие.",
         }), 400
 
-    if period_type not in ("quarter", "semester"):
-        return jsonify({"error": "period_type должен быть 'quarter' или 'semester'"}), 400
+    if period_type not in ("quarter", "semester", "final"):
+        return jsonify({"error": "period_type должен быть 'quarter', 'semester' или 'final'"}), 400
 
     if period_type == "quarter":
         max_period = 4
-    else:
+    elif period_type == "semester":
         max_period = 2
+    else:
+        max_period = 1
     if not (1 <= period_number <= max_period):
         return jsonify({"error": f"period_number должен быть от 1 до {max_period}"}), 400
     
@@ -481,6 +483,23 @@ def api_upload_report():
             "error": "Не удалось определить организацию. Укажите org_name или привяжите пользователя к школе."
         }), 400
     
+    if period_type == "final":
+        final_block = (
+            grades_payload.get("final")
+            if isinstance(grades_payload, dict)
+            else None
+        )
+        students_final = (
+            final_block.get("students")
+            if isinstance(final_block, dict)
+            else None
+        )
+        if not students_final:
+            return jsonify({
+                "error": "Отчёт итога без таблицы четвертных/годовых оценок.",
+                "missing_final_data": True,
+            }), 422
+
     # Четверть/полугодие: upload допустим при заголовке «Расчет оценки за …» / «Бағаны есептеу: …».
     if period_type in ("quarter", "semester"):
         has_grades = False

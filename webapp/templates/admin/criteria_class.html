@@ -1,0 +1,51 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+  <div class="rounded-3 bg-white shadow-sm border border-primary border-opacity-25 px-4 py-3 flex-grow-1">
+    <h1 class="h3 mb-0 fw-semibold text-primary">
+      {{ _('criteria_assessment') }} — {{ class_name }}
+    </h1>
+    <p class="text-muted small mb-0 mt-1">{{ _('subjects') }}</p>
+  </div>
+  <a href="{{ url_for('admin.criteria_overview', period_number=period_number) }}" class="btn btn-outline-secondary align-self-center">
+    <i class="bi bi-arrow-left"></i> {{ _('criteria_back_classes') }}
+  </a>
+</div>
+
+<div class="card shadow-sm border border-primary border-opacity-25">
+  <div class="card-body p-0">
+    {% if subjects %}
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>{{ _('subject_col') }}</th>
+            <th>{{ _('teacher_col') }}</th>
+            <th>{{ _('actions') }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for subj in subjects %}
+          <tr>
+            <td><strong>{{ subj.name }}</strong></td>
+            <td>{{ subj.teacher or '—' }}</td>
+            <td>
+              <a href="{{ url_for('admin.criteria_subject', class_name=class_name, subject_name=subj.name, period_number=period_number) }}"
+                 class="btn btn-sm btn-outline-primary">{{ _('criteria_open_table') }}</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if year_period %}
+    <div class="px-3 py-2 border-top">
+      <p class="text-muted small mb-0">{{ _('criteria_year_hint') }}</p>
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="alert alert-info m-3">{{ _('criteria_no_data_period') }}</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

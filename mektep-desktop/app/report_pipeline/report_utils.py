@@ -91,16 +91,19 @@ def is_semester_subject(batch_subdir: Path) -> bool:
 
 def resolve_period(period_code: str, batch_subdir: Path) -> Tuple[str, int, bool]:
     """
-    Определяет тип периода (четверть/полугодие/учебный год), номер и флаг пропуска.
+    Определяет тип периода (четверть/полугодие/итог), номер и флаг пропуска.
 
     Возвращает кортеж (period_type, period_number, skip).
 
     Коды 1..4 — четверти (с автоматическим переключением на полугодия для
-    соответствующих предметов). Учебный год на сервере считается из четвертей.
+    соответствующих предметов). Код 6 — итог (четвертные/годовые оценки).
     """
     normalized_period = normalize_period_code(period_code)
     if normalized_period is None:
         return "quarter", 1, True
+
+    if normalized_period == "6":
+        return "final", 1, False
 
     is_sem = is_semester_subject(batch_subdir)
 
@@ -158,8 +161,8 @@ def can_upload_period_grades(batch_subdir: Path) -> bool:
 
 
 def normalize_period_code(period_code: Any) -> Optional[str]:
-    """Normalize period code to one of '1'..'4'."""
+    """Normalize period code to one of '1'..'4' or '6' (итог)."""
     if period_code is None:
         return None
     value = str(period_code).strip()
-    return value if value in {"1", "2", "3", "4"} else None
+    return value if value in {"1", "2", "3", "4", "6"} else None

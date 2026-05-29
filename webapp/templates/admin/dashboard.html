@@ -247,13 +247,22 @@
   </div>
   
   <!-- Навигация по разделам -->
-  <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-5 g-3 mb-4">
+  <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-3 mb-4">
     <div class="col">
       <a href="{{ url_for('admin.grades_overview') }}" class="card shadow-sm text-decoration-none h-100">
         <div class="card-body text-center">
           <h4 class="text-primary"><i class="bi bi-bar-chart-line"></i></h4>
           <h6>{{ _('grades_overview') }}</h6>
           <small class="text-muted">{{ _('grades_overview_desc') }}</small>
+        </div>
+      </a>
+    </div>
+    <div class="col">
+      <a href="{{ url_for('admin.criteria_overview') }}" class="card shadow-sm text-decoration-none h-100">
+        <div class="card-body text-center">
+          <h4 class="text-primary"><i class="bi bi-clipboard-data"></i></h4>
+          <h6>{{ _('criteria_assessment') }}</h6>
+          <small class="text-muted">{{ _('criteria_assessment_desc') }}</small>
         </div>
       </a>
     </div>

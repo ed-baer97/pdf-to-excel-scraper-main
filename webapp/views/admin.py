@@ -52,6 +52,22 @@ from ..services.admin_dashboard import (
     teacher_accordion_group,
     ui_period_display_name,
 )
+from ..services.criteria_grades import (
+    build_criteria_subject_summary,
+    build_criteria_table,
+    build_final_table,
+    build_simple_grades_table,
+    collect_classes_with_criteria,
+    criteria_from_grades_payload,
+    final_from_grades_payload,
+    has_criteria_data,
+    has_final_data,
+    is_final_period,
+    is_year_period,
+    parse_grades_json,
+    report_has_criteria_block,
+    report_has_final_block,
+)
 from ..services.auth_guards import admin_or_superadmin_required as admin_required
 from ..services.subject_aliases import ensure_default_aliases, restore_default_aliases
 from ..services.year_grades import (
@@ -1370,6 +1386,185 @@ def grades_class(class_name: str):
             "success_percent": success_percent,
             "grades_count": grades_count
         }
+    )
+
+
+# ==============================================================================
+# Criteria assessment routes
+# ==============================================================================
+
+
+@bp.get("/criteria")
+@admin_required
+def criteria_overview():
+    """Критериальное оценивание: период → список классов."""
+    period_number = parse_ui_period_number(request.args.get("period_number", 2))
+
+    active_class_names = {
+        row.name
+        for row in Class.query.filter_by(school_id=current_user.school_id).with_entities(Class.name).all()
+    }
+
+    reports = get_period_reports(current_user.school_id, period_number)
+    if is_final_period(period_number):
+        classes_data = collect_classes_with_criteria(
+            reports,
+            active_class_names,
+            current_user.school_id,
+            require_criteria=False,
+            require_final=True,
+        )
+    elif is_year_period(period_number):
+        classes_data = collect_classes_with_criteria(
+            reports,
+            active_class_names,
+            current_user.school_id,
+            require_criteria=False,
+        )
+    else:
+        classes_data = collect_classes_with_criteria(
+            reports,
+            active_class_names,
+            current_user.school_id,
+            require_criteria=True,
+        )
+
+    sorted_classes = sorted(
+        classes_data.values(), key=lambda x: kazakh_sort_key(x["class_name"])
+    )
+    classes_by_accordion = {"1-4": [], "5-9": [], "10-11": []}
+    for cls in sorted_classes:
+        group = class_accordion_group(cls["class_name"])
+        classes_by_accordion[group].append(cls)
+
+    return render_template(
+        "admin/criteria_overview.html",
+        classes=sorted_classes,
+        classes_by_accordion=classes_by_accordion,
+        period_number=period_number,
+    )
+
+
+@bp.get("/criteria/class/<class_name>")
+@admin_required
+def criteria_class(class_name: str):
+    """Критериальное оценивание: предметы класса."""
+    period_number = parse_ui_period_number(request.args.get("period_number", 2))
+
+    if not Class.query.filter_by(school_id=current_user.school_id, name=class_name).first():
+        flash(
+            "Этого класса нет в списке школы (возможно, он удалён).",
+            "warning",
+        )
+        return redirect(url_for("admin.criteria_overview", period_number=period_number))
+
+    school_id = current_user.school_id
+    reports = get_period_reports(school_id, period_number, class_name=class_name)
+
+    subjects: list[dict] = []
+    seen_subjects: set[str] = set()
+
+    for report in reports:
+        subj = normalize_subject_name(report.subject_name, school_id)
+        if subj in seen_subjects:
+            continue
+        payload = parse_grades_json(report.grades_json)
+        if is_final_period(period_number):
+            if not has_final_data(payload):
+                continue
+        elif is_year_period(period_number):
+            if not payload:
+                continue
+        elif not has_criteria_data(payload):
+            continue
+        seen_subjects.add(subj)
+        subjects.append(
+            {
+                "name": subj,
+                "teacher": get_report_teacher_name(report),
+                "has_criteria": has_criteria_data(payload),
+                "has_final": has_final_data(payload),
+            }
+        )
+
+    subjects.sort(key=lambda x: kazakh_sort_key(x["name"]))
+
+    return render_template(
+        "admin/criteria_class.html",
+        class_name=class_name,
+        subjects=subjects,
+        period_number=period_number,
+        year_period=is_year_period(period_number),
+        final_period=is_final_period(period_number),
+    )
+
+
+@bp.get("/criteria/class/<class_name>/subject/<path:subject_name>")
+@admin_required
+def criteria_subject(class_name: str, subject_name: str):
+    """Критериальное оценивание: таблица учеников по предмету."""
+    period_number = parse_ui_period_number(request.args.get("period_number", 2))
+
+    if not Class.query.filter_by(school_id=current_user.school_id, name=class_name).first():
+        flash("Этого класса нет в списке школы.", "warning")
+        return redirect(url_for("admin.criteria_overview", period_number=period_number))
+
+    school_id = current_user.school_id
+    subj_norm = normalize_subject_name(subject_name, school_id)
+    reports = get_period_reports(school_id, period_number, class_name=class_name)
+
+    report = None
+    for r in reports:
+        if normalize_subject_name(r.subject_name, school_id) == subj_norm:
+            if is_final_period(period_number) and report_has_final_block(r):
+                report = r
+                break
+            if is_year_period(period_number) or report_has_criteria_block(r):
+                report = r
+                break
+            if report is None:
+                report = r
+
+    if not report:
+        flash("Нет данных по этому предмету за выбранный период.", "warning")
+        return redirect(
+            url_for(
+                "admin.criteria_class",
+                class_name=class_name,
+                period_number=period_number,
+            )
+        )
+
+    teacher_name = get_report_teacher_name(report)
+    payload = parse_grades_json(report.grades_json)
+    criteria = criteria_from_grades_payload(payload) if payload else None
+    final_block = final_from_grades_payload(payload) if payload else None
+
+    table = None
+    show_reupload_hint = False
+    if is_final_period(period_number) and final_block and has_final_data(payload):
+        table = build_final_table(final_block)
+    elif criteria and has_criteria_data(payload):
+        table = build_criteria_table(criteria)
+    elif is_year_period(period_number) and payload:
+        table = build_simple_grades_table(payload)
+        show_reupload_hint = False
+    else:
+        show_reupload_hint = True
+
+    summary = build_criteria_subject_summary(payload) if payload else build_criteria_subject_summary(None)
+
+    return render_template(
+        "admin/criteria_subject.html",
+        class_name=class_name,
+        subject_name=subj_norm,
+        period_number=period_number,
+        teacher_name=teacher_name,
+        table=table,
+        show_reupload_hint=show_reupload_hint,
+        year_period=is_year_period(period_number),
+        final_period=is_final_period(period_number),
+        summary=summary,
     )
 
 

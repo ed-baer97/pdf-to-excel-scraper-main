@@ -8,6 +8,7 @@ import re
 from ..extensions import db
 from ..models import GradeReport
 from ..constants import normalize_subject_name
+from .criteria_grades import FINAL_UI_PERIOD
 from .year_grades import (
     YEAR_UI_PERIOD,
     aggregate_year_metrics as _aggregate_year_metrics,
@@ -15,19 +16,27 @@ from .year_grades import (
 )
 
 # UI period_number=5 — учебный год (расчёт из четвертей 1–4, без отдельного скрапа)
+# UI period_number=6 — итог (скрап позже, пока без данных)
 
 
 def parse_ui_period_number(raw, default: int = 2) -> int:
-    """Нормализует period_number из query/form: 1–4 четверти, 5 — учебный год."""
+    """Нормализует period_number: 1–4 четверти, 5 — учебный год, 6 — итог."""
     try:
         n = int(raw)
     except (TypeError, ValueError):
         return default
-    return n if 1 <= n <= YEAR_UI_PERIOD else default
+    return n if 1 <= n <= FINAL_UI_PERIOD else default
 
 
 def get_period_reports(school_id: int, period_number: int, **extra_filters):
-    """Отчёты за четверть/полугодие (1–4) или синтетические за учебный год (5)."""
+    """Отчёты за четверть/полугодие (1–4), синтетические за год (5), итог (6)."""
+    if period_number == FINAL_UI_PERIOD:
+        return GradeReport.query.filter_by(
+            school_id=school_id,
+            period_type="final",
+            period_number=1,
+            **extra_filters,
+        ).all()
     if period_number == YEAR_UI_PERIOD:
         return build_synthetic_year_reports(
             school_id, get_quarter_reports, **extra_filters
@@ -37,6 +46,8 @@ def get_period_reports(school_id: int, period_number: int, **extra_filters):
 
 def ui_period_display_name(period_number: int, gettext_func) -> str:
     """Подпись периода для заголовков и Excel."""
+    if period_number == FINAL_UI_PERIOD:
+        return gettext_func("period_final")
     if period_number == YEAR_UI_PERIOD:
         return gettext_func("period_year")
     if 1 <= period_number <= 4:

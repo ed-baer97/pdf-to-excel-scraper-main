@@ -89,6 +89,7 @@ except ImportError:
         STAGE_LANGUAGE = "LANGUAGE"
         STAGE_NAVIGATION = "NAVIGATION"
         STAGE_GRADES_TABLE = "GRADES_TABLE"
+        STAGE_QUARTER_FINAL = "QUARTER_FINAL"
         STAGE_CRITERIA = "CRITERIA"
         STAGE_STUDENTS = "STUDENTS"
         STAGE_EXCEL_REPORT = "EXCEL_REPORT"
@@ -167,6 +168,7 @@ except ImportError:
         "2": "2 четверть (1 полугодие)",
         "3": "3 четверть",
         "4": "4 четверть (2 полугодие)",
+        "6": "Итог",
     }
 
 def _safe_slug(s: str) -> str:
@@ -376,8 +378,9 @@ def _get_org_name(page) -> str | None:
 
 def _choose_period() -> tuple[str, str]:
     """
-    Возвращает (код периода, подпись): из MEKTEP_PERIOD или интерактивный ввод 1–4.
+    Возвращает (код периода, подпись): из MEKTEP_PERIOD или интерактивный ввод 1–4 / 6.
     Правило: 2-я четверть соответствует 1 полугодию в подписи PERIOD_MAP.
+    Код 6 — итог (четвертные/годовые оценки, страница «Четвертные оценки»).
     """
     chosen = os.getenv("MEKTEP_PERIOD", "").strip()
     if chosen in PERIOD_MAP:
@@ -388,9 +391,10 @@ def _choose_period() -> tuple[str, str]:
     print("  2 - 2 четверть (1 полугодие, если нет 2 четверти)")
     print("  3 - 3 четверть")
     print("  4 - 4 четверть (2 полугодие)")
-    chosen = input("Выбор (1/2/3/4) [2]: ").strip() or "2"
+    print("  6 - Итог (четвертные и годовые оценки)")
+    chosen = input("Выбор (1/2/3/4/6) [2]: ").strip() or "2"
     if chosen not in PERIOD_MAP:
-        raise ValueError("Unknown period. Use: 1,2,3,4")
+        raise ValueError("Unknown period. Use: 1,2,3,4,6")
     return chosen, PERIOD_MAP[chosen]
 
 
@@ -421,9 +425,12 @@ def _go_to_grades(page) -> None:
     page.wait_for_load_state("domcontentloaded")
     _dismiss_blocking_ui(page)
 
-def _extract_grades_table(page) -> list[dict]:
+def _extract_grades_table(page, *, for_final: bool = False) -> list[dict]:
     """
-    Собирает строки таблицы успеваемости: класс, предмет, ссылка на критерии (semester2).
+    Собирает строки таблицы успеваемости на /office/?action=semester.
+
+    for_final=False: нужна ссылка на критерии (semester2).
+    for_final=True: нужна ссылка «Четвертные оценки» (action=semester&chetvert=...).
     """
     table = page.locator("table.table.table-hover").first
     table.wait_for(state="visible", timeout=15000)
@@ -488,9 +495,22 @@ def _extract_grades_table(page) -> list[dict]:
                 full = full.replace(muted, "").strip()
             subject = full
 
-        if not href:
-            # Skip rows without criteria link (they can't be opened).
+        quarter_href = ""
+        try:
+            quarter_a = tr.locator(
+                'a[href*="chetvert="][href*="id="], a.btn-success[href*="action=semester"]'
+            ).first
+            if quarter_a.count() > 0:
+                quarter_href = quarter_a.get_attribute("href", timeout=1000) or ""
+        except Exception:
+            pass
+
+        if for_final:
+            if not quarter_href:
+                continue
+        elif not href:
             continue
+
         rows.append(
             {
                 "index": i + 1,
@@ -498,10 +518,371 @@ def _extract_grades_table(page) -> list[dict]:
                 "subject": subject,
                 "criteria_href": href,
                 "criteria_url": urljoin(page.url, href) if href else "",
+                "quarter_grades_href": quarter_href,
+                "quarter_grades_url": urljoin(page.url, quarter_href) if quarter_href else "",
             }
         )
 
     return rows
+
+
+def _header_to_column_key(label: str) -> str:
+    """Сопоставляет заголовок колонки таблицы четвертных оценок с ключом."""
+    s = " ".join((label or "").split()).lower()
+    if not s or s in {"№", "#", "n", "no"}:
+        return "_skip"
+    if re.search(r"^(№|номер|n\b)", s):
+        return "_num"
+    if any(x in s for x in ("фио", "ученик", "оқушы", "студент", "фамилия")):
+        return "_fio"
+    if any(x in s for x in ("экзамен", "ент ", " ент", "экзам", "емтихан")):
+        return "exam"
+    if any(x in s for x in ("итогов", "годов", "жылдық", "итог")):
+        return "final"
+    m = re.search(r"(\d)\s*(?:-?\s*)?(?:четверт|тоқсан)", s)
+    if m:
+        return f"q{m.group(1)}"
+    for n in ("1", "2", "3", "4"):
+        if f"{n} четверт" in s or f"{n}-четверт" in s or f"{n} тоқсан" in s:
+            return f"q{n}"
+    slug = re.sub(r"[^\wа-яёәғқңөұүһ]+", "_", s, flags=re.I).strip("_")
+    return slug[:40] if slug else "col"
+
+
+def _open_quarter_grades(page, href: str, absolute_url: str | None = None) -> None:
+    """Открывает страницу «Четвертные оценки» (?action=semester&chetvert=...&id=...)."""
+    if not href:
+        raise ValueError("Empty quarter grades link.")
+    _dismiss_blocking_ui(page)
+    target = absolute_url or urljoin(page.url, href)
+    try:
+        page.goto(target, wait_until="domcontentloaded")
+    except Exception:
+        page.locator(f'a[href="{href}"]').first.click(timeout=7000)
+    page.wait_for_load_state("domcontentloaded")
+    _dismiss_blocking_ui(page)
+
+
+def _quarter_final_table_locator(page):
+    """Таблица четвертных оценок в форме (table.chetvert) или запасной вариант."""
+    loc = page.locator(
+        "div.card-body form table.chetvert, div.card-body table.chetvert, "
+        "div.card-body form table.table, div.card-body table.table"
+    ).first
+    return loc
+
+
+def _has_quarter_final_table(page, *, timeout_ms: int = 2500) -> bool:
+    """Есть ли таблица четвертных оценок (chetvert / student_mark)."""
+    for sel in (
+        "div.card-body table.chetvert",
+        "div.card-body td[id^='student_mark_']",
+        "div.card-body form table.table",
+    ):
+        loc = page.locator(sel).first
+        try:
+            loc.wait_for(state="visible", timeout=timeout_ms)
+            if loc.count() > 0:
+                return True
+        except Exception:
+            continue
+    return False
+
+
+_QUARTER_FINAL_EXTRACT_JS = """
+(tableEl) => {
+  const norm = (s) => (s || "").replace(/\\s+/g, " ").trim();
+
+  const extractMark = (td) => {
+    if (!td) return "";
+    if (td.classList && td.classList.contains("mark")) {
+      const t = norm(td.innerText);
+      if (/^[2345]$/.test(t)) return t;
+    }
+    const marked = td.querySelector(
+      ".mark, .active, .selected, .btn-primary, [class*='mark-'], [class*='active']"
+    );
+    if (marked) {
+      const t = norm(marked.innerText);
+      if (/^[2345]$/.test(t)) return t;
+    }
+    for (const inp of td.querySelectorAll(
+      'input[type="hidden"], input[type="radio"]:checked, input.mark-value'
+    )) {
+      const v = norm(inp.value || inp.getAttribute("value") || "");
+      if (/^[2345]$/.test(v)) return v;
+    }
+    for (const el of td.querySelectorAll("a, span, div, label, b, strong")) {
+      const t = norm(el.innerText);
+      if (!/^[2345]$/.test(t)) continue;
+      const cls = (el.className || "").toString().toLowerCase();
+      if (
+        el.classList.contains("mark") ||
+        el.classList.contains("active") ||
+        el.classList.contains("selected") ||
+        cls.includes("success") ||
+        cls.includes("primary")
+      ) {
+        return t;
+      }
+      const st = window.getComputedStyle(el);
+      const fw = parseInt(st.fontWeight, 10) || 400;
+      const bg = st.backgroundColor || "";
+      if (
+        fw >= 600 ||
+        (bg &&
+          bg !== "rgba(0, 0, 0, 0)" &&
+          bg !== "transparent" &&
+          !/rgb\\(255,\\s*255,\\s*255\\)/.test(bg))
+      ) {
+        return t;
+      }
+    }
+    const gradeEls = [...td.querySelectorAll("a, span, div, label, b, strong")].filter((el) =>
+      /^[2345]$/.test(norm(el.innerText))
+    );
+    if (gradeEls.length > 1) {
+      let best = null;
+      let bestScore = -1;
+      for (const el of gradeEls) {
+        let score = 0;
+        const cls = (el.className || "").toString().toLowerCase();
+        if (el.classList.contains("mark")) score += 10;
+        if (el.classList.contains("active")) score += 8;
+        if (el.classList.contains("selected")) score += 8;
+        if (cls.includes("success") || cls.includes("primary")) score += 6;
+        if (el.closest && el.closest("td.mark")) score += 5;
+        const st = window.getComputedStyle(el);
+        const fw = parseInt(st.fontWeight, 10) || 400;
+        if (fw >= 600) score += 4;
+        const bg = st.backgroundColor || "";
+        if (
+          bg &&
+          bg !== "rgba(0, 0, 0, 0)" &&
+          bg !== "transparent" &&
+          !/rgb\\(255,\\s*255,\\s*255\\)/.test(bg)
+        ) {
+          score += 3;
+        }
+        if (score > bestScore) {
+          bestScore = score;
+          best = el;
+        }
+      }
+      if (best && bestScore > 0) return norm(best.innerText);
+    }
+    const full = norm(td.innerText);
+    const parts = full.split(/\\s+/).filter((x) => /^[2345]$/.test(x));
+    if (parts.length === 1) return parts[0];
+    const dv = norm(td.getAttribute("data-value") || td.getAttribute("data-mark") || "");
+    if (/^[2345]$/.test(dv)) return dv;
+    return "";
+  };
+
+  const markColIndex = (td) => {
+    const id = td.getAttribute("id") || "";
+    const m = id.match(/student_mark_\\d+_(\\d+)/);
+    return m ? parseInt(m[1], 10) : 9999;
+  };
+
+  const headerTexts = [];
+  tableEl.querySelectorAll("thead tr").forEach((tr) => {
+    tr.querySelectorAll("th, td").forEach((cell) => {
+      const t = norm(cell.innerText);
+      if (t) headerTexts.push(t);
+    });
+  });
+
+  const colByIndex = new Map();
+  for (const tr of tableEl.querySelectorAll("tbody tr")) {
+    const marks = [...tr.querySelectorAll("td[id^='student_mark_']")];
+    if (!marks.length) continue;
+    marks.sort((a, b) => markColIndex(a) - markColIndex(b));
+    for (const td of marks) {
+      const idx = markColIndex(td);
+      if (colByIndex.has(idx)) continue;
+      const title = norm(td.getAttribute("title") || "");
+      const label = title || `col_${idx}`;
+      colByIndex.set(idx, { index: idx, label });
+    }
+    break;
+  }
+
+  if (!colByIndex.size) {
+    return { columns: [], students: [], raw_headers: headerTexts, mark_columns: [] };
+  }
+
+  const mark_columns = [...colByIndex.values()].sort((a, b) => a.index - b.index);
+  const students = [];
+
+  for (const tr of tableEl.querySelectorAll("tbody tr")) {
+    const markTds = [...tr.querySelectorAll("td[id^='student_mark_']")];
+    if (!markTds.length) continue;
+
+    const allTds = [...tr.querySelectorAll("td")];
+    const firstMarkPos = allTds.indexOf(markTds[0]);
+    const prefix = firstMarkPos > 0 ? allTds.slice(0, firstMarkPos) : [];
+
+    let num = "";
+    let fio = "";
+    if (prefix.length >= 2) {
+      const c0 = norm(prefix[0].innerText);
+      const c1 = norm(prefix[1].innerText);
+      if (/^\\d+$/.test(c0)) {
+        num = c0;
+        fio = c1;
+      } else {
+        fio = c0;
+      }
+    } else if (prefix.length === 1) {
+      fio = norm(prefix[0].innerText);
+    }
+
+    if (!fio) continue;
+
+    const marks = {};
+    for (const td of markTds) {
+      marks[String(markColIndex(td))] = extractMark(td);
+    }
+
+    students.push({
+      num: num || String(students.length + 1),
+      fio,
+      marks,
+    });
+  }
+
+  return {
+    columns: mark_columns.map((c) => ({ index: c.index, label: c.label })),
+    students,
+    raw_headers: headerTexts,
+    mark_columns,
+  };
+}
+"""
+
+
+def _extract_quarter_final_grades(page) -> dict:
+    """
+    Парсит таблицу «Четвертные и годовые оценки» (form table.chetvert).
+    Ячейки student_mark_*: сохранённая оценка (td.mark) или выбор 2–5 до сохранения.
+    """
+    table = _quarter_final_table_locator(page)
+    table.wait_for(state="visible", timeout=15000)
+
+    raw = table.evaluate(_QUARTER_FINAL_EXTRACT_JS)
+    if not isinstance(raw, dict):
+        raw = {}
+
+    mark_columns = raw.get("mark_columns") or raw.get("columns") or []
+    if not mark_columns and not raw.get("students"):
+        return _extract_quarter_final_grades_legacy(page, table)
+
+    columns: list[dict] = []
+    used_keys: set[str] = set()
+    for col in mark_columns:
+        if not isinstance(col, dict):
+            continue
+        label = str(col.get("label") or "")
+        key = _header_to_column_key(label)
+        if key in ("_skip", "_num", "_fio"):
+            key = f"col_{col.get('index', len(columns))}"
+        base = key
+        n = 2
+        while key in used_keys:
+            key = f"{base}_{n}"
+            n += 1
+        used_keys.add(key)
+        columns.append({"key": key, "label": label, "col_index": col.get("index")})
+
+    students: list[dict] = []
+    for s in raw.get("students") or []:
+        if not isinstance(s, dict):
+            continue
+        fio = (s.get("fio") or "").strip()
+        if not fio:
+            continue
+        marks = s.get("marks") or {}
+        row: dict = {"num": str(s.get("num") or len(students) + 1), "fio": fio}
+        for col in columns:
+            idx = col.get("col_index")
+            val = marks.get(str(idx), "") if idx is not None else ""
+            row[col["key"]] = str(val) if val is not None else ""
+        students.append(row)
+
+    has_exam = any(c["key"] == "exam" for c in columns)
+    has_final = any(c["key"] == "final" for c in columns)
+
+    return {
+        "columns": [{"key": c["key"], "label": c["label"]} for c in columns],
+        "students": students,
+        "has_exam": has_exam,
+        "has_final": has_final,
+        "raw_headers": raw.get("raw_headers") or [],
+    }
+
+
+def _extract_quarter_final_grades_legacy(page, table) -> dict:
+    """Запасной разбор простой таблицы без student_mark (только inner_text)."""
+    raw_headers: list[str] = []
+    for th in table.locator("thead tr").last.locator("th").all():
+        raw_headers.append(" ".join((th.inner_text() or "").split()))
+
+    columns: list[dict] = []
+    used_keys: set[str] = set()
+    for label in raw_headers:
+        key = _header_to_column_key(label)
+        if key in ("_skip", "_num", "_fio"):
+            continue
+        base = key
+        n = 2
+        while key in used_keys:
+            key = f"{base}_{n}"
+            n += 1
+        used_keys.add(key)
+        columns.append({"key": key, "label": label})
+
+    students: list[dict] = []
+    trs = table.locator("tbody tr")
+    for i in range(trs.count()):
+        tr = trs.nth(i)
+        tds = tr.locator("td")
+        td_count = tds.count()
+        if td_count < 2:
+            continue
+        cells = [" ".join((tds.nth(j).inner_text() or "").split()) for j in range(td_count)]
+
+        num = ""
+        fio = ""
+        if cells[0].isdigit():
+            num = cells[0]
+            fio = cells[1] if len(cells) > 1 else ""
+            value_cells = cells[2:]
+        else:
+            fio = cells[0]
+            value_cells = cells[1:]
+
+        if not fio:
+            continue
+
+        row: dict = {"num": num or str(len(students) + 1), "fio": fio}
+        for col_idx, col in enumerate(columns):
+            if col_idx < len(value_cells):
+                val = value_cells[col_idx]
+                if re.fullmatch(r"[2345](?:\s+[2345]){3,}", val or ""):
+                    val = ""
+                row[col["key"]] = val
+            else:
+                row[col["key"]] = ""
+        students.append(row)
+
+    return {
+        "columns": columns,
+        "students": students,
+        "has_exam": any(c["key"] == "exam" for c in columns),
+        "has_final": any(c["key"] == "final" for c in columns),
+        "raw_headers": raw_headers,
+    }
 
 
 def _save_grades_table(rows: list[dict], out_dir: Path) -> None:
@@ -1842,6 +2223,73 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
                 page.screenshot(path=str(out_dir / "grades.png"), full_page=True)
             log_info("Сохранён скриншот: grades.png")
 
+        def process_final_one(selected: dict, batch_subdir: Path) -> None:
+            """Скрап «Четвертные оценки» (итог): таблица четвертей + экзамен + итоговая."""
+            _ensure_dir(batch_subdir)
+            class_name = selected.get("class", "Unknown")
+            subject_name = selected.get("subject", "Unknown")
+            log_stage(
+                ScraperLogger.STAGE_QUARTER_FINAL,
+                f"Четвертные оценки: {class_name} - {subject_name}",
+                None,
+            )
+            log_info(f'[{class_name} - {subject_name}] Открытие «Четвертные оценки»...')
+            quarter_href = selected.get("quarter_grades_href", "")
+            quarter_url = selected.get("quarter_grades_url", "")
+            with timing_block(f"_open_quarter_grades [{class_name} — {subject_name}]"):
+                _go_to_grades(page)
+                _open_quarter_grades(page, quarter_href, quarter_url)
+
+            if _check_criteria_warning(page):
+                log_warning(
+                    f'[{class_name} - {subject_name}] Нет данных оценивания — пропуск.'
+                )
+                return
+            if not _has_quarter_final_table(page):
+                log_warning(
+                    f'[{class_name} - {subject_name}] Таблица четвертных оценок не найдена — пропуск.'
+                )
+                return
+
+            if _debug_artifacts_enabled():
+                (batch_subdir / "quarter_final.url.txt").write_text(page.url, encoding="utf-8")
+                (batch_subdir / "quarter_final.html").write_text(page.content(), encoding="utf-8")
+                page.screenshot(path=str(batch_subdir / "quarter_final.png"), full_page=True)
+
+            with timing_block(f"_extract_quarter_final_grades [{class_name} — {subject_name}]"):
+                final_data = _extract_quarter_final_grades(page)
+
+            if not final_data.get("students"):
+                log_warning(
+                    f'[{class_name} - {subject_name}] Таблица четвертных оценок пуста — пропуск.'
+                )
+                return
+
+            (batch_subdir / "quarter_final_grades.json").write_text(
+                json.dumps(final_data, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            ctx = {
+                "org_name": org_name,
+                "profile_name": profile_name,
+                "period_code": period_code,
+                "period_label": period_label,
+                "class": class_name,
+                "subject": subject_name,
+                "has_exam": final_data.get("has_exam"),
+                "has_final": final_data.get("has_final"),
+                "columns": final_data.get("columns"),
+            }
+            (batch_subdir / "quarter_final_context.json").write_text(
+                json.dumps(ctx, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            (batch_subdir / "selected_row.json").write_text(
+                json.dumps(selected, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            log_success(
+                f'[{class_name} - {subject_name}] Итог: {len(final_data["students"])} учеников, '
+                f'колонок {len(final_data.get("columns") or [])}'
+            )
+
         def process_one(selected: dict, batch_subdir: Path) -> None:
             """Строит отчёт по одной паре класс/предмет: критерии, JSON учеников, Excel/Word в batch_subdir."""
             _ensure_dir(batch_subdir)
@@ -2023,10 +2471,11 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
                     print(traceback.format_exc())
 
         # Extract table rows and either process one (interactive) or all (batch).
+        scrape_final = period_code == "6"
         log_stage(ScraperLogger.STAGE_GRADES_TABLE, "Извлечение таблицы оценок", 8)
         log_info("Извлечение данных таблицы оценок...")
         with timing_block("_extract_grades_table"):
-            rows = _extract_grades_table(page)
+            rows = _extract_grades_table(page, for_final=scrape_final)
         if not rows:
             log_error("Таблица оценок пуста или не найдена")
             if logger:
@@ -2061,8 +2510,12 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
                 log_info(f"[{idx}/{total_reports}] === Обработка: {class_name} - {subject_name} ===")
                 log_info("-" * 60)
                 sub = batch_root / _safe_slug(f'{class_name} {subject_name}')
-                with timing_block(f"process_one [{idx}/{total_reports}] {class_name} — {subject_name}"):
-                    process_one(r, sub)
+                processor = process_final_one if scrape_final else process_one
+                with timing_block(
+                    f"{'process_final_one' if scrape_final else 'process_one'} "
+                    f"[{idx}/{total_reports}] {class_name} — {subject_name}"
+                ):
+                    processor(r, sub)
 
                 # Calculate progress: 10% (auth) to 90% (reports processing)
                 progress_percent = min(90, 10 + int((idx / total_reports) * 80))
@@ -2083,7 +2536,10 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
             except ValueError as e:
                 print(str(e))
                 return 2
-            process_one(selected, out_dir)
+            if scrape_final:
+                process_final_one(selected, out_dir)
+            else:
+                process_one(selected, out_dir)
 
         if _debug_artifacts_enabled():
             with timing_block("финальные артефакты criteria + after_login (HTML, screenshots)"):

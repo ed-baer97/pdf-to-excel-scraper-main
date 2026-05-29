@@ -21,11 +21,19 @@ from ..models import (
 )
 
 
+from .criteria_grades import FINAL_UI_PERIOD
 from .year_grades import YEAR_UI_PERIOD, build_synthetic_year_reports
 
 
 def get_period_reports_api(school_id: int, period_number: int, **extra_filters):
-    """Отчёты за четверть/полугодие (1–4) или синтетические за учебный год (5)."""
+    """Отчёты за четверть/полугодие (1–4), синтетические за год (5), итог (6) — пусто."""
+    if period_number == FINAL_UI_PERIOD:
+        return GradeReport.query.filter_by(
+            school_id=school_id,
+            period_type="final",
+            period_number=1,
+            **extra_filters,
+        ).all()
     if period_number == YEAR_UI_PERIOD:
         return build_synthetic_year_reports(
             school_id, get_quarter_reports_api, **extra_filters

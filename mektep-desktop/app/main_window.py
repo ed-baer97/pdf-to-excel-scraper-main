@@ -298,19 +298,23 @@ class MektepMainWindow(QMainWindow):
 
         self.period_combo = QComboBox()
         if self.translator.get_language() == 'kk':
-            self.period_combo.addItems([
-                "1 тоқсан",
-                "2 тоқсан (1 жартыжылдық)",
-                "3 тоқсан",
-                "4 тоқсан (2 жартыжылдық)",
-            ])
+            _period_items = [
+                ("1 тоқсан", "1"),
+                ("2 тоқсан (1 жартыжылдық)", "2"),
+                ("3 тоқсан", "3"),
+                ("4 тоқсан (2 жартыжылдық)", "4"),
+                ("Қорытынды", "6"),
+            ]
         else:
-            self.period_combo.addItems([
-                "1 четверть",
-                "2 четверть (1 полугодие)",
-                "3 четверть",
-                "4 четверть (2 полугодие)",
-            ])
+            _period_items = [
+                ("1 четверть", "1"),
+                ("2 четверть (1 полугодие)", "2"),
+                ("3 четверть", "3"),
+                ("4 четверть (2 полугодие)", "4"),
+                ("Итог", "6"),
+            ]
+        for label, code in _period_items:
+            self.period_combo.addItem(label, code)
         self.period_combo.setCurrentIndex(1)
         self.period_combo.setMinimumHeight(30)
         # Явно устанавливаем стиль для view
@@ -513,8 +517,8 @@ class MektepMainWindow(QMainWindow):
         lang_map = {"Русский": "ru", "Қазақша": "kk", "English": "en"}
         lang = lang_map.get(self.lang_combo.currentText(), "ru")
         
-        # Period
-        period = str(self.period_combo.currentIndex() + 1)
+        # Period (UserRole = "1".."4" или "6" для итога)
+        period = str(self.period_combo.currentData() or "2")
         
         # Сохраняем настройки
         self.settings.setValue("scraper/lang", self.lang_combo.currentText())

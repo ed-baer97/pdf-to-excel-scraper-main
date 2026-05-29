@@ -179,6 +179,9 @@ class ReportFinalizer:
         period_name: str,
     ) -> Optional[Dict[str, Any]]:
         """Обработка одного batch-подкаталога с JSON данными скрапера."""
+        if (subdir / "quarter_final_grades.json").exists():
+            return self._process_final_batch_subdir(subdir, final_reports_dir, period_name)
+
         students_file = subdir / "criteria_students.json"
         context_file = subdir / "criteria_context.json"
 
@@ -453,6 +456,164 @@ class ReportFinalizer:
 
         return reports
 
+    def _process_final_batch_subdir(
+        self,
+        subdir: Path,
+        final_reports_dir: Path,
+        period_name: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Итог: quarter_final_grades.json без Excel/Word."""
+        final_file = subdir / "quarter_final_grades.json"
+        ctx_file = subdir / "quarter_final_context.json"
+        ctx: Dict[str, Any] = {}
+        if ctx_file.exists():
+            with open(ctx_file, "r", encoding="utf-8") as f:
+                ctx = json.load(f)
+
+        class_name_raw = str(ctx.get("class", "")).strip()
+        subject_name = str(ctx.get("subject", "")).strip()
+        class_name = parse_class_liter(class_name_raw)
+        if not class_name or not subject_name:
+            return None
+
+        report_data: Dict[str, Any] = {
+            "class_name": class_name,
+            "subject": subject_name,
+            "period_code": self.period_code,
+            "lang": self.lang,
+            "org_name": self._scraped_org_name,
+            "excel_path": None,
+            "word_path": None,
+            "metadata": {
+                "created_by": "desktop",
+                "output_dir": str(final_reports_dir),
+                "period_name": period_name,
+                "org_name": self._scraped_org_name,
+                "server_school_name": self._server_school_name,
+                "report_kind": "final",
+            },
+        }
+
+        if not self._org_upload_allowed:
+            report_data["upload_skipped"] = True
+            report_data["upload_skip_reason"] = "org_not_found"
+            return report_data
+
+        if not self.api_client or not self.api_client.is_authenticated():
+            report_data["upload_skipped"] = True
+            report_data["upload_skip_reason"] = "auth_required"
+            return report_data
+
+        try:
+            grades_data, _, can_upload = self._build_final_grades_and_analytics(subdir)
+            if not grades_data or not can_upload:
+                report_data["upload_skipped"] = True
+                report_data["upload_skip_reason"] = "no_final_data"
+                return report_data
+
+            period_type, period_number, skip = resolve_period(self.period_code, subdir)
+            if skip:
+                report_data["upload_skipped"] = True
+                report_data["upload_skip_reason"] = "period_skip"
+                return report_data
+
+            upload_result = self.api_client.upload_report(
+                class_name=class_name,
+                subject_name=subject_name,
+                period_type=period_type,
+                period_number=period_number,
+                grades_data=grades_data,
+                analytics_data=None,
+                org_name=self._scraped_org_name,
+            )
+            if upload_result.get("success"):
+                report_data["server_report_id"] = upload_result.get("report_id")
+                report_data["upload_action"] = upload_result.get("action")
+            else:
+                report_data["upload_skipped"] = True
+                report_data["upload_skip_reason"] = upload_result.get("error", "upload_failed")
+        except Exception as e:
+            print(f"[DEBUG] Ошибка загрузки итога: {e}")
+            report_data["upload_skipped"] = True
+            report_data["upload_skip_reason"] = "exception"
+
+        return report_data
+
+    def _pick_final_grade_value(self, row: Dict[str, Any]) -> Tuple[Optional[int], str]:
+        """Итоговая оценка: final → exam → последняя четверть q4..q1."""
+        for key in ("final", "exam", "q4", "q3", "q2", "q1"):
+            raw = row.get(key)
+            if raw in (None, "", "0", 0):
+                continue
+            try:
+                return int(float(str(raw).strip())), key
+            except (ValueError, TypeError):
+                continue
+        return None, ""
+
+    def _build_final_grades_and_analytics(
+        self, batch_subdir: Path
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], bool]:
+        """Формирует grades_json с блоком final из quarter_final_grades.json."""
+        final_file = batch_subdir / "quarter_final_grades.json"
+        if not final_file.exists():
+            return None, None, False
+        try:
+            with open(final_file, "r", encoding="utf-8") as f:
+                final_data = json.load(f)
+        except Exception:
+            return None, None, False
+
+        students_raw = final_data.get("students") or []
+        if not isinstance(students_raw, list) or not students_raw:
+            return None, None, False
+
+        columns = final_data.get("columns") or []
+        grades_students: List[Dict[str, Any]] = []
+        g5 = g4 = g3 = g2 = 0
+
+        for s in students_raw:
+            if not isinstance(s, dict):
+                continue
+            fio = (s.get("fio") or "").strip()
+            if not fio:
+                continue
+            grade_int, _src = self._pick_final_grade_value(s)
+            if grade_int:
+                if grade_int >= 5:
+                    g5 += 1
+                elif grade_int >= 4:
+                    g4 += 1
+                elif grade_int >= 3:
+                    g3 += 1
+                else:
+                    g2 += 1
+            grades_students.append(
+                {
+                    "name": fio,
+                    "percent": None,
+                    "grade": grade_int,
+                }
+            )
+
+        total = len(grades_students)
+        if total == 0:
+            return None, None, False
+
+        grades_data = {
+            "students": grades_students,
+            "quality_percent": round((g5 + g4) / total * 100, 1),
+            "success_percent": round((g5 + g4 + g3) / total * 100, 1),
+            "total_students": total,
+            "final": {
+                "columns": columns,
+                "students": students_raw,
+                "has_exam": bool(final_data.get("has_exam")),
+                "has_final": bool(final_data.get("has_final")),
+            },
+        }
+        return grades_data, None, True
+
     def _build_grades_and_analytics(
         self, batch_subdir: Path
     ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], bool]:
@@ -600,6 +761,33 @@ class ReportFinalizer:
                     analytics_data["sor"] = sor_list
                 if soch_data:
                     analytics_data["soch"] = soch_data
+
+            criteria_students_payload: List[Dict[str, Any]] = []
+            for s in students_sorted:
+                fio = (s.get("fio") or "").strip()
+                if not fio:
+                    continue
+                criteria_students_payload.append(
+                    {
+                        "num": s.get("num"),
+                        "fio": fio,
+                        "average": s.get("average") or "",
+                        "formative_pct": s.get("formative_pct") or "",
+                        "sor_pct": s.get("sor_pct") or "",
+                        "soch_pct": s.get("soch_pct") or "",
+                        "total_pct": s.get("total_pct") or "",
+                        "grade": s.get("grade") or "",
+                        "points": s.get("points") or {},
+                    }
+                )
+
+            max_points_str = {str(k): v for k, v in max_points.items()}
+            grades_data["criteria"] = {
+                "quarter_num": quarter_num,
+                "sections": sorted(sections_present),
+                "max_points": max_points_str,
+                "students": criteria_students_payload,
+            }
 
             return grades_data, analytics_data, can_upload
 

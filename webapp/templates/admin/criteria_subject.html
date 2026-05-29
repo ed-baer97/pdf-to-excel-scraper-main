@@ -1,0 +1,66 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+  <div class="rounded-3 bg-white shadow-sm border border-primary border-opacity-25 px-4 py-3 flex-grow-1">
+    <h1 class="h3 mb-2 fw-semibold text-primary">{{ subject_name }}</h1>
+    <div class="d-flex flex-wrap align-items-center gap-2 gap-md-3 small text-muted border-top border-primary border-opacity-10 pt-2">
+      <span>{{ _('class_col') }}: <strong class="text-body">{{ class_name }}</strong></span>
+      <span class="d-none d-sm-inline opacity-50" aria-hidden="true">·</span>
+      <span>{{ _('teacher_fio') }}: <strong class="text-body">{{ teacher_name or '—' }}</strong></span>
+      {% if summary and not show_reupload_hint %}
+      <span class="d-none d-md-inline opacity-50" aria-hidden="true">·</span>
+      <span class="text-muted">{{ _('distribution') }}:</span>
+      <span class="text-success fw-semibold">5: {{ summary.grades_count['5'] }}</span>
+      <span class="text-primary fw-semibold">4: {{ summary.grades_count['4'] }}</span>
+      <span class="text-warning fw-semibold">3: {{ summary.grades_count['3'] }}</span>
+      <span class="text-danger fw-semibold">2: {{ summary.grades_count['2'] }}</span>
+      <span class="d-none d-lg-inline opacity-50" aria-hidden="true">·</span>
+      <span>{{ _('students_count') }}: <strong class="text-primary">{{ summary.with_grade }}</strong></span>
+      <span class="d-none d-lg-inline opacity-50" aria-hidden="true">·</span>
+      <span>{{ _('quality_label') }}: <strong class="text-primary">{{ summary.quality_percent }}%</strong></span>
+      <span class="d-none d-xl-inline opacity-50" aria-hidden="true">·</span>
+      <span>{{ _('success_label') }}: <strong class="text-primary">{{ summary.success_percent }}%</strong></span>
+      {% endif %}
+    </div>
+  </div>
+  <a href="{{ url_for('admin.criteria_class', class_name=class_name, period_number=period_number) }}"
+     class="btn btn-outline-secondary align-self-center">
+    <i class="bi bi-arrow-left"></i> {{ _('criteria_back_subjects') }}
+  </a>
+</div>
+
+{% if show_reupload_hint %}
+<div class="alert alert-warning">
+  <i class="bi bi-exclamation-triangle"></i> {{ _('criteria_reupload_hint') }}
+</div>
+{% endif %}
+
+{% if table and table.rows %}
+<div class="card shadow-sm border border-primary border-opacity-25">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-bordered table-sm table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            {% for h in table.headers %}
+            <th class="text-center">{{ h }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in table.rows %}
+          <tr>
+            {% for cell in row.cells %}
+            <td class="{% if loop.index > 2 or (year_period and loop.index == 3) or (final_period and loop.index > 2) %}text-center{% endif %}">{{ cell }}</td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% elif not show_reupload_hint %}
+<div class="alert alert-info">{{ _('criteria_no_data') }}</div>
+{% endif %}
+{% endblock %}

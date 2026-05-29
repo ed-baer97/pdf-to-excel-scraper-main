@@ -86,13 +86,22 @@ def test_resolve_period_semester_from_tabs(tmp_path):
         (2, "2"),
         ("0", None),
         ("5", None),
+        ("6", "6"),
         ("q1", None),
         (None, None),
     ],
 )
 def test_normalize_period_code(raw, expected):
-    """Нормализация period_code в допустимый диапазон 1..4."""
+    """Нормализация period_code: 1..4 и 6 (итог)."""
     assert normalize_period_code(raw) == expected
+
+
+def test_resolve_period_final(tmp_path):
+  """Код 6 — period_type final."""
+  ptype, pnum, skip = resolve_period("6", tmp_path)
+  assert ptype == "final"
+  assert pnum == 1
+  assert skip is False
 
 
 def test_resolve_period_invalid_code(tmp_path):
