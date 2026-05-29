@@ -2,9 +2,14 @@
 
 import re
 
-# Минимальная версия десктоп-приложения, которая допускается к авторизации.
-# Обновляйте при каждом обязательном (breaking) обновлении десктопа.
-MIN_DESKTOP_VERSION = (1, 2, 0)
+# Актуальный релиз Mektep Desktop (GitHub Releases + mektep-desktop/version.py).
+DESKTOP_VERSION = "1.2.1"
+
+# Минимальная версия десктопа для API (логин, загрузка отчётов).
+MIN_DESKTOP_VERSION = (1, 2, 1)
+
+DESKTOP_RELEASES_REPO = "ed-baer97/mektep-desktop-releases"
+DESKTOP_EXE_NAME = "Mektep.Desktop.exe"
 
 PERIOD_MAP = {
     "1": "1 четверть",

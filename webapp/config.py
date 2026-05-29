@@ -16,6 +16,8 @@ Environment variables:
 import os
 from pathlib import Path
 
+from .constants import DESKTOP_EXE_NAME, DESKTOP_RELEASES_REPO, DESKTOP_VERSION
+
 
 class Config:
     """Base configuration."""
@@ -75,7 +77,7 @@ class Config:
     # (tag-URL открывает веб-страницу, файл по нему не качается).
     DESKTOP_DOWNLOAD_URL = os.getenv(
         "DESKTOP_DOWNLOAD_URL",
-        "https://github.com/ed-baer97/mektep-desktop-releases/releases/download/v1.2.1/Mektep.Desktop.exe",
+        f"https://github.com/{DESKTOP_RELEASES_REPO}/releases/download/v{DESKTOP_VERSION}/{DESKTOP_EXE_NAME}",
     )
 
 
