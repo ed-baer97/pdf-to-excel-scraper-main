@@ -59,6 +59,8 @@ from ..services.criteria_grades import (
     build_final_table,
     build_simple_grades_table,
     collect_classes_with_criteria,
+    find_criteria_subject_entry,
+    list_criteria_subject_entries,
     criteria_from_grades_payload,
     criteria_period_path_slug,
     final_from_grades_payload,
@@ -1409,28 +1411,12 @@ def criteria_overview():
     }
 
     reports = get_period_reports(current_user.school_id, period_number)
-    if is_final_period(period_number):
-        classes_data = collect_classes_with_criteria(
-            reports,
-            active_class_names,
-            current_user.school_id,
-            require_criteria=False,
-            require_final=True,
-        )
-    elif is_year_period(period_number):
-        classes_data = collect_classes_with_criteria(
-            reports,
-            active_class_names,
-            current_user.school_id,
-            require_criteria=False,
-        )
-    else:
-        classes_data = collect_classes_with_criteria(
-            reports,
-            active_class_names,
-            current_user.school_id,
-            require_criteria=True,
-        )
+    classes_data = collect_classes_with_criteria(
+        reports,
+        active_class_names,
+        current_user.school_id,
+        period_number,
+    )
 
     sorted_classes = sorted(
         classes_data.values(), key=lambda x: kazakh_sort_key(x["class_name"])
@@ -1511,33 +1497,19 @@ def criteria_class(class_name: str):
     school_id = current_user.school_id
     reports = get_period_reports(school_id, period_number, class_name=class_name)
 
-    subjects: list[dict] = []
-    seen_subjects: set[str] = set()
-
-    for report in reports:
-        subj = normalize_subject_name(report.subject_name, school_id)
-        if subj in seen_subjects:
-            continue
-        payload = parse_grades_json(report.grades_json)
-        if is_final_period(period_number):
-            if not has_final_data(payload):
-                continue
-        elif is_year_period(period_number):
-            if not payload:
-                continue
-        elif not has_criteria_data(payload):
-            continue
-        seen_subjects.add(subj)
-        subjects.append(
-            {
-                "name": subj,
-                "teacher": get_report_teacher_name(report),
-                "has_criteria": has_criteria_data(payload),
-                "has_final": has_final_data(payload),
-            }
-        )
-
-    subjects.sort(key=lambda x: kazakh_sort_key(x["name"]))
+    subjects = list_criteria_subject_entries(
+        reports, school_id, period_number, class_name=class_name
+    )
+    subjects = [
+        {
+            "name": e["display_name"],
+            "teacher": e.get("teacher") or "",
+            "report_id": e.get("report_id"),
+            "has_criteria": e.get("has_criteria"),
+            "has_final": e.get("has_final"),
+        }
+        for e in subjects
+    ]
 
     return render_template(
         "admin/criteria_class.html",
@@ -1560,22 +1532,19 @@ def criteria_subject(class_name: str, subject_name: str):
         return redirect(url_for("admin.criteria_overview", period_number=period_number))
 
     school_id = current_user.school_id
-    subj_norm = normalize_subject_name(subject_name, school_id)
     reports = get_period_reports(school_id, period_number, class_name=class_name)
 
-    report = None
-    for r in reports:
-        if normalize_subject_name(r.subject_name, school_id) == subj_norm:
-            if is_final_period(period_number) and report_has_final_block(r):
-                report = r
-                break
-            if is_year_period(period_number) or report_has_criteria_block(r):
-                report = r
-                break
-            if report is None:
-                report = r
+    report_id_arg = request.args.get("report_id", type=int)
+    entry = find_criteria_subject_entry(
+        reports,
+        school_id,
+        period_number,
+        class_name,
+        display_name=subject_name,
+        report_id=report_id_arg,
+    )
 
-    if not report:
+    if not entry or not entry.get("report_id"):
         flash("Нет данных по этому предмету за выбранный период.", "warning")
         return redirect(
             url_for(
@@ -1585,8 +1554,22 @@ def criteria_subject(class_name: str, subject_name: str):
             )
         )
 
-    teacher_name = get_report_teacher_name(report)
-    payload = parse_grades_json(report.grades_json)
+    report = GradeReport.query.filter_by(
+        id=entry["report_id"], school_id=school_id, class_name=class_name
+    ).first()
+    if not report:
+        flash("Отчёт не найден.", "warning")
+        return redirect(
+            url_for(
+                "admin.criteria_class",
+                class_name=class_name,
+                period_number=period_number,
+            )
+        )
+
+    display_name = entry["display_name"]
+    teacher_name = entry.get("teacher") or get_report_teacher_name(report)
+    payload = entry.get("payload") or parse_grades_json(report.grades_json)
     criteria = criteria_from_grades_payload(payload) if payload else None
     final_block = final_from_grades_payload(payload) if payload else None
 
@@ -1607,8 +1590,9 @@ def criteria_subject(class_name: str, subject_name: str):
     return render_template(
         "admin/criteria_subject.html",
         class_name=class_name,
-        subject_name=subj_norm,
+        subject_name=display_name,
         period_number=period_number,
+        report_id=entry["report_id"],
         teacher_name=teacher_name,
         table=table,
         show_reupload_hint=show_reupload_hint,

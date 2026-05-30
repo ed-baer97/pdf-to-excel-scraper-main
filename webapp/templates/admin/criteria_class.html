@@ -30,7 +30,7 @@
             <td><strong>{{ subj.name }}</strong></td>
             <td>{{ subj.teacher or '—' }}</td>
             <td>
-              <a href="{{ url_for('admin.criteria_subject', class_name=class_name, subject_name=subj.name, period_number=period_number) }}"
+              <a href="{{ url_for('admin.criteria_subject', class_name=class_name, subject_name=subj.name, period_number=period_number, report_id=subj.report_id) }}"
                  class="btn btn-sm btn-outline-primary">{{ _('criteria_open_table') }}</a>
             </td>
           </tr>
