@@ -27,7 +27,10 @@
     </div>
     <a href="{{ url_for('admin.download_class_teacher_report_excel', period_number=period_number, segment=segment) }}"
        id="downloadExcelBtn"
-       class="btn btn-success">
+       class="btn btn-success"
+       data-async-export="class_teacher"
+       data-export-params='{"period_number": {{ period_number }}, "segment": {{ segment|tojson }}}'
+       title="Shift+click — синхронная загрузка">
       {{ _('download_excel') }}
     </a>
   </div>
@@ -374,10 +377,13 @@ document.addEventListener('DOMContentLoaded', function() {
     function updateDownloadLink() {
         const baseUrl = "{{ url_for('admin.download_class_teacher_report_excel', period_number=period_number, segment=segment) }}";
         const params = new URLSearchParams();
-        if (classSel.value) params.set('class', classSel.value);
-        if (classTeacherSel.value) params.set('class_teacher', classTeacherSel.value);
+        const exportParams = { period_number: {{ period_number }}, segment: {{ segment|tojson }} };
+        if (classSel.value) { params.set('class', classSel.value); exportParams.class_filter = classSel.value; }
+        if (classTeacherSel.value) { params.set('class_teacher', classTeacherSel.value); exportParams.class_teacher_filter = classTeacherSel.value; }
         const query = params.toString();
-        document.getElementById('downloadExcelBtn').href = query ? `${baseUrl}&${query}` : baseUrl;
+        const btn = document.getElementById('downloadExcelBtn');
+        btn.href = query ? `${baseUrl}&${query}` : baseUrl;
+        btn.setAttribute('data-export-params', JSON.stringify(exportParams));
     }
 
     classSel.addEventListener('change', () => { refreshFilters(); applyFilters(); updateDownloadLink(); });
@@ -395,4 +401,5 @@ document.addEventListener('DOMContentLoaded', function() {
     updateDownloadLink();
 });
 </script>
+<script src="{{ url_for('static', filename='js/admin_async_export.js') }}"></script>
 {% endblock %}

@@ -27,12 +27,12 @@ from ..services.api_helpers import (
 from ..services.class_grades_matrix import (
     build_class_grades_matrix,
     build_teacher_analytics_map,
-    categorize_students,
     class_grades_summary,
     get_teacher_subject_class_pairs,
     students_with_grades_count,
     subject_column_stats,
 )
+from ..services.grade_reports.class_teacher import categorize_students
 from ..services.year_grades import YEAR_UI_PERIOD
 from ..constants import MIN_DESKTOP_VERSION, normalize_subject_name, kazakh_sort_key
 

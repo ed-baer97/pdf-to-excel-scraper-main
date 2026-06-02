@@ -159,6 +159,11 @@ def create_app(config_object=None) -> Flask:
                     "CREATE INDEX ix_scrape_jobs_celery_task_id ON scrape_jobs (celery_task_id)",
                 )
 
+            _create_index_if_missing(
+                "ix_grade_report_school_period",
+                "CREATE INDEX ix_grade_report_school_period ON grade_reports (school_id, period_type, period_number)",
+            )
+
             # schools.ai_model (модель AI для школы, выбирает супер-админ)
             if not _has_column("schools", "ai_model"):
                 db.session.execute(text("ALTER TABLE schools ADD COLUMN ai_model VARCHAR(128)"))

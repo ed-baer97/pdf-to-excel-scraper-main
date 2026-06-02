@@ -6,7 +6,7 @@ version: '3.8'
 # - Nginx: Reverse proxy, SSL termination, rate limiting
 # - Web: Flask app (auth, API, admin panel)
 # - PostgreSQL: Main database
-# 
+#
 # Scraping, Word/Excel generation, AI text - handled by desktop app
 # =============================================================================
 
@@ -139,6 +139,41 @@ services:
     networks:
       - mektep-network
     restart: unless-stopped
+
+  # =============================================================================
+  # Async exports (optional): docker compose --profile async up
+  # =============================================================================
+  redis:
+    profiles: ["async"]
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks:
+      - mektep-network
+
+  worker:
+    profiles: ["async"]
+    build: .
+    command: celery -A webapp.celery_app worker --loglevel=info --pool=solo
+    environment:
+      - FLASK_ENV=production
+      - SECRET_KEY=${SECRET_KEY}
+      - DATABASE_URL=postgresql://mektep:${POSTGRES_PASSWORD:-mektep123}@db:5432/mektep_db
+      - USE_CELERY=1
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - UPLOAD_ROOT=/app/data/uploads
+    volumes:
+      - ./data:/app/data
+      - ./instance:/app/instance
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - mektep-network
 
 volumes:
   postgres-data:

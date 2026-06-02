@@ -232,7 +232,10 @@
     </a>
     {% if students %}
     <a href="{{ url_for('admin.download_grades_class_excel', class_name=class_name, period_number=period_number) }}"
-       class="btn btn-success btn-sm">
+       class="btn btn-success btn-sm"
+       data-async-export="grades_class"
+       data-export-params='{"period_number": {{ period_number }}, "class_name": {{ class_name|tojson }}}'
+       title="Shift+click — синхронная загрузка">
       <i class="bi bi-file-earmark-excel"></i> {{ _('download_excel') }}
     </a>
     {% endif %}
@@ -425,4 +428,5 @@
     document.getElementById("deleteSubjectForm").submit();
   }
 </script>
+<script src="{{ url_for('static', filename='js/admin_async_export.js') }}"></script>
 {% endblock %}

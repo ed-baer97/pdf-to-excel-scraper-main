@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from ..constants import normalize_subject_name
+from .grade_reports.payload import parse_grades_json
 from ..extensions import db
 from ..models import GradeReport, User
 
@@ -52,9 +53,8 @@ def grades_map_from_reports(reports: list, school_id: int) -> dict[str, dict[str
         subj = normalize_subject_name(report.subject_name, school_id)
         if not report.grades_json:
             continue
-        try:
-            data = json.loads(report.grades_json)
-        except json.JSONDecodeError:
+        data = parse_grades_json(report.grades_json)
+        if not data:
             continue
         for student in data.get("students", []) or []:
             name = (student.get("name") or "").strip()

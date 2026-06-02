@@ -44,7 +44,10 @@
       </div>
       <div class="col-auto">
         <a href="{{ url_for('admin.download_criteria_period_excel', period_number=period_number) }}"
-           class="btn btn-success btn-sm">
+           class="btn btn-success btn-sm"
+           data-async-export="criteria_zip"
+           data-export-params='{"period_number": {{ period_number }}}'
+           title="Shift+click — синхронная загрузка">
           <i class="bi bi-file-earmark-excel"></i> {{ _('criteria_download_excel_all') }}
         </a>
       </div>
@@ -115,4 +118,8 @@
     {% endif %}
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/admin_async_export.js') }}"></script>
 {% endblock %}

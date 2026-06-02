@@ -3,10 +3,10 @@
 import pytest
 
 from webapp.services.class_grades_matrix import (
-    categorize_students,
     subject_column_stats,
     students_with_grades_count,
 )
+from webapp.services.grade_reports.class_teacher import categorize_students
 
 
 def _matrix():

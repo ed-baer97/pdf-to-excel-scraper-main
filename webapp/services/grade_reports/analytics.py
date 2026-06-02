@@ -7,7 +7,6 @@ from typing import Any
 from ...constants import kazakh_sort_key, normalize_subject_name
 from ..report_teacher import get_report_teacher_name
 from .context import SchoolPeriodContext
-from .payload import report_analytics_payload
 
 
 def _class_sort_key(item: dict[str, Any]) -> tuple:
@@ -52,20 +51,15 @@ def build_analytics_maps(
     subjects_data_soch: dict = {}
     subjects_data_grades: dict = {}
 
-    for report in ctx.reports:
+    for report in ctx.filter_active():
         subj = normalize_subject_name(report.subject_name, school_id)
         cls = report.class_name
-        if cls not in ctx.active_class_names:
-            continue
         if not _segment_matches(cls, segment):
             continue
 
         teacher_name = get_report_teacher_name(report)
 
-        if report.analytics_json:
-            analytics = report_analytics_payload(report)
-        else:
-            analytics = None
+        analytics = ctx.analytics_payload(report) if report.analytics_json else None
 
         if analytics:
             sor_list = analytics.get("sor", [])

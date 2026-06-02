@@ -314,6 +314,12 @@ class GradeReport(db.Model):
             name="uq_grade_report_teacher_class_subject_period"
         ),
         db.Index("ix_grade_report_school_class_subject", "school_id", "class_name", "subject_name"),
+        db.Index(
+            "ix_grade_report_school_period",
+            "school_id",
+            "period_type",
+            "period_number",
+        ),
     )
 
     # Связи
@@ -323,4 +329,41 @@ class GradeReport(db.Model):
     def __repr__(self):
         """Строковое представление для отладки."""
         return f"<GradeReport {self.class_name} {self.subject_name} {self.period_type}/{self.period_number}>"
+
+
+class ExportJobStatus(str, Enum):
+    """Состояния фоновой задачи экспорта Excel."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    DONE = "done"
+    FAILED = "failed"
+
+
+class ExportJob(db.Model):
+    """Фоновый экспорт Excel (Celery или thread fallback)."""
+
+    __tablename__ = "export_jobs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey("schools.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    export_kind = db.Column(db.String(32), nullable=False)
+    params_json = db.Column(db.Text, nullable=False, default="{}")
+    status = db.Column(
+        db.String(16),
+        nullable=False,
+        default=ExportJobStatus.PENDING.value,
+    )
+    error = db.Column(db.Text, nullable=True)
+    file_path = db.Column(db.String(1024), nullable=True)
+    celery_task_id = db.Column(db.String(64), nullable=True, index=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    expires_at = db.Column(db.DateTime, nullable=True)
+
+    user = db.relationship("User", backref="export_jobs")
+    school = db.relationship("School", backref="export_jobs")
+
+    def __repr__(self):
+        return f"<ExportJob {self.id} {self.export_kind} {self.status}>"
 

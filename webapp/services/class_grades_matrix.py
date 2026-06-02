@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from flask import current_app
 
 from ..constants import kazakh_sort_key, normalize_subject_name
-from .api_helpers import get_period_reports_api, get_quarter_reports_api
+from .grade_reports.payload import report_analytics_payload, report_grades_payload
+from .grade_reports.queries import get_period_reports as get_period_reports_api
+from .grade_reports.queries import get_quarter_reports as get_quarter_reports_api
 from .report_teacher import get_report_teacher_name
 from .year_grades import (
     YEAR_UI_PERIOD,
@@ -106,12 +107,12 @@ def build_class_grades_matrix(
             subjects.add(subj)
             if not report.grades_json:
                 continue
-            try:
-                grades_data = json.loads(report.grades_json)
-            except json.JSONDecodeError:
-                current_app.logger.error(
-                    "Invalid JSON in report %s", report.id
-                )
+            grades_data = report_grades_payload(report)
+            if grades_data is None:
+                if report.grades_json:
+                    current_app.logger.error(
+                        "Invalid JSON in report %s", report.id
+                    )
                 continue
             for student in grades_data.get("students", []) or []:
                 name = (student.get("name") or "").strip()
@@ -181,81 +182,6 @@ def students_with_grades_count(students_data: dict[str, dict[str, dict]]) -> int
         for grades in students_data.values()
         if any(_parse_grade(g.get("grade")) is not None for g in grades.values())
     )
-
-
-def categorize_students(
-    students_data: dict[str, dict[str, dict]],
-    subject_teachers: dict[str, str],
-) -> dict[str, list]:
-    """Категории учеников для отчёта классного руководителя."""
-    categories: dict[str, list] = {
-        "excellent": [],
-        "good": [],
-        "one_4": [],
-        "satisfactory": [],
-        "one_3": [],
-        "poor": [],
-    }
-
-    students_grades: dict[str, dict[str, int]] = {}
-    for name, grades in students_data.items():
-        row: dict[str, int] = {}
-        for subj, gi in grades.items():
-            g = _parse_grade(gi.get("grade"))
-            if g is not None:
-                row[subj] = g
-        if row:
-            students_grades[name] = row
-
-    for name, subj_grades in sorted(
-        students_grades.items(), key=lambda item: kazakh_sort_key(item[0])
-    ):
-        grades_list = list(subj_grades.values())
-        if not grades_list:
-            continue
-
-        count_4 = grades_list.count(4)
-        count_3 = grades_list.count(3)
-        count_2 = sum(1 for g in grades_list if g <= 2)
-
-        if count_2 > 0:
-            failing_subjects = [
-                {"subject": s, "teacher": subject_teachers.get(s, "")}
-                for s, g in subj_grades.items()
-                if g <= 2
-            ]
-            categories["poor"].append(
-                {"name": name, "subjects": failing_subjects}
-            )
-        elif all(g >= 5 for g in grades_list):
-            categories["excellent"].append({"name": name})
-        elif count_4 == 1 and count_3 == 0:
-            subj_with_4 = next((s for s, g in subj_grades.items() if g == 4), "")
-            categories["one_4"].append(
-                {
-                    "name": name,
-                    "subject": subj_with_4,
-                    "teacher": subject_teachers.get(subj_with_4, ""),
-                }
-            )
-        elif count_3 == 0:
-            categories["good"].append({"name": name})
-        elif count_3 == 1:
-            subj_with_3 = next((s for s, g in subj_grades.items() if g == 3), "")
-            categories["one_3"].append(
-                {
-                    "name": name,
-                    "subject": subj_with_3,
-                    "teacher": subject_teachers.get(subj_with_3, ""),
-                }
-            )
-        else:
-            subjects_with_3 = [s for s, g in subj_grades.items() if g == 3]
-            categories["satisfactory"].append(
-                {"name": name, "subjects_with_3": subjects_with_3}
-            )
-
-    return categories
 
 
 def class_grades_summary(
@@ -357,10 +283,8 @@ def build_teacher_analytics_map(
     for report in reports:
         subj = normalize_subject_name(report.subject_name, school_id)
         key = (report.class_name, subj)
-        if not report.analytics_json:
-            continue
-        try:
-            out[key] = json.loads(report.analytics_json)
-        except json.JSONDecodeError:
-            pass
+        payload = report_analytics_payload(report)
+        if payload:
+            out[key] = payload
     return out
+

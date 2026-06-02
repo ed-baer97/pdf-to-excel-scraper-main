@@ -6,7 +6,12 @@
       <h2 class="mb-0">{{ _('analytics') }}</h2>
       <p class="text-muted mb-0">{{ _('analytics_desc') }}</p>
     </div>
-    <a href="{{ url_for('admin.download_analytics_excel', period_number=period_number) }}" id="downloadExcelBtn" class="btn btn-success">
+    <a href="{{ url_for('admin.download_analytics_excel', period_number=period_number) }}"
+       id="downloadExcelBtn"
+       class="btn btn-success"
+       data-async-export="analytics"
+       data-export-params='{"period_number": {{ period_number }}}'
+       title="Shift+click — синхронная загрузка">
       <i class="bi bi-file-earmark-excel"></i> {{ _('download_excel') }}
     </a>
   </div>
@@ -493,11 +498,14 @@ document.addEventListener('DOMContentLoaded', function() {
     function updateDownloadLink() {
         const baseUrl = "{{ url_for('admin.download_analytics_excel', period_number=period_number) }}";
         const params = new URLSearchParams();
-        if (subjectSel.value) params.set('subject', subjectSel.value);
-        if (classSel.value) params.set('class', classSel.value);
-        if (teacherSel.value) params.set('teacher', teacherSel.value);
+        const exportParams = { period_number: {{ period_number }} };
+        if (subjectSel.value) { params.set('subject', subjectSel.value); exportParams.filter_subject = subjectSel.value; }
+        if (classSel.value) { params.set('class', classSel.value); exportParams.filter_class = classSel.value; }
+        if (teacherSel.value) { params.set('teacher', teacherSel.value); exportParams.filter_teacher = teacherSel.value; }
         const qs = params.toString();
-        document.getElementById('downloadExcelBtn').href = qs ? baseUrl + '&' + qs : baseUrl;
+        const btn = document.getElementById('downloadExcelBtn');
+        btn.href = qs ? baseUrl + '&' + qs : baseUrl;
+        btn.setAttribute('data-export-params', JSON.stringify(exportParams));
     }
 
     // Инициализация
@@ -516,4 +524,5 @@ document.addEventListener('DOMContentLoaded', function() {
     applyFilters();
 });
 </script>
+<script src="{{ url_for('static', filename='js/admin_async_export.js') }}"></script>
 {% endblock %}

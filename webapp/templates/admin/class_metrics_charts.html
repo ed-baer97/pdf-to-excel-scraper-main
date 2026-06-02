@@ -122,7 +122,11 @@
   <div class="tab-content" id="metricsTabContent">
     <div class="tab-pane fade show active" id="overall-pane" role="tabpanel" aria-labelledby="overall-tab" tabindex="0">
       <div class="d-flex justify-content-end mb-3">
-        <a href="{{ url_for('admin.download_class_metrics_charts_excel', export_kind='overall', period_number=period_number, v=5) }}" class="btn btn-success btn-sm">
+        <a href="{{ url_for('admin.download_class_metrics_charts_excel', export_kind='overall', period_number=period_number, v=5) }}"
+           class="btn btn-success btn-sm"
+           data-async-export="metrics_charts"
+           data-export-params='{"period_number": {{ period_number }}, "chart_scope": "overall"}'
+           title="Shift+click — синхронная загрузка">
           <i class="bi bi-file-earmark-excel"></i> {{ _('metrics_download_overall') }}
         </a>
       </div>
@@ -180,7 +184,11 @@
 
     <div class="tab-pane fade" id="parallel-pane" role="tabpanel" aria-labelledby="parallel-tab" tabindex="0">
       <div class="d-flex justify-content-end mb-3">
-        <a href="{{ url_for('admin.download_class_metrics_charts_excel', export_kind='parallel', period_number=period_number, v=5) }}" class="btn btn-success btn-sm">
+        <a href="{{ url_for('admin.download_class_metrics_charts_excel', export_kind='parallel', period_number=period_number, v=5) }}"
+           class="btn btn-success btn-sm"
+           data-async-export="metrics_charts"
+           data-export-params='{"period_number": {{ period_number }}, "chart_scope": "parallel"}'
+           title="Shift+click — синхронная загрузка">
           <i class="bi bi-file-earmark-excel"></i> {{ _('metrics_download_parallel') }}
         </a>
       </div>
@@ -444,4 +452,5 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 });
 </script>
+<script src="{{ url_for('static', filename='js/admin_async_export.js') }}"></script>
 {% endblock %}

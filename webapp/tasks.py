@@ -19,7 +19,16 @@ from celery import shared_task
 from celery.utils.log import get_task_logger
 
 from .extensions import db
-from .models import ReportFile, Role, ScrapeJob, ScrapeJobStatus, School, User
+from .models import (
+    ExportJob,
+    ExportJobStatus,
+    ReportFile,
+    Role,
+    ScrapeJob,
+    ScrapeJobStatus,
+    School,
+    User,
+)
 
 logger = get_task_logger(__name__)
 
@@ -437,3 +446,21 @@ def cleanup_old_jobs(days: int = 30) -> dict[str, Any]:
     logger.info(f"Cleaned up {deleted_count} old jobs")
     
     return {"deleted": deleted_count}
+
+
+@shared_task(bind=True, max_retries=1, default_retry_delay=30)
+def run_export_task(self, job_id: int) -> dict[str, Any]:
+    """Фоновый экспорт Excel (analytics, criteria ZIP, class teacher, …)."""
+    from .services.export_runner import execute_export_job
+
+    try:
+        execute_export_job(job_id)
+        job = db.session.get(ExportJob, job_id)
+        if not job:
+            return {"success": False, "error": "Job not found"}
+        return {"success": job.status == "done", "status": job.status, "error": job.error}
+    except Exception as e:
+        logger.exception("Export job %s failed", job_id)
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=e)
+        return {"success": False, "error": str(e)}
