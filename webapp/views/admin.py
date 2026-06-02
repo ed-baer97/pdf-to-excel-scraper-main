@@ -78,7 +78,6 @@ from ..services.subject_aliases import ensure_default_aliases, restore_default_a
 from ..services.year_grades import (
     build_year_student_subjects,
     math_round_percent,
-    quality_success_from_grades,
     students_data_from_year_map,
 )
 from ..translator import gettext as translate_gettext
@@ -1356,24 +1355,18 @@ def grades_class(class_name: str):
         elif cat == "failing":
             grades_count["2"] += 1
 
+    # Метрики карточек считаем строго из распределения 5/4/3/2,
+    # чтобы "Качество" всегда совпадало с карточкой "Распределение".
     quality_percent = 0
     success_percent = 0
-    if period_number == YEAR_UI_PERIOD:
-        all_cells = [
-            g.get("grade")
-            for grades in students_data.values()
-            for g in grades.values()
-            if g.get("grade") is not None
-        ]
-        if all_cells:
-            quality_percent, success_percent = quality_success_from_grades(all_cells)
-    elif total_students > 0:
+    distribution_total = sum(grades_count.values())
+    if distribution_total > 0:
         quality_percent = round(
-            (grades_count["5"] + grades_count["4"]) / total_students * 100, 1
+            (grades_count["5"] + grades_count["4"]) / distribution_total * 100, 1
         )
         success_percent = round(
             (grades_count["5"] + grades_count["4"] + grades_count["3"])
-            / total_students
+            / distribution_total
             * 100,
             1,
         )
@@ -2633,12 +2626,44 @@ def download_class_teacher_report_excel():
     """Скачать отчёт классного руководителя в Excel — все классы, по категориям"""
     
     period_number = parse_ui_period_number(request.args.get("period_number", 2))
+    segment = request.args.get("segment")
+    class_filter = (request.args.get("class") or "").strip().lower()
+    class_teacher_filter = (request.args.get("class_teacher") or "").strip().lower()
+    student_filter = (request.args.get("student") or "").strip().lower()
     lang = session.get("language", "ru")
     period_name = ui_period_display_name(period_number, lambda k: translate_gettext(k, lang))
     
     # --- Собираем данные (повторяем логику class_teacher_report) ---
     all_reports = get_period_reports(current_user.school_id, period_number)
-    class_names = sorted({r.class_name for r in all_reports}, key=kazakh_sort_key)
+    active_class_names = {
+        row.name
+        for row in Class.query.filter_by(school_id=current_user.school_id).with_entities(Class.name).all()
+    }
+    all_reports = [r for r in all_reports if r.class_name in active_class_names]
+    all_class_names = {r.class_name for r in all_reports}
+
+    def _parse_grade_from_name(name: str):
+        grade_str = ""
+        for ch in str(name):
+            if ch.isdigit():
+                grade_str += ch
+            else:
+                break
+        return int(grade_str) if grade_str else None
+
+    class_names = []
+    for cls_name in all_class_names:
+        grade_num = _parse_grade_from_name(cls_name)
+        if segment == "1-4":
+            if grade_num and 1 <= grade_num <= 4:
+                class_names.append((grade_num, cls_name))
+        elif segment == "5-11":
+            if grade_num and 5 <= grade_num <= 11:
+                class_names.append((grade_num, cls_name))
+        else:
+            class_names.append((grade_num if grade_num is not None else 999, cls_name))
+
+    class_names = [name for _, name in sorted(class_names, key=lambda x: (x[0], kazakh_sort_key(x[1])))]
     
     categories_data = {
         "excellent": [], "good": [], "one_4": [],
@@ -2650,6 +2675,11 @@ def download_class_teacher_report_excel():
         class_teacher_name = ""
         if cls_obj and cls_obj.class_teacher:
             class_teacher_name = cls_obj.class_teacher.full_name or cls_obj.class_teacher.username
+
+        if class_filter and cls_name.strip().lower() != class_filter:
+            continue
+        if class_teacher_filter and class_teacher_name.strip().lower() != class_teacher_filter:
+            continue
         
         reports = [r for r in all_reports if r.class_name == cls_name]
         
@@ -2698,6 +2728,15 @@ def download_class_teacher_report_excel():
                 subjs3 = [{"subject_name": s, "grade": g} for s,g in sg.items() if g==3]
                 troech_d.append({"student": name, "subjects_1_4": subjs3[:4], "subjects_5": subjs3[4:]})
         
+        if student_filter:
+            excellent_s = [s for s in excellent_s if s.strip().lower() == student_filter]
+            good_s = [s for s in good_s if s.strip().lower() == student_filter]
+            one4_s = [s for s in one4_s if (s.get("student") or "").strip().lower() == student_filter]
+            satisf_s = [s for s in satisf_s if s.strip().lower() == student_filter]
+            troech_d = [s for s in troech_d if (s.get("student") or "").strip().lower() == student_filter]
+            one3_s = [s for s in one3_s if (s.get("student") or "").strip().lower() == student_filter]
+            poor_s = [s for s in poor_s if (s.get("student") or "").strip().lower() == student_filter]
+
         def _block(students):
             return {"class_name": cls_name, "class_teacher": class_teacher_name, "students": students}
         if excellent_s: categories_data["excellent"].append(_block(excellent_s))

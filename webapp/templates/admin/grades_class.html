@@ -340,7 +340,7 @@
                 {% for subject in subjects %}
                   <td class="text-center">{{ subject_stats[subject].count_5 }}</td>
                 {% endfor %}
-                <td class="text-center">{{ students|selectattr('count_4', 'equalto', 0)|list|length }}</td>
+                <td class="text-center"></td>
                 <td class="text-center"></td>
                 <td class="text-center"></td>
                 <td class="text-center"></td>
@@ -352,7 +352,7 @@
                   <td class="text-center">{{ subject_stats[subject].count_4 }}</td>
                 {% endfor %}
                 <td class="text-center"></td>
-                <td class="text-center">{{ students|selectattr('count_3', 'equalto', 0)|list|length }}</td>
+                <td class="text-center"></td>
                 <td class="text-center"></td>
                 <td class="text-center"></td>
               </tr>
@@ -364,7 +364,7 @@
                 {% endfor %}
                 <td class="text-center"></td>
                 <td class="text-center"></td>
-                <td class="text-center">{{ students|selectattr('count_2', 'equalto', 0)|list|length }}</td>
+                <td class="text-center"></td>
                 <td class="text-center"></td>
               </tr>
               <tr class="fw-bold bg-count-2">
@@ -376,7 +376,7 @@
                 <td class="text-center"></td>
                 <td class="text-center"></td>
                 <td class="text-center"></td>
-                <td class="text-center">{{ students|selectattr('count_2', 'greaterthan', 0)|list|length }}</td>
+                <td class="text-center"></td>
               </tr>
               <tr class="fw-bold table-success">
                 <td class="sticky-col"></td>

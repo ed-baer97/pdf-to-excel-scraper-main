@@ -25,7 +25,8 @@
         </ol>
       </nav>
     </div>
-    <a href="{{ url_for('admin.download_class_teacher_report_excel', period_number=period_number) }}"
+    <a href="{{ url_for('admin.download_class_teacher_report_excel', period_number=period_number, segment=segment) }}"
+       id="downloadExcelBtn"
        class="btn btn-success">
       {{ _('download_excel') }}
     </a>
@@ -59,6 +60,29 @@
           </ul>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Каскадные фильтры -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <div class="row g-3 align-items-end">
+        <div class="col-md-3">
+          <label for="filterClass" class="form-label">{{ _('class_col') }}</label>
+          <select id="filterClass" class="form-select">
+            <option value="">{{ _('all_classes') }}</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label for="filterClassTeacher" class="form-label">{{ _('class_teacher') }}</label>
+          <select id="filterClassTeacher" class="form-select">
+            <option value="">{{ _('all_teachers') }}</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <button type="button" id="resetFilters" class="btn btn-outline-secondary w-100">{{ _('reset_filters') }}</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -101,9 +125,6 @@
     {# ===== на 5 (отличники) ===== #}
     <div class="tab-pane fade show active" id="content-excellent" role="tabpanel">
       {% if categories_data.excellent %}
-        <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
-          <input type="text" class="form-control" placeholder="{{ _('search_placeholder') }}" onkeyup="filterTable('excellent', this.value)" style="max-width: 300px;">
-        </div>
         <div class="table-responsive">
           <table class="table table-sm table-hover" id="tableExcellent">
             <thead class="table-light"><tr>
@@ -112,7 +133,7 @@
             <tbody>
               {% for class_data in categories_data.excellent %}
                 {% for student in class_data.students %}
-                <tr data-class-name="{{ class_data.class_name|lower }}" data-student-name="{{ student|lower }}">
+                <tr data-class-name="{{ class_data.class_name|lower }}" data-student-name="{{ student|lower }}" data-class-teacher="{{ class_data.class_teacher|lower }}">
                   {% if loop.first %}<td rowspan="{{ class_data.students|length }}" class="align-middle text-center fw-bold">{{ class_data.class_name }}</td>{% endif %}
                   <td class="text-center">{{ loop.index }}</td>
                   <td><strong>{{ student }}</strong></td>
@@ -129,9 +150,6 @@
     {# ===== на 4 (хорошисты) ===== #}
     <div class="tab-pane fade" id="content-good" role="tabpanel">
       {% if categories_data.good %}
-        <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
-          <input type="text" class="form-control" placeholder="{{ _('search_placeholder') }}" onkeyup="filterTable('good', this.value)" style="max-width: 300px;">
-        </div>
         <div class="table-responsive">
           <table class="table table-sm table-hover" id="tableGood">
             <thead class="table-light"><tr>
@@ -140,7 +158,7 @@
             <tbody>
               {% for class_data in categories_data.good %}
                 {% for student in class_data.students %}
-                <tr data-class-name="{{ class_data.class_name|lower }}" data-student-name="{{ student|lower }}">
+                <tr data-class-name="{{ class_data.class_name|lower }}" data-student-name="{{ student|lower }}" data-class-teacher="{{ class_data.class_teacher|lower }}">
                   {% if loop.first %}<td rowspan="{{ class_data.students|length }}" class="align-middle text-center fw-bold">{{ class_data.class_name }}</td>{% endif %}
                   <td class="text-center">{{ loop.index }}</td>
                   <td><strong>{{ student }}</strong></td>
@@ -157,9 +175,6 @@
     {# ===== С одной 4 ===== #}
     <div class="tab-pane fade" id="content-one4" role="tabpanel">
       {% if categories_data.one_4 %}
-        <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
-          <input type="text" class="form-control" placeholder="{{ _('search_placeholder') }}" onkeyup="filterTable('one4', this.value)" style="max-width: 300px;">
-        </div>
         <div class="table-responsive">
           <table class="table table-sm table-hover" id="tableOne4">
             <thead class="table-light"><tr>
@@ -168,7 +183,7 @@
             <tbody>
               {% for class_data in categories_data.one_4 %}
                 {% for item in class_data.students %}
-                <tr data-class-name="{{ class_data.class_name|lower }}" data-student-name="{{ item.student|lower }}">
+                <tr data-class-name="{{ class_data.class_name|lower }}" data-student-name="{{ item.student|lower }}" data-class-teacher="{{ class_data.class_teacher|lower }}">
                   {% if loop.first %}<td rowspan="{{ class_data.students|length }}" class="align-middle text-center fw-bold">{{ class_data.class_name }}</td>{% endif %}
                   <td class="text-center">{{ loop.index }}</td>
                   <td><strong>{{ item.student }}</strong></td>
@@ -187,9 +202,6 @@
     {# ===== на 3 (троечники) — с предметами ===== #}
     <div class="tab-pane fade" id="content-satisfactory" role="tabpanel">
       {% if categories_data.satisfactory %}
-        <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
-          <input type="text" class="form-control" placeholder="{{ _('search_placeholder') }}" onkeyup="filterTable('satisfactory', this.value)" style="max-width: 300px;">
-        </div>
         <div class="table-responsive">
           <table class="table table-sm table-hover" id="tableSatisfactory">
             <thead class="table-light"><tr>
@@ -198,7 +210,7 @@
             <tbody>
               {% for class_data in categories_data.satisfactory %}
                 {% for item in class_data.troechniki_detailed %}
-                <tr data-class-name="{{ class_data.class_name|lower }}" data-student-name="{{ item.student|lower }}">
+                <tr data-class-name="{{ class_data.class_name|lower }}" data-student-name="{{ item.student|lower }}" data-class-teacher="{{ class_data.class_teacher|lower }}">
                   {% if loop.first %}<td rowspan="{{ class_data.troechniki_detailed|length }}" class="align-middle text-center fw-bold">{{ class_data.class_name }}</td>{% endif %}
                   <td><strong>{{ item.student }}</strong></td>
                   <td>{% if item.subjects_1_4|length > 0 %}{{ item.subjects_1_4[0].subject_name }} ({{ item.subjects_1_4[0].grade }}){% else %}<span class="text-muted">—</span>{% endif %}</td>
@@ -219,9 +231,6 @@
     {# ===== С одной 3 ===== #}
     <div class="tab-pane fade" id="content-one3" role="tabpanel">
       {% if categories_data.one_3 %}
-        <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
-          <input type="text" class="form-control" placeholder="{{ _('search_placeholder') }}" onkeyup="filterTable('one3', this.value)" style="max-width: 300px;">
-        </div>
         <div class="table-responsive">
           <table class="table table-sm table-hover" id="tableOne3">
             <thead class="table-light"><tr>
@@ -230,7 +239,7 @@
             <tbody>
               {% for class_data in categories_data.one_3 %}
                 {% for item in class_data.students %}
-                <tr data-class-name="{{ class_data.class_name|lower }}" data-student-name="{{ item.student|lower }}">
+                <tr data-class-name="{{ class_data.class_name|lower }}" data-student-name="{{ item.student|lower }}" data-class-teacher="{{ class_data.class_teacher|lower }}">
                   {% if loop.first %}<td rowspan="{{ class_data.students|length }}" class="align-middle text-center fw-bold">{{ class_data.class_name }}</td>{% endif %}
                   <td class="text-center">{{ loop.index }}</td>
                   <td><strong>{{ item.student }}</strong></td>
@@ -249,9 +258,6 @@
     {# ===== Неуспевающие ===== #}
     <div class="tab-pane fade" id="content-poor" role="tabpanel">
       {% if categories_data.poor %}
-        <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
-          <input type="text" class="form-control" placeholder="{{ _('search_placeholder') }}" onkeyup="filterTable('poor', this.value)" style="max-width: 300px;">
-        </div>
         <div class="table-responsive">
           <table class="table table-sm table-hover" id="tablePoor">
             <thead class="table-light"><tr>
@@ -260,7 +266,7 @@
             <tbody>
               {% for class_data in categories_data.poor %}
                 {% for item in class_data.students %}
-                <tr data-class-name="{{ class_data.class_name|lower }}" data-student-name="{{ item.student|lower }}">
+                <tr data-class-name="{{ class_data.class_name|lower }}" data-student-name="{{ item.student|lower }}" data-class-teacher="{{ class_data.class_teacher|lower }}">
                   {% if loop.first %}<td rowspan="{{ class_data.students|length }}" class="align-middle text-center fw-bold">{{ class_data.class_name }}</td>{% endif %}
                   <td class="text-center">{{ loop.index }}</td>
                   <td><strong>{{ item.student }}</strong></td>
@@ -280,19 +286,113 @@
 </div>
 
 <script>
-function filterTable(category, searchValue) {
-    const tabMap = {
-        'excellent': 'tableExcellent', 'good': 'tableGood', 'one4': 'tableOne4',
-        'satisfactory': 'tableSatisfactory', 'one3': 'tableOne3', 'poor': 'tablePoor'
+document.addEventListener('DOMContentLoaded', function() {
+    const classSel = document.getElementById('filterClass');
+    const classTeacherSel = document.getElementById('filterClassTeacher');
+    const resetBtn = document.getElementById('resetFilters');
+
+    const allRows = Array.from(document.querySelectorAll('.table tbody tr'));
+    const filterData = {
+        classToTeachers: {},
+        teacherToClasses: {},
     };
-    const table = document.getElementById(tabMap[category]);
-    if (!table) return;
-    const searchLower = searchValue.toLowerCase().trim();
-    table.querySelectorAll('tbody tr').forEach(row => {
-        const cn = row.getAttribute('data-class-name') || '';
-        const sn = row.getAttribute('data-student-name') || '';
-        row.style.display = (cn.includes(searchLower) || sn.includes(searchLower) || searchLower === '') ? '' : 'none';
+
+    function ensureSet(map, key) {
+        if (!map[key]) map[key] = new Set();
+        return map[key];
+    }
+
+    allRows.forEach(row => {
+        const cls = (row.dataset.className || '').trim();
+        const classTeacher = (row.dataset.classTeacher || '').trim();
+
+        if (!cls || !classTeacher) return;
+
+        ensureSet(filterData.classToTeachers, cls).add(classTeacher);
+        ensureSet(filterData.teacherToClasses, classTeacher).add(cls);
     });
-}
+
+    function getAllKeys(mapObj) {
+        return new Set(Object.keys(mapObj));
+    }
+
+    function populateSelect(selectEl, items, allLabel) {
+        const previous = selectEl.value;
+        selectEl.innerHTML = `<option value="">${allLabel}</option>`;
+        Array.from(items).sort((a, b) => a.localeCompare(b, 'ru')).forEach(value => {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = value;
+            selectEl.appendChild(option);
+        });
+        if (previous && items.has(previous)) selectEl.value = previous;
+    }
+
+    function intersectSets(a, b) {
+        return new Set(Array.from(a).filter(v => b.has(v)));
+    }
+
+    function refreshFilters() {
+        const selectedClass = classSel.value;
+        const selectedTeacher = classTeacherSel.value;
+
+        let classes = getAllKeys(filterData.classToTeachers);
+        let teachers = getAllKeys(filterData.teacherToClasses);
+
+        if (selectedClass) {
+            const clsTeachers = filterData.classToTeachers[selectedClass] || new Set();
+            teachers = intersectSets(teachers, clsTeachers);
+            classes = new Set([selectedClass]);
+        }
+
+        if (selectedTeacher) {
+            const teacherClasses = filterData.teacherToClasses[selectedTeacher] || new Set();
+            classes = intersectSets(classes, teacherClasses);
+            teachers = new Set([selectedTeacher]);
+        }
+
+        populateSelect(classSel, classes, '{{ _("all_classes") }}');
+        populateSelect(classTeacherSel, teachers, '{{ _("all_teachers") }}');
+    }
+
+    function applyFilters() {
+        const selectedClass = classSel.value;
+        const selectedTeacher = classTeacherSel.value;
+
+        allRows.forEach(row => {
+            const rowClass = (row.dataset.className || '').trim();
+            const rowTeacher = (row.dataset.classTeacher || '').trim();
+
+            let show = true;
+            if (selectedClass && rowClass !== selectedClass) show = false;
+            if (selectedTeacher && rowTeacher !== selectedTeacher) show = false;
+
+            row.style.display = show ? '' : 'none';
+        });
+    }
+
+    function updateDownloadLink() {
+        const baseUrl = "{{ url_for('admin.download_class_teacher_report_excel', period_number=period_number, segment=segment) }}";
+        const params = new URLSearchParams();
+        if (classSel.value) params.set('class', classSel.value);
+        if (classTeacherSel.value) params.set('class_teacher', classTeacherSel.value);
+        const query = params.toString();
+        document.getElementById('downloadExcelBtn').href = query ? `${baseUrl}&${query}` : baseUrl;
+    }
+
+    classSel.addEventListener('change', () => { refreshFilters(); applyFilters(); updateDownloadLink(); });
+    classTeacherSel.addEventListener('change', () => { refreshFilters(); applyFilters(); updateDownloadLink(); });
+    resetBtn.addEventListener('click', () => {
+        classSel.value = '';
+        classTeacherSel.value = '';
+        refreshFilters();
+        applyFilters();
+        updateDownloadLink();
+    });
+
+    refreshFilters();
+    applyFilters();
+    updateDownloadLink();
+});
 </script>
 {% endblock %}
