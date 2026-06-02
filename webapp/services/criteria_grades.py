@@ -13,6 +13,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from ..constants import kazakh_sort_key, normalize_subject_name
+from .grade_reports.payload import parse_grades_json
 from .report_teacher import get_report_teacher_name
 from .year_grades import YEAR_UI_PERIOD
 
@@ -68,16 +69,6 @@ def has_criteria_data(payload: dict[str, Any] | None) -> bool:
         return False
     students = criteria.get("students")
     return isinstance(students, list) and len(students) > 0
-
-
-def parse_grades_json(raw: str | None) -> dict[str, Any] | None:
-    if not raw:
-        return None
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        return None
-    return data if isinstance(data, dict) else None
 
 
 def ordered_criteria_sections(
@@ -864,22 +855,33 @@ def build_criteria_period_zip(
     ZIP: {организация}/{период}/{класс}/предметы.xlsx — по листу на предмет в файле.
     Возвращает None, если нет ни одного файла.
     """
+    from collections import defaultdict
+
     org = safe_path_segment(org_name)
     period_slug = criteria_period_path_slug(period_number)
 
-    by_class: dict[str, list] = {}
-    for report in reports:
-        if report.class_name not in active_class_names:
+    sheets_by_class: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for entry in list_criteria_subject_entries(reports, school_id, period_number):
+        class_name = entry["class_name"]
+        if class_name not in active_class_names:
             continue
-        by_class.setdefault(report.class_name, []).append(report)
+        table = table_for_period_payload(period_number, entry.get("payload"))
+        if not table:
+            continue
+        sheets_by_class[class_name].append(
+            {
+                "subject": entry["display_name"],
+                "table": table,
+                "payload": entry.get("payload"),
+                "teacher": entry.get("teacher") or "",
+            }
+        )
 
     zip_buf = BytesIO()
     files_added = 0
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for class_name in sorted(by_class.keys(), key=kazakh_sort_key):
-            subject_sheets = collect_subject_tables_for_class(
-                reports, class_name, period_number, school_id
-            )
+        for class_name in sorted(sheets_by_class.keys(), key=kazakh_sort_key):
+            subject_sheets = sheets_by_class[class_name]
             if not subject_sheets:
                 continue
             xlsx_io = build_subjects_workbook(class_name, subject_sheets)

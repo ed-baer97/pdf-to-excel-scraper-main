@@ -21,67 +21,10 @@ from ..models import (
 )
 
 
-from .criteria_grades import FINAL_UI_PERIOD
-from .year_grades import YEAR_UI_PERIOD, build_synthetic_year_reports
+from .grade_reports.queries import get_period_reports, get_quarter_reports
 
-
-def get_period_reports_api(school_id: int, period_number: int, **extra_filters):
-    """Отчёты за четверть/полугодие (1–4), синтетические за год (5), итог (6) — пусто."""
-    if period_number == FINAL_UI_PERIOD:
-        return GradeReport.query.filter_by(
-            school_id=school_id,
-            period_type="final",
-            period_number=1,
-            **extra_filters,
-        ).all()
-    if period_number == YEAR_UI_PERIOD:
-        return build_synthetic_year_reports(
-            school_id, get_quarter_reports_api, **extra_filters
-        )
-    return get_quarter_reports_api(school_id, period_number, **extra_filters)
-
-
-def get_quarter_reports_api(school_id: int, period_number: int, **extra_filters):
-    """Quarter-aware query that blends semester reports for quarters 2/4."""
-    reports = GradeReport.query.filter_by(
-        school_id=school_id,
-        period_type="quarter",
-        period_number=period_number,
-        **extra_filters,
-    ).all()
-
-    if period_number == 2:
-        reports += GradeReport.query.filter_by(
-            school_id=school_id,
-            period_type="semester",
-            period_number=1,
-            **extra_filters,
-        ).all()
-    elif period_number == 4:
-        reports += GradeReport.query.filter_by(
-            school_id=school_id,
-            period_type="semester",
-            period_number=2,
-            **extra_filters,
-        ).all()
-    else:
-        semester_rows = (
-            db.session.query(GradeReport.class_name, GradeReport.subject_name)
-            .filter_by(school_id=school_id, period_type="semester")
-            .distinct()
-            .all()
-        )
-        semester_pairs = {
-            (r.class_name, normalize_subject_name(r.subject_name, school_id))
-            for r in semester_rows
-        }
-        if semester_pairs:
-            reports = [
-                r for r in reports
-                if (r.class_name, normalize_subject_name(r.subject_name, school_id)) not in semester_pairs
-            ]
-
-    return reports
+get_period_reports_api = get_period_reports
+get_quarter_reports_api = get_quarter_reports
 
 
 def _normalize_org_name(value: str) -> str:

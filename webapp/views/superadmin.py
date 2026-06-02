@@ -13,15 +13,19 @@ from ..services.auth_guards import superadmin_required
 bp = Blueprint("superadmin", __name__, url_prefix="/superadmin")
 
 
+def _school_detail_redirect(school_id: int | None = None):
+    if school_id:
+        return redirect(url_for("superadmin.school_detail", school_id=school_id))
+    return redirect(url_for("superadmin.dashboard"))
+
+
 @bp.get("/")
 @superadmin_required
 def dashboard():
     schools = School.query.order_by(School.created_at.desc()).all()
-    admins = User.query.filter_by(role=Role.SCHOOL_ADMIN.value).order_by(User.created_at.desc()).all()
     return render_template(
         "superadmin/dashboard.html",
         schools=schools,
-        admins=admins,
         ai_model_choices=AI_MODEL_CHOICES,
     )
 
@@ -143,22 +147,21 @@ def toggle_cross_school(school_id: int):
     return redirect(url_for("superadmin.dashboard"))
 
 
-@bp.post("/admins/create")
+@bp.post("/schools/<int:school_id>/admins/create")
 @superadmin_required
-def create_admin():
-    school_id = int(request.form.get("school_id", "0") or "0")
+def create_admin(school_id: int):
     username = request.form.get("username", "").strip()
     full_name = request.form.get("full_name", "").strip()
-    if not username or not school_id:
-        flash("Нужны школа и логин админа.", "danger")
-        return redirect(url_for("superadmin.dashboard"))
-    if User.query.filter_by(username=username).first():
-        flash("Такой логин уже существует.", "danger")
-        return redirect(url_for("superadmin.dashboard"))
     school = db.session.get(School, school_id)
     if not school:
         flash("Школа не найдена.", "danger")
-        return redirect(url_for("superadmin.dashboard"))
+        return _school_detail_redirect()
+    if not username:
+        flash("Нужен логин админа.", "danger")
+        return _school_detail_redirect(school_id)
+    if User.query.filter_by(username=username).first():
+        flash("Такой логин уже существует.", "danger")
+        return _school_detail_redirect(school_id)
 
     pw = secrets.token_urlsafe(8)
     u = User(username=username, full_name=full_name or username, role=Role.SCHOOL_ADMIN.value, school_id=school_id, is_active=True)
@@ -167,7 +170,7 @@ def create_admin():
     db.session.add(u)
     db.session.commit()
     flash(f"Админ создан. Пароль: {pw}", "success")
-    return redirect(url_for("superadmin.dashboard"))
+    return _school_detail_redirect(school_id)
 
 
 @bp.get("/admins/<int:user_id>/password")
@@ -188,16 +191,16 @@ def update_admin_password(user_id: int):
     u = db.session.get(User, user_id)
     if not u or u.role != Role.SCHOOL_ADMIN.value:
         flash("Пользователь не найден.", "danger")
-        return redirect(url_for("superadmin.dashboard"))
+        return _school_detail_redirect()
     new_password = request.form.get("new_password", "").strip()
     if not new_password or len(new_password) < 4:
         flash("Пароль должен быть не менее 4 символов.", "danger")
-        return redirect(url_for("superadmin.dashboard"))
+        return _school_detail_redirect(u.school_id)
     u.set_password(new_password)
     u.password_enc = encrypt_password(new_password, current_app.config.get("PASSWORD_ENC_KEY", ""))
     db.session.commit()
     flash(f"Пароль для {u.username} обновлен.", "success")
-    return redirect(url_for("superadmin.dashboard"))
+    return _school_detail_redirect(u.school_id)
 
 
 @bp.post("/admins/<int:user_id>/edit")
@@ -207,15 +210,15 @@ def edit_admin(user_id: int):
     u = db.session.get(User, user_id)
     if not u or u.role != Role.SCHOOL_ADMIN.value:
         flash("Администратор не найден.", "danger")
-        return redirect(url_for("superadmin.dashboard"))
+        return _school_detail_redirect()
     full_name = request.form.get("full_name", "").strip()
     if not full_name:
         flash("ФИО не может быть пустым.", "danger")
-        return redirect(url_for("superadmin.dashboard"))
+        return _school_detail_redirect(u.school_id)
     u.full_name = full_name
     db.session.commit()
     flash(f'ФИО обновлено: "{full_name}".', "success")
-    return redirect(url_for("superadmin.dashboard"))
+    return _school_detail_redirect(u.school_id)
 
 
 @bp.post("/admins/<int:user_id>/delete")
@@ -225,13 +228,14 @@ def delete_admin(user_id: int):
     u = db.session.get(User, user_id)
     if not u or u.role != Role.SCHOOL_ADMIN.value:
         flash("Администратор не найден.", "danger")
-        return redirect(url_for("superadmin.dashboard"))
-    
+        return _school_detail_redirect()
+
+    school_id = u.school_id
     admin_name = u.full_name or u.username
     db.session.delete(u)
     db.session.commit()
     flash(f'Администратор "{admin_name}" удалён.', "success")
-    return redirect(url_for("superadmin.dashboard"))
+    return _school_detail_redirect(school_id)
 
 
 @bp.get("/schools/<int:school_id>")

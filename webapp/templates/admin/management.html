@@ -373,7 +373,7 @@
                   <tr>
                     <th>{{ _('subject_alias_kk') }}</th>
                     <th>{{ _('subject_canonical_ru') }}</th>
-                    <th class="text-end" style="width: 100px;">{{ _('actions') }}</th>
+                    <th class="text-end" style="width: 120px;">{{ _('actions') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -381,7 +381,11 @@
                   <tr>
                     <td>{{ row.alias_name }}</td>
                     <td>{{ row.canonical_name }}</td>
-                    <td class="text-end">
+                    <td class="text-end text-nowrap">
+                      <button type="button" class="btn btn-sm btn-outline-secondary me-1"
+                              onclick="editSubjectAliasModal({{ row.id }}, {{ row.alias_name|tojson }}, {{ row.canonical_name|tojson }})">
+                        <i class="bi bi-pencil"></i>
+                      </button>
                       <form method="post" action="{{ url_for('admin.delete_subject_alias', alias_id=row.id) }}" class="d-inline" onsubmit="return confirm({{ _('confirm_delete_subject_alias')|tojson }});">
                         <input type="hidden" name="next_url">
                         <button type="submit" class="btn btn-sm btn-outline-danger">
@@ -469,6 +473,35 @@
     </div>
   </div>
 
+  <!-- Edit Subject Alias Modal -->
+  <div class="modal fade" id="editSubjectAliasModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">{{ _('edit_subject_alias') }}</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <form id="editSubjectAliasForm" method="post">
+          <input type="hidden" name="next_url">
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label">{{ _('subject_alias_kk') }}</label>
+              <input type="text" class="form-control" name="alias_name" id="editSubjectAliasName" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">{{ _('subject_canonical_ru') }}</label>
+              <input type="text" class="form-control" name="canonical_name" id="editSubjectCanonicalName" required>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('cancel_btn') }}</button>
+            <button type="submit" class="btn btn-primary">{{ _('save_btn') }}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <!-- Edit Teacher Modal -->
   <div class="modal fade" id="editTeacherModal" tabindex="-1">
     <div class="modal-dialog">
@@ -543,6 +576,14 @@
       const orig = btn.textContent;
       btn.textContent = {{ _("copied")|tojson }};
       setTimeout(() => { btn.textContent = orig; }, 2000);
+    }
+
+    function editSubjectAliasModal(aliasId, aliasName, canonicalName) {
+      document.getElementById('editSubjectAliasForm').action = `/admin/subject-aliases/${aliasId}/edit`;
+      document.getElementById('editSubjectAliasName').value = aliasName;
+      document.getElementById('editSubjectCanonicalName').value = canonicalName;
+      const modal = new bootstrap.Modal(document.getElementById('editSubjectAliasModal'));
+      modal.show();
     }
 
     // Edit Teacher modal

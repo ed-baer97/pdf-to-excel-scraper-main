@@ -21,15 +21,6 @@ from flask import (
 from flask_login import current_user
 from sqlalchemy import func
 from openpyxl import Workbook, load_workbook
-from openpyxl.chart import BarChart, Series, Reference
-from openpyxl.chart.axis import ChartLines, Scaling
-from openpyxl.chart.label import DataLabelList
-from openpyxl.chart.plotarea import DataTable as ChartDataTable
-from openpyxl.chart.shapes import GraphicalProperties
-from openpyxl.drawing.colors import ColorChoice
-from openpyxl.drawing.line import LineProperties
-from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
-from openpyxl.utils import get_column_letter
 
 from ..extensions import db
 from ..models import Role, User, GradeReport, Class, School, ReportFile, TeacherSubject, TeacherClass, SubjectNameAlias
@@ -51,6 +42,25 @@ from ..services.admin_dashboard import (
     student_class_summary_category,
     teacher_accordion_group,
     ui_period_display_name,
+)
+from ..services.grade_reports.analytics import (
+    build_analytics_maps,
+    sort_analytics_subject_keys,
+)
+from ..services.grade_reports.context import load_school_period_context
+from ..services.grade_reports.overview import (
+    build_grades_overview,
+    sort_grades_overview_classes,
+)
+from ..services.grade_reports.payload import (
+    report_analytics_payload,
+    report_grades_payload,
+)
+from ..services.grade_reports.excel import (
+    build_analytics_workbook,
+    build_class_metrics_charts_workbook,
+    build_class_teacher_workbook,
+    build_grades_class_workbook,
 )
 from ..services.criteria_grades import (
     build_criteria_period_zip,
@@ -202,6 +212,35 @@ def create_subject_alias():
     return _redirect_back(url_for("admin.management") + "#subjects-dict-tab")
 
 
+@bp.post("/subject-aliases/<int:alias_id>/edit")
+@admin_required
+def update_subject_alias(alias_id: int):
+    """Обновить запись словаря предметов школы."""
+    row = SubjectNameAlias.query.filter_by(
+        id=alias_id, school_id=current_user.school_id
+    ).first_or_404()
+    alias_name = (request.form.get("alias_name") or "").strip()
+    canonical_name = (request.form.get("canonical_name") or "").strip()
+    if not alias_name or not canonical_name:
+        flash("Укажите оба названия: вариант и каноническое (русское).", "danger")
+        return _redirect_back(url_for("admin.management") + "#subjects-dict-tab")
+
+    conflict = SubjectNameAlias.query.filter(
+        SubjectNameAlias.school_id == current_user.school_id,
+        SubjectNameAlias.alias_name == alias_name,
+        SubjectNameAlias.id != alias_id,
+    ).first()
+    if conflict:
+        flash(f'Вариант «{alias_name}» уже есть в словаре.', "danger")
+        return _redirect_back(url_for("admin.management") + "#subjects-dict-tab")
+
+    row.alias_name = alias_name
+    row.canonical_name = canonical_name
+    db.session.commit()
+    flash(f'Запись «{alias_name}» обновлена.', "success")
+    return _redirect_back(url_for("admin.management") + "#subjects-dict-tab")
+
+
 @bp.post("/subject-aliases/<int:alias_id>/delete")
 @admin_required
 def delete_subject_alias(alias_id: int):
@@ -268,73 +307,6 @@ def class_metrics_charts():
     return resp
 
 
-def _avg_pct_metrics(values: list) -> float | None:
-    """Среднее по числам в строке метрик (как «Итого» на странице диаграмм)."""
-    nums: list[float] = []
-    for v in values:
-        try:
-            if v is not None:
-                nums.append(float(v))
-        except (TypeError, ValueError):
-            pass
-    if not nums:
-        return None
-    return round(sum(nums) / len(nums), 1)
-
-
-def _excel_chart_sheet_name(wb: Workbook, title: str, index: int) -> str:
-    """Имя листа для гистограммы: ≤31 символа, без \\/*?:[], уникально в книге."""
-    bad = "\\/*?:[]"
-    raw = "".join("_" if c in bad else c for c in (title or "").strip()) or f"График_{index + 1}"
-    for n in range(50):
-        suffix = "" if n == 0 else f" ({n})"
-        base = raw if n == 0 else raw[: max(1, 31 - len(suffix))].rstrip() + suffix
-        candidate = base[:31]
-        if candidate and candidate not in wb.sheetnames:
-            return candidate
-    return f"Гр_{index + 1}"[:31]
-
-
-def _apply_rect_table_borders(
-    ws,
-    top_row: int,
-    bottom_row: int,
-    left_col: int,
-    right_col: int,
-) -> None:
-    """Рамка таблицы: снаружи жирнее, внутри «перегородки» между строками/столбцами."""
-    v_in = Side(style="thin", color="9CA3AF")
-    h_mid = Side(style="medium", color="6C757D")
-    out = Side(style="medium", color="495057")
-    for rr in range(top_row, bottom_row + 1):
-        for cc in range(left_col, right_col + 1):
-            left = out if cc == left_col else v_in
-            right = out if cc == right_col else v_in
-            top = out if rr == top_row else h_mid
-            bottom = out if rr == bottom_row else h_mid
-            ws.cell(row=rr, column=cc).border = Border(left=left, right=right, top=top, bottom=bottom)
-
-
-def _chart_title_large(text: str, sz: int = 2200):
-    """Заголовок диаграммы Excel с увеличенным шрифтом (sz — размер в 1/100 pt, OOXML)."""
-    from openpyxl.chart.text import Text
-    from openpyxl.chart.title import Title
-    from openpyxl.drawing.text import CharacterProperties, Paragraph, ParagraphProperties, RegularTextRun
-
-    rpr = CharacterProperties(sz=sz, b=True)
-    paras = []
-    for line in text.split("\n"):
-        run = RegularTextRun(t=line)
-        run.rPr = rpr
-        pp = ParagraphProperties()
-        pp.defRPr = CharacterProperties(sz=sz, b=True)
-        paras.append(Paragraph(r=[run], pPr=pp))
-    t = Title()
-    t.tx = Text()
-    t.tx.rich.paragraphs = paras
-    return t
-
-
 @bp.get("/class-metrics-charts/download-excel")
 @admin_required
 def download_class_metrics_charts_excel_legacy():
@@ -352,7 +324,7 @@ def download_class_metrics_charts_excel_legacy():
 @bp.get("/class-metrics-charts/download-excel/<export_kind>")
 @admin_required
 def download_class_metrics_charts_excel(export_kind: str):
-    """Книга Excel: лист «Таблицы» — все числа; далее по одному листу на гистограмму. export_kind=overall — «Общее» + сводка; parallel — «По параллелям»."""
+    """Книга Excel: лист «Таблицы» и гистограммы (overall / parallel)."""
     period_number = parse_ui_period_number(request.args.get("period_number", 2))
     export_kind = (export_kind or "").strip().lower()
     if export_kind not in ("overall", "parallel"):
@@ -368,441 +340,21 @@ def download_class_metrics_charts_excel(export_kind: str):
         for row in Class.query.filter_by(school_id=current_user.school_id).with_entities(Class.name).all()
     }
     agg = aggregate_class_metrics(current_user.school_id, period_number, active_class_names)
-    labels, quality_values, success_values = chart_series_from_class_totals(agg["class_totals"])
-    class_totals = agg["class_totals"]
-
-    PAGE_WIDE_COL = 8
-    thin_grid = Side(style="thin", color="CED4DA")
-    grid_border = Border(left=thin_grid, right=thin_grid, top=thin_grid, bottom=thin_grid)
-    table_header_fill = PatternFill(start_color="0D6EFD", end_color="0D6EFD", fill_type="solid")
-    header_font_white = Font(bold=True, color="FFFFFF", size=11)
-    card_header_fill = PatternFill(start_color="0D6EFD", end_color="0D6EFD", fill_type="solid")
-    card_header_font = Font(bold=True, color="FFFFFF", size=13)
-    section_label_fill = PatternFill(start_color="F8F9FA", end_color="F8F9FA", fill_type="solid")
-    section_label_font = Font(bold=True, size=11, color="0D6EFD")
-    sheet_band_fill = PatternFill(start_color="F8F9FA", end_color="F8F9FA", fill_type="solid")
-    fill_q = PatternFill(start_color="ECF4FF", end_color="ECF4FF", fill_type="solid")
-    fill_s = PatternFill(start_color="D1E7DD", end_color="D1E7DD", fill_type="solid")
-    label_font = Font(bold=True, size=10, color="212529")
-
-    rows_data: list[dict] = []
-    for i, name in enumerate(labels):
-        rows_data.append(
-            {
-                "name": name,
-                "grade": parse_class_grade(name),
-                "q": quality_values[i],
-                "s": success_values[i],
-                "w": int(class_totals.get(name, {}).get("weight_total") or 0),
-            }
-        )
-    rows_data.sort(key=lambda r: class_name_sort_key(r["name"]))
-
-    def filt(pred):
-        return [r for r in rows_data if r["grade"] is not None and pred(r["grade"])]
-
-    overall_sections = [
-        (tr("metrics_excel_sec_1_4"), lambda g: 1 <= g <= 4, tr("metrics_excel_empty_1_4")),
-        (tr("metrics_excel_sec_5_9"), lambda g: 5 <= g <= 9, tr("metrics_excel_empty_5_9")),
-        (tr("metrics_excel_sec_9_11"), lambda g: 9 <= g <= 11, tr("metrics_excel_empty_9_11")),
-        (tr("metrics_excel_sec_9"), lambda g: g == 9, tr("metrics_excel_empty_9")),
-        (tr("metrics_excel_sec_11"), lambda g: g == 11, tr("metrics_excel_empty_11")),
-    ]
-
-    grades_parallel = sorted({r["grade"] for r in rows_data if r["grade"] is not None})
-
-    if scope == "overall":
-        note_scope = tr("metrics_excel_note_overall")
-    else:
-        note_scope = tr("metrics_excel_note_parallel")
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = tr("metrics_excel_sheet_tables")
-    ws.sheet_view.showGridLines = False
-    chart_specs: list[dict] = []
-
-    if period_number == YEAR_UI_PERIOD:
-        period_label = tr("metrics_excel_period_year")
-    elif 1 <= period_number <= 4:
-        period_label = tr(f"metrics_excel_period_q{period_number}")
-    else:
-        period_label = tr("metrics_excel_period_fallback").format(n=period_number)
-    r = 1
-    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=5)
-    ws.merge_cells(start_row=r, start_column=6, end_row=r, end_column=PAGE_WIDE_COL)
-    t1 = ws.cell(row=r, column=1, value=tr("metrics_excel_title"))
-    t1.font = Font(bold=True, size=17, color="212529")
-    t1.fill = sheet_band_fill
-    t1.alignment = Alignment(horizontal="left", vertical="center", indent=2)
-    tper = ws.cell(row=r, column=6, value=period_label)
-    tper.font = Font(size=11, color="495057")
-    tper.fill = sheet_band_fill
-    tper.alignment = Alignment(horizontal="right", vertical="center", indent=2)
-    ws.row_dimensions[r].height = 32
-    r += 1
-    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=PAGE_WIDE_COL)
-    st = ws.cell(row=r, column=1, value=tr("metrics_excel_subtitle"))
-    st.font = Font(size=11, color="6C757D")
-    st.fill = sheet_band_fill
-    st.alignment = Alignment(horizontal="left", vertical="center", indent=2)
-    ws.row_dimensions[r].height = 22
-    r += 1
-    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=PAGE_WIDE_COL)
-    tnote = ws.cell(row=r, column=1, value=note_scope)
-    tnote.font = Font(size=9, color="6C757D")
-    tnote.fill = sheet_band_fill
-    tnote.alignment = Alignment(horizontal="left", vertical="center", indent=2, wrap_text=True)
-    ws.row_dimensions[r].height = 34
-    r += 1
-    r += 1
-    _apply_rect_table_borders(ws, 1, 3, 1, PAGE_WIDE_COL)
-
-    def write_table_block(title: str, subset: list[dict], empty_msg: str) -> None:
-        nonlocal r
-        n = len(subset)
-        if not subset:
-            empty_w = 4
-            r_head = r
-            ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=empty_w)
-            h_empty = ws.cell(row=r, column=1, value=title)
-            h_empty.font = card_header_font
-            h_empty.fill = card_header_fill
-            h_empty.alignment = Alignment(horizontal="left", vertical="center", indent=2)
-            ws.row_dimensions[r].height = 22
-            r += 1
-            r_msg = r
-            ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=empty_w)
-            em = ws.cell(row=r, column=1, value=empty_msg)
-            em.font = Font(italic=True, size=10, color="6C757D")
-            em.fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
-            em.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True, indent=2)
-            ws.row_dimensions[r].height = 22
-            r += 1
-            _apply_rect_table_borders(ws, r_head, r_msg, 1, empty_w)
-            r += 1
-            r += 1
-            return
-
-        last_tot_col = 2 + n
-        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=last_tot_col)
-        h = ws.cell(row=r, column=1, value=title)
-        h.font = card_header_font
-        h.fill = card_header_fill
-        h.alignment = Alignment(horizontal="left", vertical="center", indent=2)
-        ws.row_dimensions[r].height = 24
-        r += 1
-
-        qvals = [rec["q"] for rec in subset]
-        svals = [rec["s"] for rec in subset]
-        q_tot = _avg_pct_metrics(qvals)
-        s_tot = _avg_pct_metrics(svals)
-
-        hdr_row = r
-        c0 = ws.cell(row=hdr_row, column=1, value=tr("metrics_col_indicator"))
-        c0.font = header_font_white
-        c0.fill = table_header_fill
-        c0.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        for i, rec in enumerate(subset, start=2):
-            chc = ws.cell(row=hdr_row, column=i, value=rec["name"])
-            chc.font = header_font_white
-            chc.fill = table_header_fill
-            chc.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        ct = ws.cell(row=hdr_row, column=last_tot_col, value=tr("metrics_col_total"))
-        ct.font = header_font_white
-        ct.fill = table_header_fill
-        ct.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        ws.row_dimensions[hdr_row].height = 20
-
-        row_q = hdr_row + 1
-        ws.cell(row=row_q, column=1, value=tr("metrics_row_quality")).font = label_font
-        ws.cell(row=row_q, column=1).alignment = Alignment(horizontal="left", vertical="center", indent=2)
-        ws.cell(row=row_q, column=1).fill = fill_q
-        for ci, v in enumerate(qvals, start=2):
-            cell = ws.cell(row=row_q, column=ci, value=v)
-            cell.alignment = Alignment(horizontal="center", vertical="center")
-            cell.fill = fill_q
-            if isinstance(v, (int, float)):
-                cell.number_format = "0.0"
-        cqt = ws.cell(
-            row=row_q,
-            column=last_tot_col,
-            value=q_tot if q_tot is not None else "—",
-        )
-        cqt.alignment = Alignment(horizontal="center", vertical="center")
-        cqt.font = Font(bold=True, size=10)
-        cqt.fill = fill_q
-        if q_tot is not None:
-            cqt.number_format = "0.0"
-
-        row_s = hdr_row + 2
-        ws.cell(row=row_s, column=1, value=tr("metrics_row_success")).font = label_font
-        ws.cell(row=row_s, column=1).alignment = Alignment(horizontal="left", vertical="center", indent=2)
-        ws.cell(row=row_s, column=1).fill = fill_s
-        for ci, v in enumerate(svals, start=2):
-            cell = ws.cell(row=row_s, column=ci, value=v)
-            cell.alignment = Alignment(horizontal="center", vertical="center")
-            cell.fill = fill_s
-            if isinstance(v, (int, float)):
-                cell.number_format = "0.0"
-        cst = ws.cell(
-            row=row_s,
-            column=last_tot_col,
-            value=s_tot if s_tot is not None else "—",
-        )
-        cst.alignment = Alignment(horizontal="center", vertical="center")
-        cst.font = Font(bold=True, size=10)
-        cst.fill = fill_s
-        if s_tot is not None:
-            cst.number_format = "0.0"
-        ws.row_dimensions[row_q].height = 19
-        ws.row_dimensions[row_s].height = 19
-
-        _apply_rect_table_borders(ws, hdr_row, row_s, 1, last_tot_col)
-
-        chart_specs.append(
-            {
-                "title": title,
-                "hdr_row": hdr_row,
-                "row_q": row_q,
-                "row_s": row_s,
-                "last_tot_col": last_tot_col,
-                "n": n,
-            }
-        )
-        r = row_s + 1
-        r += 2
-
-    def append_histogram_sheets() -> None:
-        for idx, spec in enumerate(chart_specs):
-            title = spec["title"]
-            hdr_row = spec["hdr_row"]
-            row_q = spec["row_q"]
-            row_s = spec["row_s"]
-            last_tot_col = spec["last_tot_col"]
-            n = spec["n"]
-            wsheet = _excel_chart_sheet_name(wb, title, idx)
-            wch = wb.create_sheet(title=wsheet)
-            chart = BarChart()
-            chart.type = "col"
-            chart.grouping = "clustered"
-            chart.varyColors = False
-            chart.style = 2
-            chart.title = _chart_title_large(title)
-            chart.title.overlay = False
-            # У openpyxl по умолчанию у catAx и valAx axPos="l" — для столбчатой диаграммы нужно X снизу, Y слева.
-            chart.x_axis.axPos = "b"
-            chart.y_axis.axPos = "l"
-            # Явно «не удалять» оси — в Excel галочка «Оси» в элементах диаграммы (delete val="0" в XML).
-            chart.x_axis.delete = False
-            chart.y_axis.delete = False
-            chart.y_axis.title = "%"
-            chart.y_axis.scaling = Scaling(min=0, max=100)
-            chart.y_axis.majorUnit = 10
-            chart.y_axis.tickLblPos = "nextTo"
-            chart.y_axis.spPr = GraphicalProperties(
-                ln=LineProperties(
-                    w=19050,
-                    solidFill=ColorChoice(srgbClr="495057"),
-                )
-            )
-            chart.y_axis.majorGridlines = ChartLines(
-                spPr=GraphicalProperties(
-                    ln=LineProperties(
-                        w=6350,
-                        solidFill=ColorChoice(srgbClr="DEE2E6"),
-                    )
-                )
-            )
-            chart.plot_area.spPr = GraphicalProperties(
-                noFill=True,
-                ln=LineProperties(noFill=True),
-            )
-            chart.x_axis.lblAlgn = "ctr"
-            chart.x_axis.tickLblPos = "low"
-            chart.x_axis.spPr = GraphicalProperties(
-                ln=LineProperties(
-                    w=19050,
-                    solidFill=ColorChoice(srgbClr="495057"),
-                )
-            )
-            chart.gapWidth = 78
-            # Явно только значение — иначе Excel показывает «ряд; категория; значение» и всё слипается.
-            chart.dLbls = DataLabelList(
-                showVal=True,
-                showSerName=False,
-                showCatName=False,
-                showLegendKey=False,
-                dLblPos="inEnd",
-            )
-            chart.width = min(36.0, max(15.0, 5.5 + (n + 1) * 1.28))
-            if n <= 2:
-                chart.height = 12.0
-            elif n <= 6:
-                chart.height = 13.0
-            elif n <= 12:
-                chart.height = 14.5
-            else:
-                chart.height = 16.0
-
-            cats = Reference(ws, min_col=2, min_row=hdr_row, max_col=last_tot_col)
-            ser_q = Series(
-                Reference(ws, min_col=2, min_row=row_q, max_col=last_tot_col),
-                title=tr("metrics_row_quality"),
-            )
-            ser_s = Series(
-                Reference(ws, min_col=2, min_row=row_s, max_col=last_tot_col),
-                title=tr("metrics_row_success"),
-            )
-            chart.append(ser_q)
-            chart.append(ser_s)
-            chart.set_categories(cats)
-            chart.series[0].graphicalProperties.solidFill = ColorChoice(srgbClr="0D6EFD")
-            chart.series[1].graphicalProperties.solidFill = ColorChoice(srgbClr="198754")
-            chart.plot_area.dTable = ChartDataTable(
-                showHorzBorder=True,
-                showVertBorder=True,
-                showOutline=True,
-                showKeys=True,
-            )
-            chart.legend = None
-            wch.add_chart(chart, "A1")
-
-    if scope == "overall":
-        row_ob = r
-        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=PAGE_WIDE_COL)
-        tab_o = ws.cell(row=r, column=1, value=tr("metrics_excel_section_overall"))
-        tab_o.font = section_label_font
-        tab_o.fill = section_label_fill
-        tab_o.alignment = Alignment(horizontal="left", vertical="center", indent=2)
-        ws.row_dimensions[r].height = 24
-        r += 1
-        r += 1
-        _apply_rect_table_borders(ws, row_ob, row_ob, 1, PAGE_WIDE_COL)
-
-        first_block_row = r
-
-        for title, pred, empty_msg in overall_sections:
-            write_table_block(title, filt(pred), empty_msg)
-
-        row_sv = r
-        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=PAGE_WIDE_COL)
-        sv = ws.cell(row=r, column=1, value=tr("metrics_excel_section_summary"))
-        sv.font = section_label_font
-        sv.fill = section_label_fill
-        sv.alignment = Alignment(horizontal="left", vertical="center", indent=2)
-        ws.row_dimensions[r].height = 24
-        r += 1
-        _apply_rect_table_borders(ws, row_sv, row_sv, 1, PAGE_WIDE_COL)
-
-        sum_top = r
-        sq, ss = agg.get("school_quality"), agg.get("school_success")
-        for col, val in enumerate(
-            (tr("metrics_col_indicator"), tr("metrics_row_quality"), tr("metrics_row_success")),
-            start=1,
-        ):
-            c = ws.cell(row=r, column=col, value=val)
-            c.font = header_font_white
-            c.fill = table_header_fill
-            c.border = grid_border
-            c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        ws.row_dimensions[r].height = 19
-        r += 1
-
-        c_school = ws.cell(row=r, column=1, value=tr("metrics_excel_school_weighted"))
-        c_school.border = grid_border
-        c_school.alignment = Alignment(horizontal="left", vertical="center", indent=2)
-        c_school.font = Font(size=10, color="212529")
-        for col, val in ((2, sq), (3, ss)):
-            cell = ws.cell(row=r, column=col, value=val if val is not None else "—")
-            cell.border = grid_border
-            cell.alignment = Alignment(horizontal="center", vertical="center")
-            cell.font = Font(size=10)
-            if isinstance(val, (int, float)):
-                cell.number_format = "0.0"
-        ws.row_dimensions[r].height = 18
-        r += 1
-
-        parallel = agg.get("parallel") or {}
-        for pkey, title in (
-            ("1-4", tr("metrics_excel_parallel_1_4")),
-            ("5-9", tr("metrics_excel_parallel_5_9")),
-            ("10-11", tr("metrics_excel_parallel_10_11")),
-        ):
-            pr = parallel.get(pkey) or {}
-            pq, ps = pr.get("quality"), pr.get("success")
-            c1 = ws.cell(row=r, column=1, value=title)
-            c1.border = grid_border
-            c1.alignment = Alignment(horizontal="left", vertical="center", indent=2)
-            c1.font = Font(size=10, color="212529")
-            for col, val in ((2, pq), (3, ps)):
-                cell = ws.cell(row=r, column=col, value=val if val is not None else "—")
-                cell.border = grid_border
-                cell.alignment = Alignment(horizontal="center", vertical="center")
-                cell.font = Font(size=10)
-                if isinstance(val, (int, float)):
-                    cell.number_format = "0.0"
-            ws.row_dimensions[r].height = 18
-            r += 1
-        _apply_rect_table_borders(ws, sum_top, r - 1, 1, 3)
-    else:
-        row_tp = r
-        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=PAGE_WIDE_COL)
-        tab_p = ws.cell(row=r, column=1, value=tr("metrics_excel_section_parallel"))
-        tab_p.font = section_label_font
-        tab_p.fill = section_label_fill
-        tab_p.alignment = Alignment(horizontal="left", vertical="center", indent=2)
-        ws.row_dimensions[r].height = 24
-        r += 1
-        r += 1
-        _apply_rect_table_borders(ws, row_tp, row_tp, 1, PAGE_WIDE_COL)
-
-        first_block_row = r
-
-        for g in grades_parallel:
-            sub = [x for x in rows_data if x["grade"] == g]
-            write_table_block(
-                f"{g} {tr('metrics_class_word')}",
-                sub,
-                tr("metrics_parallel_empty").format(grade=g),
-            )
-
-    for spec in chart_specs:
-        for col_i in range(2, spec["last_tot_col"] + 1):
-            letter = get_column_letter(col_i)
-            prev = ws.column_dimensions[letter].width
-            ws.column_dimensions[letter].width = max(float(prev or 10), 11.0)
-
-    append_histogram_sheets()
-
-    ws.freeze_panes = f"A{first_block_row}"
-    ws.column_dimensions["A"].width = 26
-    for col_i in range(2, 15):
-        letter = get_column_letter(col_i)
-        prev = ws.column_dimensions[letter].width
-        ws.column_dimensions[letter].width = max(float(prev or 10), 11.5)
-
-    suffix_key = "metrics_excel_fn_suf_o" if scope == "overall" else "metrics_excel_fn_suf_p"
-    filename_local = tr("metrics_excel_fn_pattern").format(period=period_number, suffix=tr(suffix_key))
-    suffix_ascii = "overall" if scope == "overall" else "parallel"
-    filename_ascii = f"stat_classes_{period_number}ch_{suffix_ascii}.xlsx"
-    wb.properties.title = filename_local.replace(".xlsx", "")
-
-    output = BytesIO()
-    wb.save(output)
-    output.seek(0)
-
+    output, filename_ascii, filename_local = build_class_metrics_charts_workbook(
+        scope=scope,
+        period_number=period_number,
+        agg=agg,
+        tr=tr,
+    )
     resp = send_file(
         output,
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         as_attachment=True,
         download_name=filename_ascii,
     )
-    # Явное имя UTF-8 — иначе Edge/Excel иногда подставляют старое имя или заголовок из ячейки A1.
     resp.headers["Content-Disposition"] = (
         f'attachment; filename="{filename_ascii}"; filename*=UTF-8\'\'{quote(filename_local)}'
     )
-    # GET-скачивание часто кэшируется браузером — без этого виден «старый» xlsx после правок сервера.
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     resp.headers["Pragma"] = "no-cache"
     return resp
@@ -1177,53 +729,10 @@ def grades_overview():
     # Параметры фильтрации (только четверти)
     period_number = parse_ui_period_number(request.args.get("period_number", 2))
 
-    active_class_names = {
-        row.name
-        for row in Class.query.filter_by(school_id=current_user.school_id).with_entities(Class.name).all()
-    }
-    
-    # Получаем отчёты (включая полугодовые для четвертей 2/4)
-    reports = get_period_reports(current_user.school_id, period_number)
-    
-    # Группируем по классам (только классы из актуального списка школы — как на диаграммах)
-    classes_data = {}
-    for report in reports:
-        class_name = report.class_name
-        if class_name not in active_class_names:
-            continue
-        if class_name not in classes_data:
-            classes_data[class_name] = {
-                "class_name": class_name,
-                "subjects": [],
-                "students_count": 0,
-                "quality_percent": 0,
-                "success_percent": 0
-            }
-        
-        subj_norm = normalize_subject_name(report.subject_name, current_user.school_id)
-        if subj_norm not in classes_data[class_name]["subjects"]:
-            classes_data[class_name]["subjects"].append(subj_norm)
-        
-        # Собираем статистику
-        if report.grades_json:
-            try:
-                grades_data = json.loads(report.grades_json)
-                classes_data[class_name]["students_count"] = max(
-                    classes_data[class_name]["students_count"],
-                    grades_data.get("total_students", 0)
-                )
-            except json.JSONDecodeError:
-                pass
-    
-    # Сортируем классы
-    sorted_classes = sorted(classes_data.values(), key=lambda x: kazakh_sort_key(x["class_name"]))
-    
-    # Группировка по аккордеонам (1-4, 5-9, 10-11)
-    classes_by_accordion = {"1-4": [], "5-9": [], "10-11": []}
-    for cls in sorted_classes:
-        group = class_accordion_group(cls["class_name"])
-        classes_by_accordion[group].append(cls)
-    
+    ctx = load_school_period_context(current_user.school_id, period_number)
+    classes_data = build_grades_overview(ctx)
+    sorted_classes, classes_by_accordion = sort_grades_overview_classes(classes_data)
+
     return render_template(
         "admin/grades_overview.html",
         classes=sorted_classes,
@@ -1266,7 +775,7 @@ def grades_class(class_name: str):
 
             if report.grades_json:
                 try:
-                    grades_data = json.loads(report.grades_json)
+                    grades_data = report_grades_payload(report)
                     for student in grades_data.get("students", []):
                         name = student.get("name")
                         if not name:
@@ -1398,15 +907,10 @@ def criteria_overview():
     """Критериальное оценивание: период → список классов."""
     period_number = parse_ui_period_number(request.args.get("period_number", 2))
 
-    active_class_names = {
-        row.name
-        for row in Class.query.filter_by(school_id=current_user.school_id).with_entities(Class.name).all()
-    }
-
-    reports = get_period_reports(current_user.school_id, period_number)
+    ctx = load_school_period_context(current_user.school_id, period_number)
     classes_data = collect_classes_with_criteria(
-        reports,
-        active_class_names,
+        ctx.reports,
+        ctx.active_class_names,
         current_user.school_id,
         period_number,
     )
@@ -1438,17 +942,13 @@ def download_criteria_period_excel():
         flash("Школа не найдена.", "danger")
         return redirect(url_for("admin.criteria_overview", period_number=period_number))
 
-    active_class_names = {
-        row.name
-        for row in Class.query.filter_by(school_id=current_user.school_id).with_entities(Class.name).all()
-    }
-    reports = get_period_reports(current_user.school_id, period_number)
+    ctx = load_school_period_context(current_user.school_id, period_number)
 
     zip_buf = build_criteria_period_zip(
         school.name,
         period_number,
-        reports,
-        active_class_names,
+        ctx.reports,
+        ctx.active_class_names,
         current_user.school_id,
     )
     if not zip_buf:
@@ -1562,7 +1062,7 @@ def criteria_subject(class_name: str, subject_name: str):
 
     display_name = entry["display_name"]
     teacher_name = entry.get("teacher") or get_report_teacher_name(report)
-    payload = entry.get("payload") or parse_grades_json(report.grades_json)
+    payload = entry.get("payload") or report_grades_payload(report)
     criteria = criteria_from_grades_payload(payload) if payload else None
     final_block = final_from_grades_payload(payload) if payload else None
 
@@ -1683,142 +1183,20 @@ def analytics_home():
     # Параметры (только четверти)
     period_number = parse_ui_period_number(request.args.get("period_number", 2))
     segment = request.args.get("segment")  # '1-4' или '5-11' или None
-    
-    # Получаем отчёты (включая полугодовые для четвертей 2/4)
-    reports = get_period_reports(current_user.school_id, period_number)
-    active_class_names = {
-        row.name
-        for row in Class.query.filter_by(school_id=current_user.school_id).with_entities(Class.name).all()
-    }
-    
-    # Группируем по предмету
-    # subjects_data_sor:    { subject_name -> [{ class_name, sor_list, teacher, has_data }] }
-    # subjects_data_soch:   { subject_name -> [{ class_name, count_5..2, total, quality, success_rate, teacher, has_data }] }
-    # subjects_data_grades: { subject_name -> [{ class_name, count_5..2, total, quality, success_rate, teacher, has_data }] }
-    
-    subjects_data_sor = {}
-    subjects_data_soch = {}
-    subjects_data_grades = {}
-    
-    for report in reports:
-        subj = normalize_subject_name(report.subject_name, current_user.school_id)
-        cls = report.class_name
-        if cls not in active_class_names:
-            continue
-        # Фильтрация по сегменту классов 1-4 / 5-11, если указан
-        grade_str = ""
-        for ch in str(cls):
-            if ch.isdigit():
-                grade_str += ch
-            else:
-                break
-        grade_num = int(grade_str) if grade_str else None
-        if segment == "1-4" and not (grade_num and 1 <= grade_num <= 4):
-            continue
-        if segment == "5-11" and not (grade_num and 5 <= grade_num <= 11):
-            continue
-        teacher_name = get_report_teacher_name(report)
-        
-        # --- СОР / СОЧ из analytics_json ---
-        if report.analytics_json:
-            try:
-                analytics = json.loads(report.analytics_json)
-                
-                # СОР
-                sor_list = analytics.get("sor", [])
-                # Добавляем total, quality, success_rate к каждому СОР если нет
-                for sor in sor_list:
-                    total = (sor.get("count_5", 0) + sor.get("count_4", 0) +
-                             sor.get("count_3", 0) + sor.get("count_2", 0))
-                    sor["total"] = total
-                    if total > 0:
-                        sor["quality"] = round((sor.get("count_5", 0) + sor.get("count_4", 0)) / total * 100, 1)
-                        sor["success_rate"] = round((total - sor.get("count_2", 0)) / total * 100, 1)
-                    else:
-                        sor["quality"] = None
-                        sor["success_rate"] = None
-                
-                if subj not in subjects_data_sor:
-                    subjects_data_sor[subj] = []
-                subjects_data_sor[subj].append({
-                    "class_name": cls,
-                    "sor_list": sor_list,
-                    "teacher": teacher_name,
-                    "has_data": len(sor_list) > 0
-                })
-                
-                # СОЧ
-                soch = analytics.get("soch", {})
-                if soch:
-                    s5 = soch.get("count_5", 0)
-                    s4 = soch.get("count_4", 0)
-                    s3 = soch.get("count_3", 0)
-                    s2 = soch.get("count_2", 0)
-                    total = s5 + s4 + s3 + s2
-                    if subj not in subjects_data_soch:
-                        subjects_data_soch[subj] = []
-                    subjects_data_soch[subj].append({
-                        "class_name": cls,
-                        "count_5": s5, "count_4": s4, "count_3": s3, "count_2": s2,
-                        "total": total,
-                        "quality": round((s5 + s4) / total * 100, 1) if total else None,
-                        "success_rate": round((total - s2) / total * 100, 1) if total else None,
-                        "teacher": teacher_name,
-                        "has_data": total > 0
-                    })
-            except json.JSONDecodeError:
-                pass
-        
-        # --- Оценки из grades_json ---
-        if report.grades_json:
-            try:
-                grades_data = json.loads(report.grades_json)
-                s5 = s4 = s3 = s2 = 0
-                for student in grades_data.get("students", []):
-                    g = student.get("grade")
-                    if g == 5: s5 += 1
-                    elif g == 4: s4 += 1
-                    elif g == 3: s3 += 1
-                    elif g is not None and g <= 2: s2 += 1
-                total = s5 + s4 + s3 + s2
-                quality = grades_data.get("quality_percent") or (round((s5 + s4) / total * 100, 1) if total else None)
-                success = grades_data.get("success_percent") or (round((total - s2) / total * 100, 1) if total else None)
-                
-                if subj not in subjects_data_grades:
-                    subjects_data_grades[subj] = []
-                subjects_data_grades[subj].append({
-                    "class_name": cls,
-                    "count_5": s5, "count_4": s4, "count_3": s3, "count_2": s2,
-                    "total": total,
-                    "quality": quality,
-                    "success_rate": success,
-                    "teacher": teacher_name,
-                    "has_data": total > 0
-                })
-            except json.JSONDecodeError:
-                pass
-    
-    # Сортируем классы внутри каждого предмета (по номеру класса 1..11, затем по имени)
-    def _class_sort_key(item):
-        name = str(item.get("class_name") or "")
-        grade_str = ""
-        for ch in name:
-            if ch.isdigit():
-                grade_str += ch
-            else:
-                break
-        grade_num = int(grade_str) if grade_str else 999
-        return (grade_num, name)
 
-    for subj_data in [subjects_data_sor, subjects_data_soch, subjects_data_grades]:
-        for subj in subj_data:
-            subj_data[subj].sort(key=_class_sort_key)
-    
+    ctx = load_school_period_context(current_user.school_id, period_number)
+    subjects_data_sor, subjects_data_soch, subjects_data_grades = build_analytics_maps(
+        ctx, segment=segment
+    )
+    subjects_data_sor, subjects_data_soch, subjects_data_grades = sort_analytics_subject_keys(
+        subjects_data_sor, subjects_data_soch, subjects_data_grades
+    )
+
     return render_template(
         "admin/analytics_home.html",
-        subjects_data_sor=dict(sorted(subjects_data_sor.items(), key=lambda item: kazakh_sort_key(item[0]))),
-        subjects_data_soch=dict(sorted(subjects_data_soch.items(), key=lambda item: kazakh_sort_key(item[0]))),
-        subjects_data_grades=dict(sorted(subjects_data_grades.items(), key=lambda item: kazakh_sort_key(item[0]))),
+        subjects_data_sor=subjects_data_sor,
+        subjects_data_soch=subjects_data_soch,
+        subjects_data_grades=subjects_data_grades,
         period_number=period_number,
         segment=segment
     )
@@ -1849,93 +1227,9 @@ def download_analytics_excel():
     lang = session.get("language", "ru")
     period_name = ui_period_display_name(period_number, lambda k: translate_gettext(k, lang))
     
-    reports = get_period_reports(current_user.school_id, period_number)
-    active_class_names = {
-        row.name
-        for row in Class.query.filter_by(school_id=current_user.school_id).with_entities(Class.name).all()
-    }
-    
-    subjects_data_sor = {}
-    subjects_data_soch = {}
-    subjects_data_grades = {}
-    
-    for report in reports:
-        subj = normalize_subject_name(report.subject_name, current_user.school_id)
-        cls = report.class_name
-        if cls not in active_class_names:
-            continue
-        teacher_name = get_report_teacher_name(report)
-        
-        if report.analytics_json:
-            try:
-                analytics = json.loads(report.analytics_json)
-                sor_list = analytics.get("sor", [])
-                for sor in sor_list:
-                    total = (sor.get("count_5", 0) + sor.get("count_4", 0) +
-                             sor.get("count_3", 0) + sor.get("count_2", 0))
-                    sor["total"] = total
-                    if total > 0:
-                        sor["quality"] = round((sor.get("count_5", 0) + sor.get("count_4", 0)) / total * 100, 1)
-                        sor["success_rate"] = round((total - sor.get("count_2", 0)) / total * 100, 1)
-                    else:
-                        sor["quality"] = None
-                        sor["success_rate"] = None
-                
-                if subj not in subjects_data_sor:
-                    subjects_data_sor[subj] = []
-                subjects_data_sor[subj].append({
-                    "class_name": cls, "sor_list": sor_list, "teacher": teacher_name, "has_data": len(sor_list) > 0
-                })
-                
-                soch = analytics.get("soch", {})
-                if soch:
-                    s5 = soch.get("count_5", 0)
-                    s4 = soch.get("count_4", 0)
-                    s3 = soch.get("count_3", 0)
-                    s2 = soch.get("count_2", 0)
-                    total = s5 + s4 + s3 + s2
-                    if subj not in subjects_data_soch:
-                        subjects_data_soch[subj] = []
-                    subjects_data_soch[subj].append({
-                        "class_name": cls,
-                        "count_5": s5, "count_4": s4, "count_3": s3, "count_2": s2,
-                        "total": total,
-                        "quality": round((s5 + s4) / total * 100, 1) if total else None,
-                        "success_rate": round((total - s2) / total * 100, 1) if total else None,
-                        "teacher": teacher_name, "has_data": total > 0
-                    })
-            except json.JSONDecodeError:
-                pass
-        
-        if report.grades_json:
-            try:
-                grades_data = json.loads(report.grades_json)
-                s5 = s4 = s3 = s2 = 0
-                for student in grades_data.get("students", []):
-                    g = student.get("grade")
-                    if g == 5: s5 += 1
-                    elif g == 4: s4 += 1
-                    elif g == 3: s3 += 1
-                    elif g is not None and g <= 2: s2 += 1
-                total = s5 + s4 + s3 + s2
-                quality = grades_data.get("quality_percent") or (round((s5 + s4) / total * 100, 1) if total else None)
-                success = grades_data.get("success_percent") or (round((total - s2) / total * 100, 1) if total else None)
-                
-                if subj not in subjects_data_grades:
-                    subjects_data_grades[subj] = []
-                subjects_data_grades[subj].append({
-                    "class_name": cls,
-                    "count_5": s5, "count_4": s4, "count_3": s3, "count_2": s2,
-                    "total": total, "quality": quality, "success_rate": success,
-                    "teacher": teacher_name, "has_data": total > 0
-                })
-            except json.JSONDecodeError:
-                pass
-    
-    for subj_data in [subjects_data_sor, subjects_data_soch, subjects_data_grades]:
-        for subj in subj_data:
-            subj_data[subj].sort(key=lambda x: x["class_name"])
-    
+    ctx = load_school_period_context(current_user.school_id, period_number)
+    subjects_data_sor, subjects_data_soch, subjects_data_grades = build_analytics_maps(ctx)
+
     # Применяем фильтры (subject, class, teacher)
     if filter_subject or filter_class or filter_teacher:
         subjects_data_sor, subjects_data_soch, subjects_data_grades = _apply_analytics_filters(
@@ -1943,122 +1237,18 @@ def download_analytics_excel():
             filter_subject, filter_class, filter_teacher
         )
     
-    styles = _create_excel_styles()
-    wb = Workbook()
-    
-    def _write_sor_sheet():
-        ws = wb.active
-        ws.title = "СОР"[:31]
-        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=10)
-        ws["A1"] = f"Аналитика СОР ({period_name})"
-        ws["A1"].font = Font(bold=True, size=14)
-        ws["A1"].alignment = Alignment(horizontal="center")
-        row = 3
-        for subj, data_list in sorted(subjects_data_sor.items(), key=lambda item: kazakh_sort_key(item[0])):
-            ws.cell(row=row, column=1, value=subj).font = Font(bold=True, size=12)
-            row += 1
-            headers = ["Класс", "СОР", "5", "4", "3", "2", "Всего", "Качество %", "Успеваемость %", "Учитель"]
-            for col, h in enumerate(headers, 1):
-                c = ws.cell(row=row, column=col, value=h)
-                c.font = styles["header_font"]
-                c.fill = styles["header_fill"]
-                c.border = styles["border"]
-            row += 1
-            for item in data_list:
-                if item["sor_list"]:
-                    for sor in item["sor_list"]:
-                        ws.cell(row=row, column=1, value=item["class_name"]).border = styles["border"]
-                        ws.cell(row=row, column=2, value=sor.get("name", "-")).border = styles["border"]
-                        ws.cell(row=row, column=3, value=sor.get("count_5", 0)).border = styles["border"]
-                        ws.cell(row=row, column=4, value=sor.get("count_4", 0)).border = styles["border"]
-                        ws.cell(row=row, column=5, value=sor.get("count_3", 0)).border = styles["border"]
-                        ws.cell(row=row, column=6, value=sor.get("count_2", 0)).border = styles["border"]
-                        ws.cell(row=row, column=7, value=sor.get("total", 0)).border = styles["border"]
-                        ws.cell(row=row, column=8, value=sor.get("quality") or "-").border = styles["border"]
-                        ws.cell(row=row, column=9, value=sor.get("success_rate") or "-").border = styles["border"]
-                        ws.cell(row=row, column=10, value=item["teacher"] or "-").border = styles["border"]
-                        row += 1
-                else:
-                    ws.cell(row=row, column=1, value=item["class_name"]).border = styles["border"]
-                    for col in range(2, 10):
-                        ws.cell(row=row, column=col, value="-").border = styles["border"]
-                    ws.cell(row=row, column=10, value=item["teacher"] or "-").border = styles["border"]
-                    row += 1
-            row += 2
-    
-    def _write_soch_sheet():
-        ws = wb.create_sheet(title="СОЧ"[:31])
-        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=9)
-        ws["A1"] = f"Аналитика СОЧ ({period_name})"
-        ws["A1"].font = Font(bold=True, size=14)
-        ws["A1"].alignment = Alignment(horizontal="center")
-        row = 3
-        for subj, data_list in sorted(subjects_data_soch.items(), key=lambda item: kazakh_sort_key(item[0])):
-            ws.cell(row=row, column=1, value=subj).font = Font(bold=True, size=12)
-            row += 1
-            headers = ["Класс", "5", "4", "3", "2", "Всего", "Качество %", "Успеваемость %", "Учитель"]
-            for col, h in enumerate(headers, 1):
-                c = ws.cell(row=row, column=col, value=h)
-                c.font = styles["header_font"]
-                c.fill = styles["header_fill"]
-                c.border = styles["border"]
-            row += 1
-            for item in data_list:
-                ws.cell(row=row, column=1, value=item["class_name"]).border = styles["border"]
-                ws.cell(row=row, column=2, value=item["count_5"]).border = styles["border"]
-                ws.cell(row=row, column=3, value=item["count_4"]).border = styles["border"]
-                ws.cell(row=row, column=4, value=item["count_3"]).border = styles["border"]
-                ws.cell(row=row, column=5, value=item["count_2"]).border = styles["border"]
-                ws.cell(row=row, column=6, value=item["total"]).border = styles["border"]
-                ws.cell(row=row, column=7, value=item["quality"] or "-").border = styles["border"]
-                ws.cell(row=row, column=8, value=item["success_rate"] or "-").border = styles["border"]
-                ws.cell(row=row, column=9, value=item["teacher"] or "-").border = styles["border"]
-                row += 1
-            row += 2
-    
-    def _write_grades_sheet():
-        ws = wb.create_sheet(title="Оценки"[:31])
-        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=9)
-        ws["A1"] = f"Аналитика оценок ({period_name})"
-        ws["A1"].font = Font(bold=True, size=14)
-        ws["A1"].alignment = Alignment(horizontal="center")
-        row = 3
-        for subj, data_list in sorted(subjects_data_grades.items(), key=lambda item: kazakh_sort_key(item[0])):
-            ws.cell(row=row, column=1, value=subj).font = Font(bold=True, size=12)
-            row += 1
-            headers = ["Класс", "5", "4", "3", "2", "Всего", "Качество %", "Успеваемость %", "Учитель"]
-            for col, h in enumerate(headers, 1):
-                c = ws.cell(row=row, column=col, value=h)
-                c.font = styles["header_font"]
-                c.fill = styles["header_fill"]
-                c.border = styles["border"]
-            row += 1
-            for item in data_list:
-                ws.cell(row=row, column=1, value=item["class_name"]).border = styles["border"]
-                ws.cell(row=row, column=2, value=item["count_5"]).border = styles["border"]
-                ws.cell(row=row, column=3, value=item["count_4"]).border = styles["border"]
-                ws.cell(row=row, column=4, value=item["count_3"]).border = styles["border"]
-                ws.cell(row=row, column=5, value=item["count_2"]).border = styles["border"]
-                ws.cell(row=row, column=6, value=item["total"]).border = styles["border"]
-                ws.cell(row=row, column=7, value=item["quality"] or "-").border = styles["border"]
-                ws.cell(row=row, column=8, value=item["success_rate"] or "-").border = styles["border"]
-                ws.cell(row=row, column=9, value=item["teacher"] or "-").border = styles["border"]
-                row += 1
-            row += 2
-    
-    _write_sor_sheet()
-    _write_soch_sheet()
-    _write_grades_sheet()
-    
-    output = BytesIO()
-    wb.save(output)
-    output.seek(0)
+    output = build_analytics_workbook(
+        period_name,
+        subjects_data_sor,
+        subjects_data_soch,
+        subjects_data_grades,
+    )
     filename = f"Аналитика_СОР_СОЧ_{period_name.replace(' ', '_')}.xlsx"
     return send_file(
         output,
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         as_attachment=True,
-        download_name=filename
+        download_name=filename,
     )
 
 
@@ -2146,7 +1336,7 @@ def class_teacher_report():
             
             if report.grades_json:
                 try:
-                    grades_data = json.loads(report.grades_json)
+                    grades_data = report_grades_payload(report)
                     for student in grades_data.get("students", []):
                         name = student.get("name")
                         grade = student.get("grade")
@@ -2258,63 +1448,6 @@ def class_teacher_report():
 # Excel Export Routes
 # ==============================================================================
 
-def _create_excel_styles():
-    """Создание стилей для Excel"""
-    header_font = Font(bold=True, color="FFFFFF")
-    header_fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
-    header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    
-    border = Border(
-        left=Side(style='thin'),
-        right=Side(style='thin'),
-        top=Side(style='thin'),
-        bottom=Side(style='thin')
-    )
-    
-    # Заливки для оценок
-    grade_fills = {
-        5: PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid"),  # Зеленый
-        4: PatternFill(start_color="BDD7EE", end_color="BDD7EE", fill_type="solid"),  # Голубой
-        3: PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid"),  # Желтый
-        2: PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid"),  # Красный
-    }
-    
-    # Заливка для пограничных оценок
-    border_highlight_fill = PatternFill(start_color="FFF3CD", end_color="FFF3CD", fill_type="solid")
-    
-    # Заливки для строк/столбцов подсчёта
-    count_5_fill = PatternFill(start_color="D1FAE5", end_color="D1FAE5", fill_type="solid")
-    count_4_fill = PatternFill(start_color="DBEAFE", end_color="DBEAFE", fill_type="solid")
-    count_3_fill = PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid")
-    count_2_fill = PatternFill(start_color="FFE4E6", end_color="FFE4E6", fill_type="solid")
-    
-    # Заливки для качества/успеваемости
-    quality_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
-    success_fill = PatternFill(start_color="BDD7EE", end_color="BDD7EE", fill_type="solid")
-    
-    return {
-        "header_font": header_font,
-        "header_fill": header_fill,
-        "header_alignment": header_alignment,
-        "border": border,
-        "grade_fills": grade_fills,
-        "border_highlight_fill": border_highlight_fill,
-        "count_5_fill": count_5_fill,
-        "count_4_fill": count_4_fill,
-        "count_3_fill": count_3_fill,
-        "count_2_fill": count_2_fill,
-        "quality_fill": quality_fill,
-        "success_fill": success_fill,
-    }
-
-
-def _is_border_percent(pct):
-    """Проверка: пограничный процент (37-39%, 61-64%, 82-84%)"""
-    if pct is None:
-        return False
-    return (37 <= pct <= 39) or (61 <= pct <= 64) or (82 <= pct <= 84)
-
-
 @bp.get("/grades/class/<class_name>/download-excel")
 @admin_required
 def download_grades_class_excel(class_name: str):
@@ -2336,7 +1469,7 @@ def download_grades_class_excel(class_name: str):
         
         if report.grades_json:
             try:
-                grades_data = json.loads(report.grades_json)
+                grades_data = report_grades_payload(report)
                 students_list = grades_data.get("students", [])
                 
                 for student in students_list:
@@ -2395,228 +1528,21 @@ def download_grades_class_excel(class_name: str):
         subject_stats[subj] = {"count_5": s5, "count_4": s4, "count_3": s3, "count_2": s2,
                                 "total": total_in_subj, "quality_percent": quality, "success_percent": success}
     
-    # Создаём Excel
-    wb = Workbook()
-    ws = wb.active
-    ws.title = f"Оценки {class_name}"
-    
-    styles = _create_excel_styles()
-    bold_font = Font(bold=True)
-    center_align = Alignment(horizontal="center")
-    
-    # Заголовок
     lang = session.get("language", "ru")
     period_name = ui_period_display_name(period_number, lambda k: translate_gettext(k, lang))
-    total_cols = len(subjects_list) + 6  # №, ФИО, предметы..., Кол5, Кол4, Кол3, Кол2
-    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=total_cols)
-    ws["A1"] = f"Сводная таблица оценок: {class_name} ({period_name})"
-    ws["A1"].font = Font(bold=True, size=14)
-    ws["A1"].alignment = Alignment(horizontal="center")
-    
-    # Шапка таблицы
-    header_row = 3
-    headers = ["№", "ФИО ученика"] + subjects_list + ["Кол-во 5", "Кол-во 4", "Кол-во 3", "Кол-во 2"]
-    
-    for col, header in enumerate(headers, 1):
-        cell = ws.cell(row=header_row, column=col, value=header)
-        cell.font = styles["header_font"]
-        cell.fill = styles["header_fill"]
-        cell.alignment = styles["header_alignment"]
-        cell.border = styles["border"]
-    
-    # Столбцы подсчёта — цветные заголовки
-    col_5_idx = len(subjects_list) + 3
-    col_4_idx = len(subjects_list) + 4
-    col_3_idx = len(subjects_list) + 5
-    col_2_idx = len(subjects_list) + 6
-    ws.cell(row=header_row, column=col_5_idx).fill = styles["count_5_fill"]
-    ws.cell(row=header_row, column=col_5_idx).font = Font(bold=True)
-    ws.cell(row=header_row, column=col_4_idx).fill = styles["count_4_fill"]
-    ws.cell(row=header_row, column=col_4_idx).font = Font(bold=True)
-    ws.cell(row=header_row, column=col_3_idx).fill = styles["count_3_fill"]
-    ws.cell(row=header_row, column=col_3_idx).font = Font(bold=True)
-    ws.cell(row=header_row, column=col_2_idx).fill = styles["count_2_fill"]
-    ws.cell(row=header_row, column=col_2_idx).font = Font(bold=True)
-    
-    # Данные учеников
-    for row_idx, student in enumerate(students_list, header_row + 1):
-        # Номер
-        cell = ws.cell(row=row_idx, column=1, value=row_idx - header_row)
-        cell.border = styles["border"]
-        cell.alignment = center_align
-        
-        # ФИО
-        cell = ws.cell(row=row_idx, column=2, value=student["name"])
-        cell.border = styles["border"]
-        
-        # Оценки по предметам
-        for col_idx, subject in enumerate(subjects_list, 3):
-            grade_info = student["grades"].get(subject, {})
-            grade = grade_info.get("grade")
-            percent = grade_info.get("percent")
-            
-            if grade:
-                # Показываем оценку и процент
-                cell_value = f"{grade} ({percent}%)" if percent else str(grade)
-                cell = ws.cell(row=row_idx, column=col_idx, value=cell_value)
-                
-                # Подсветка пограничных процентов
-                if _is_border_percent(percent):
-                    cell.fill = styles["border_highlight_fill"]
-                    cell.font = Font(bold=True, color="B45309")
-            else:
-                cell = ws.cell(row=row_idx, column=col_idx, value="—")
-            
-            cell.border = styles["border"]
-            cell.alignment = center_align
-        
-        # Кол-во 5, 4, 3, 2 по строке
-        cell = ws.cell(row=row_idx, column=col_5_idx, value=student["count_5"])
-        cell.border = styles["border"]
-        cell.alignment = center_align
-        cell.fill = styles["count_5_fill"]
-        cell.font = bold_font
-        
-        cell = ws.cell(row=row_idx, column=col_4_idx, value=student["count_4"])
-        cell.border = styles["border"]
-        cell.alignment = center_align
-        cell.fill = styles["count_4_fill"]
-        cell.font = bold_font
-        
-        cell = ws.cell(row=row_idx, column=col_3_idx, value=student["count_3"])
-        cell.border = styles["border"]
-        cell.alignment = center_align
-        cell.fill = styles["count_3_fill"]
-        cell.font = bold_font
-        
-        cell = ws.cell(row=row_idx, column=col_2_idx, value=student["count_2"])
-        cell.border = styles["border"]
-        cell.alignment = center_align
-        cell.fill = styles["count_2_fill"]
-        cell.font = bold_font
-    
-    # --- Итоговые строки ---
-    footer_start = header_row + len(students_list) + 1
-    
-    # Строка: Кол-во «5» по столбцам
-    row = footer_start
-    ws.cell(row=row, column=2, value='Кол-во «5»').font = bold_font
-    for col_idx, subj in enumerate(subjects_list, 3):
-        cell = ws.cell(row=row, column=col_idx, value=subject_stats[subj]["count_5"])
-        cell.border = styles["border"]
-        cell.alignment = center_align
-        cell.fill = styles["count_5_fill"]
-        cell.font = bold_font
-    cell = ws.cell(
-        row=row,
-        column=col_5_idx,
-        value=sum(1 for s in students_list if s["count_4"] == 0),
+    output, filename = build_grades_class_workbook(
+        class_name,
+        period_name,
+        period_number,
+        subjects_list,
+        students_list,
+        subject_stats,
     )
-    cell.border = styles["border"]
-    cell.alignment = center_align
-    cell.fill = styles["count_5_fill"]
-    cell.font = bold_font
-    
-    # Строка: Кол-во «4» по столбцам
-    row = footer_start + 1
-    ws.cell(row=row, column=2, value='Кол-во «4»').font = bold_font
-    for col_idx, subj in enumerate(subjects_list, 3):
-        cell = ws.cell(row=row, column=col_idx, value=subject_stats[subj]["count_4"])
-        cell.border = styles["border"]
-        cell.alignment = center_align
-        cell.fill = styles["count_4_fill"]
-        cell.font = bold_font
-    cell = ws.cell(
-        row=row,
-        column=col_4_idx,
-        value=sum(1 for s in students_list if s["count_3"] == 0),
-    )
-    cell.border = styles["border"]
-    cell.alignment = center_align
-    cell.fill = styles["count_4_fill"]
-    cell.font = bold_font
-    
-    # Строка: Кол-во «3» по столбцам
-    row = footer_start + 2
-    ws.cell(row=row, column=2, value='Кол-во «3»').font = bold_font
-    for col_idx, subj in enumerate(subjects_list, 3):
-        cell = ws.cell(row=row, column=col_idx, value=subject_stats[subj]["count_3"])
-        cell.border = styles["border"]
-        cell.alignment = center_align
-        cell.fill = styles["count_3_fill"]
-        cell.font = bold_font
-    cell = ws.cell(
-        row=row,
-        column=col_3_idx,
-        value=sum(1 for s in students_list if s["count_2"] == 0),
-    )
-    cell.border = styles["border"]
-    cell.alignment = center_align
-    cell.fill = styles["count_3_fill"]
-    cell.font = bold_font
-    
-    # Строка: Кол-во «2» по столбцам
-    row = footer_start + 3
-    ws.cell(row=row, column=2, value='Кол-во «2»').font = bold_font
-    for col_idx, subj in enumerate(subjects_list, 3):
-        cell = ws.cell(row=row, column=col_idx, value=subject_stats[subj]["count_2"])
-        cell.border = styles["border"]
-        cell.alignment = center_align
-        cell.fill = styles["count_2_fill"]
-        cell.font = bold_font
-    cell = ws.cell(
-        row=row,
-        column=col_2_idx,
-        value=sum(1 for s in students_list if s["count_2"] > 0),
-    )
-    cell.border = styles["border"]
-    cell.alignment = center_align
-    cell.fill = styles["count_2_fill"]
-    cell.font = bold_font
-    
-    # Строка: Качество % по предмету
-    row = footer_start + 4
-    ws.cell(row=row, column=2, value='Качество %').font = bold_font
-    for col_idx, subj in enumerate(subjects_list, 3):
-        cell = ws.cell(row=row, column=col_idx, value=f"{subject_stats[subj]['quality_percent']}%")
-        cell.border = styles["border"]
-        cell.alignment = center_align
-        cell.fill = styles["quality_fill"]
-        cell.font = bold_font
-    
-    # Строка: Успеваемость % по предмету
-    row = footer_start + 5
-    ws.cell(row=row, column=2, value='Успеваемость %').font = bold_font
-    for col_idx, subj in enumerate(subjects_list, 3):
-        cell = ws.cell(row=row, column=col_idx, value=f"{subject_stats[subj]['success_percent']}%")
-        cell.border = styles["border"]
-        cell.alignment = center_align
-        cell.fill = styles["success_fill"]
-        cell.font = bold_font
-    
-    # Авто-ширина колонок
-    ws.column_dimensions["A"].width = 5
-    ws.column_dimensions["B"].width = 30
-    for col in range(3, len(subjects_list) + 3):
-        ws.column_dimensions[get_column_letter(col)].width = 16
-    ws.column_dimensions[get_column_letter(col_5_idx)].width = 10
-    ws.column_dimensions[get_column_letter(col_4_idx)].width = 10
-    ws.column_dimensions[get_column_letter(col_3_idx)].width = 10
-    ws.column_dimensions[get_column_letter(col_2_idx)].width = 10
-    
-    # Сохраняем в память
-    output = BytesIO()
-    wb.save(output)
-    output.seek(0)
-    
-    period_slug = "учебный_год" if period_number == YEAR_UI_PERIOD else f"{period_number}_четверть"
-    filename = f"Оценки_{class_name}_{period_slug}.xlsx"
-    
     return send_file(
         output,
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         as_attachment=True,
-        download_name=filename
+        download_name=filename,
     )
 
 
@@ -2691,7 +1617,7 @@ def download_class_teacher_report_excel():
             subject_teachers[subj] = t_name
             if report.grades_json:
                 try:
-                    gd = json.loads(report.grades_json)
+                    gd = report_grades_payload(report)
                     for st in gd.get("students", []):
                         nm = st.get("name")
                         gr = st.get("grade")
@@ -2747,131 +1673,12 @@ def download_class_teacher_report_excel():
         if one3_s: categories_data["one_3"].append(_block(one3_s))
         if poor_s: categories_data["poor"].append(_block(poor_s))
     
-    # --- Создаём Excel ---
-    wb = Workbook()
-    styles = _create_excel_styles()
-    
-    cat_meta = [
-        ("excellent",     "на 5",        "C6EFCE", ["Класс", "№", "ФИО", "Классный руководитель"]),
-        ("good",          "на 4",        "BDD7EE", ["Класс", "№", "ФИО", "Классный руководитель"]),
-        ("one_4",         "С одной 4",   "D9EAD3", ["Класс", "№", "ФИО", "Предмет", "Учитель", "Классный руководитель"]),
-        ("satisfactory",  "на 3",        "FFEB9C", ["Класс", "ФИО", "Предмет 1", "Предмет 2", "Предмет 3", "Предмет 4", "Предмет 5+", "Классный руководитель"]),
-        ("one_3",         "С одной 3",   "FBE5D6", ["Класс", "№", "ФИО", "Предмет", "Учитель", "Классный руководитель"]),
-        ("poor",          "Неуспевающие", "FFC7CE", ["Класс", "№", "ФИО", "Предмет", "Учитель", "Классный руководитель"]),
-    ]
-    
-    first_sheet = True
-    for cat_key, cat_label, cat_color, headers in cat_meta:
-        blocks = categories_data[cat_key]
-        total_count = sum(len(b["students"]) for b in blocks)
-        sheet_name = f"{cat_label} ({total_count})"[:31]
-        
-        if first_sheet:
-            ws = wb.active
-            ws.title = sheet_name
-            first_sheet = False
-        else:
-            ws = wb.create_sheet(title=sheet_name)
-        
-        # Заголовок
-        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
-        c = ws.cell(row=1, column=1, value=f"Отчёт классных руководителей — {cat_label} ({period_name})")
-        c.font = Font(bold=True, size=13)
-        c.alignment = Alignment(horizontal="center")
-        
-        # Шапка таблицы
-        for col, h in enumerate(headers, 1):
-            cell = ws.cell(row=3, column=col, value=h)
-            cell.font = styles["header_font"]
-            cell.fill = PatternFill(start_color=cat_color, end_color=cat_color, fill_type="solid")
-            cell.alignment = styles["header_alignment"]
-            cell.border = styles["border"]
-        
-        row = 4
-        if not blocks:
-            ws.cell(row=row, column=1, value="Нет данных")
-            continue
-        
-        for block in blocks:
-            cls = block["class_name"]
-            ct = block["class_teacher"]
-            
-            if cat_key == "satisfactory":
-                details = block.get("troechniki_detailed", [])
-                n = len(details)
-                if n == 0:
-                    continue
-                # Класс (rowspan)
-                ws.merge_cells(start_row=row, start_column=1, end_row=row+n-1, end_column=1)
-                ws.cell(row=row, column=1, value=cls).font = Font(bold=True)
-                ws.cell(row=row, column=1).border = styles["border"]
-                ws.cell(row=row, column=1).alignment = Alignment(vertical="center", horizontal="center")
-                # Кл. руководитель (rowspan)
-                ws.merge_cells(start_row=row, start_column=8, end_row=row+n-1, end_column=8)
-                ws.cell(row=row, column=8, value=ct).border = styles["border"]
-                ws.cell(row=row, column=8).alignment = Alignment(vertical="center")
-                
-                for item in details:
-                    ws.cell(row=row, column=2, value=item["student"]).border = styles["border"]
-                    for i in range(4):
-                        val = ""
-                        if i < len(item["subjects_1_4"]):
-                            s = item["subjects_1_4"][i]
-                            val = f"{s['subject_name']} ({s['grade']})"
-                        ws.cell(row=row, column=3+i, value=val or "—").border = styles["border"]
-                    # 5+
-                    val5 = ", ".join(f"{s['subject_name']} ({s['grade']})" for s in item.get("subjects_5", []))
-                    ws.cell(row=row, column=7, value=val5 or "—").border = styles["border"]
-                    row += 1
-            
-            elif cat_key in ("one_4", "one_3", "poor"):
-                students = block["students"]
-                n = len(students)
-                ws.merge_cells(start_row=row, start_column=1, end_row=row+n-1, end_column=1)
-                ws.cell(row=row, column=1, value=cls).font = Font(bold=True)
-                ws.cell(row=row, column=1).border = styles["border"]
-                ws.cell(row=row, column=1).alignment = Alignment(vertical="center", horizontal="center")
-                ws.merge_cells(start_row=row, start_column=6, end_row=row+n-1, end_column=6)
-                ws.cell(row=row, column=6, value=ct).border = styles["border"]
-                ws.cell(row=row, column=6).alignment = Alignment(vertical="center")
-                
-                for idx, item in enumerate(students, 1):
-                    ws.cell(row=row, column=2, value=idx).border = styles["border"]
-                    ws.cell(row=row, column=3, value=item["student"]).border = styles["border"]
-                    ws.cell(row=row, column=4, value=item["subject"]).border = styles["border"]
-                    ws.cell(row=row, column=5, value=item["teacher"]).border = styles["border"]
-                    row += 1
-            
-            else:  # excellent, good, poor
-                students = block["students"]
-                n = len(students)
-                ws.merge_cells(start_row=row, start_column=1, end_row=row+n-1, end_column=1)
-                ws.cell(row=row, column=1, value=cls).font = Font(bold=True)
-                ws.cell(row=row, column=1).border = styles["border"]
-                ws.cell(row=row, column=1).alignment = Alignment(vertical="center", horizontal="center")
-                ws.merge_cells(start_row=row, start_column=4, end_row=row+n-1, end_column=4)
-                ws.cell(row=row, column=4, value=ct).border = styles["border"]
-                ws.cell(row=row, column=4).alignment = Alignment(vertical="center")
-                
-                for idx, student in enumerate(students, 1):
-                    ws.cell(row=row, column=2, value=idx).border = styles["border"]
-                    ws.cell(row=row, column=3, value=student).border = styles["border"]
-                    row += 1
-        
-        # Авто-ширина
-        for col_idx in range(1, len(headers)+1):
-            ws.column_dimensions[get_column_letter(col_idx)].width = max(12, len(headers[col_idx-1]) + 5)
-        ws.column_dimensions["C"].width = 35  # ФИО
-    
-    output = BytesIO()
-    wb.save(output)
-    output.seek(0)
-    
-    filename = f"Отчёт_классных_руководителей_{period_name.replace(' ', '_')}.xlsx"
+    output, filename = build_class_teacher_workbook(categories_data, period_name)
     return send_file(
         output,
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         as_attachment=True,
-        download_name=filename
+        download_name=filename,
     )
+
 

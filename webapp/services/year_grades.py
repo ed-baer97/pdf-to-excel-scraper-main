@@ -238,7 +238,7 @@ def aggregate_year_metrics(
     KPI за учебный год: качество/успеваемость по классу — из пула годовых оценок
   (ученик×предмет); по школе и параллелям — int(mean по классам + 0.5).
     """
-    from .admin_dashboard import class_accordion_group  # noqa: PLC0415 — avoid circular import
+    from .grade_reports.periods import class_accordion_group
 
     class_totals: dict = {}
     school_quality_values: list[float] = []
