@@ -56,6 +56,7 @@ from ...services.grade_reports.payload import (
     report_analytics_payload,
     report_grades_payload,
 )
+from ...services.grade_reports.student_edits import delete_student_from_class_reports
 from ...services.grade_reports.class_teacher import build_class_teacher_categories_data
 from ...services.grade_reports.excel import (
     build_analytics_workbook,
@@ -596,6 +597,44 @@ def delete_subject_from_class(class_name: str):
         "success",
     )
     return _redirect_back(url_for("admin.grades_class", class_name=class_name, period_number=period_number))
+
+
+@bp.post("/grades/class/<class_name>/students/delete")
+@admin_required
+def delete_student_from_class(class_name: str):
+    """Удаление ученика из отчётов класса за выбранный период (сводная таблица)."""
+
+    student_name = (request.form.get("student_name") or "").strip()
+    period_raw = request.form.get("period_number", "2")
+    period_number = parse_ui_period_number(period_raw)
+
+    if not student_name:
+        flash("Не указано ФИО ученика для удаления.", "danger")
+        return _redirect_back(
+            url_for("admin.grades_class", class_name=class_name, period_number=period_number)
+        )
+
+    updated = delete_student_from_class_reports(
+        current_user.school_id,
+        class_name,
+        student_name,
+        period_number,
+    )
+
+    if updated == 0:
+        flash(
+            f'Ученик "{student_name}" не найден в отчётах класса за выбранный период.',
+            "warning",
+        )
+    else:
+        flash(
+            f'Ученик "{student_name}" удалён из {updated} отчёт(ов) оценок.',
+            "success",
+        )
+
+    return _redirect_back(
+        url_for("admin.grades_class", class_name=class_name, period_number=period_number)
+    )
 
 
 @bp.get("/analytics")

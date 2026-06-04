@@ -79,9 +79,13 @@
     flex-shrink: 0;
     align-self: flex-start;
   }
-  .subject-delete-btn {
+  .subject-delete-btn,
+  .student-delete-btn {
     padding: 0.1rem 0.35rem;
     line-height: 1;
+  }
+  #gradesTable tbody td.sticky-col .student-name-cell {
+    min-width: 0;
   }
   /* Пограничный % — мягкая светло-зелёная подсветка */
   .border-highlight {
@@ -312,7 +316,19 @@
               {% for student in students %}
                 <tr>
                   <td class="sticky-col">{{ loop.index }}</td>
-                  <td class="sticky-col" style="left: 30px;">{{ student.name }}</td>
+                  <td class="sticky-col" style="left: 30px;">
+                    <div class="d-flex justify-content-between align-items-center gap-1 student-name-cell">
+                      <span class="text-truncate">{{ student.name }}</span>
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-outline-secondary student-delete-btn flex-shrink-0"
+                        title="Удалить ученика из отчётов класса за текущий период"
+                        onclick='deleteStudent({{ student.name|tojson }})'
+                      >
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </div>
+                  </td>
                   {% for subject in subjects %}
                     {% set grade_info = student.grades.get(subject, {}) %}
                     {% set pct = grade_info.get('percent') %}
@@ -415,6 +431,12 @@
   <input type="hidden" name="next_url" id="deleteSubjectNextUrl">
 </form>
 
+<form id="deleteStudentForm" method="post" action="{{ url_for('admin.delete_student_from_class', class_name=class_name) }}" style="display:none;">
+  <input type="hidden" name="student_name" id="deleteStudentName">
+  <input type="hidden" name="period_number" value="{{ period_number }}">
+  <input type="hidden" name="next_url" id="deleteStudentNextUrl">
+</form>
+
 <script>
   function deleteSubject(subjectName) {
     const ok = confirm(
@@ -426,6 +448,18 @@
     document.getElementById("deleteSubjectName").value = subjectName;
     document.getElementById("deleteSubjectNextUrl").value = window.location.href;
     document.getElementById("deleteSubjectForm").submit();
+  }
+
+  function deleteStudent(studentName) {
+    const ok = confirm(
+      `Удалить ученика "${studentName}" из сводной таблицы?\n` +
+      "Ученик будет удалён из всех отчётов класса за текущий период на этой странице."
+    );
+    if (!ok) return;
+
+    document.getElementById("deleteStudentName").value = studentName;
+    document.getElementById("deleteStudentNextUrl").value = window.location.href;
+    document.getElementById("deleteStudentForm").submit();
   }
 </script>
 <script src="{{ url_for('static', filename='js/admin_async_export.js') }}"></script>
