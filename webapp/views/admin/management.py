@@ -19,11 +19,31 @@ from flask import (
     send_file,
 )
 from flask_login import current_user
-from sqlalchemy import func
 from openpyxl import Workbook, load_workbook
 
 from ...extensions import db
-from ...models import Role, User, GradeReport, Class, School, ReportFile, TeacherSubject, TeacherClass, SubjectNameAlias
+from ...models import (
+    Role,
+    User,
+    GradeReport,
+    Class,
+    School,
+    ReportFile,
+    TeacherSubject,
+    TeacherClass,
+    SubjectNameAlias,
+    TeacherSchool,
+)
+from ...services.teacher_schools import (
+    ensure_membership,
+    find_teacher_by_iin,
+    iin_taken_in_school,
+    remove_teacher_from_school,
+    teacher_in_school,
+    teachers_count_for_school,
+    teachers_for_school,
+    next_fs_teacher_seq,
+)
 from ...security import decrypt_password, encrypt_password
 from ...constants import kazakh_sort_key, normalize_subject_name
 from ...services.admin_common import apply_analytics_filters, redirect_back
@@ -96,13 +116,6 @@ from iin_utils import normalize_kz_iin
 
 from . import bp
 
-def _iin_taken_by_other_teacher(school_id: int, iin_norm: str, exclude_id: int | None = None) -> bool:
-    q = User.query.filter_by(role=Role.TEACHER.value, school_id=school_id, iin=iin_norm)
-    if exclude_id is not None:
-        q = q.filter(User.id != exclude_id)
-    return q.first() is not None
-
-
 def _redirect_back(fallback_url: str):
     """Backward-compatible wrapper around shared redirect helper."""
     return redirect_back(fallback_url)
@@ -110,9 +123,7 @@ def _redirect_back(fallback_url: str):
 
 def _management_list_context(school_id: int) -> dict:
     """Teachers/classes lists and accordion buckets for the management page."""
-    teachers = User.query.filter_by(
-        role=Role.TEACHER.value, school_id=school_id
-    ).all()
+    teachers = teachers_for_school(school_id)
     classes = Class.query.filter_by(school_id=school_id).all()
     teachers.sort(key=lambda t: kazakh_sort_key(t.full_name or t.username))
     classes.sort(key=lambda c: kazakh_sort_key(c.name))
@@ -155,9 +166,7 @@ def dashboard():
     active_class_names = {c.name for c in classes}
     school_metrics = aggregate_class_metrics(current_user.school_id, period_number, active_class_names)
     year_metrics = aggregate_year_metrics(current_user.school_id, active_class_names)
-    teachers_count = User.query.filter_by(
-        role=Role.TEACHER.value, school_id=current_user.school_id
-    ).count()
+    teachers_count = teachers_count_for_school(current_user.school_id)
     classes_count = Class.query.filter_by(school_id=current_user.school_id).count()
     return render_template(
         "admin/dashboard.html",
@@ -375,31 +384,71 @@ def create_teacher():
     if not iin_norm:
         flash("Укажите корректный ИИН (ЖСН): 12 цифр — тот же номер, что для входа на mektep.edu.kz.", "danger")
         return redirect_back(url_for("admin.management") + "#teachers-tab")
-    if _iin_taken_by_other_teacher(current_user.school_id, iin_norm):
+    if iin_taken_in_school(current_user.school_id, iin_norm):
         flash("Этот ИИН уже привязан к другому учителю в школе.", "danger")
         return redirect_back(url_for("admin.management") + "#teachers-tab")
 
+    existing_by_iin = find_teacher_by_iin(iin_norm)
+    if existing_by_iin:
+        flash(
+            f"Учитель с ИИН ****{iin_norm[-4:]} уже зарегистрирован "
+            f"(логин: {existing_by_iin.username}). "
+            "Используйте «Добавить существующего учителя по ИИН».",
+            "warning",
+        )
+        return redirect_back(url_for("admin.management") + "#teachers-tab")
+
     pw = secrets.token_urlsafe(8)
+    seq = next_fs_teacher_seq(current_user.school_id)
     u = User(
         username=username,
         full_name=full_name or username,
         iin=iin_norm,
         role=Role.TEACHER.value,
         school_id=current_user.school_id,
+        fs_teacher_seq=seq,
         is_active=True,
     )
-    # Assign per-school sequential number for filesystem paths (teacher_1, teacher_2, ...)
-    max_seq = (
-        db.session.query(func.max(User.fs_teacher_seq))
-        .filter(User.school_id == current_user.school_id, User.role == Role.TEACHER.value)
-        .scalar()
-    )
-    u.fs_teacher_seq = int(max_seq or 0) + 1
     u.set_password(pw)
     u.password_enc = encrypt_password(pw, current_app.config.get("PASSWORD_ENC_KEY", ""))
     db.session.add(u)
+    db.session.flush()
+    ensure_membership(u, current_user.school_id)
     db.session.commit()
     flash(f"Учитель создан. Пароль: {pw}", "success")
+    return _redirect_back(url_for("admin.management") + "#teachers-tab")
+
+
+@bp.post("/teachers/add-existing")
+@admin_required
+def add_existing_teacher():
+    """Добавить в школу учителя, уже зарегистрированного в другой школе (по ИИН)."""
+    iin_raw = request.form.get("iin", "").strip()
+    iin_norm = normalize_kz_iin(iin_raw) if iin_raw else None
+    if not iin_norm:
+        flash("Укажите корректный ИИН (ЖСН): 12 цифр.", "danger")
+        return redirect_back(url_for("admin.management") + "#teachers-tab")
+
+    if iin_taken_in_school(current_user.school_id, iin_norm):
+        flash("Этот учитель уже добавлен в вашу школу.", "warning")
+        return redirect_back(url_for("admin.management") + "#teachers-tab")
+
+    teacher = find_teacher_by_iin(iin_norm)
+    if not teacher:
+        flash(
+            "Учитель с таким ИИН не найден в системе. "
+            "Сначала его должен зарегистрировать администратор первой школы.",
+            "danger",
+        )
+        return redirect_back(url_for("admin.management") + "#teachers-tab")
+
+    ensure_membership(teacher, current_user.school_id)
+    db.session.commit()
+    flash(
+        f"Учитель «{teacher.full_name or teacher.username}» добавлен в школу. "
+        f"Логин для входа: {teacher.username}",
+        "success",
+    )
     return _redirect_back(url_for("admin.management") + "#teachers-tab")
 
 
@@ -447,12 +496,7 @@ def import_teachers():
         flash("В Excel нужен столбец «ИИН» или «ЖСН» (12 цифр).", "danger")
         return _redirect_back(url_for("admin.management") + "#teachers-tab")
 
-    max_seq = (
-        db.session.query(func.max(User.fs_teacher_seq))
-        .filter(User.school_id == current_user.school_id, User.role == Role.TEACHER.value)
-        .scalar()
-    )
-    next_seq = int(max_seq or 0) + 1
+    next_seq = next_fs_teacher_seq(current_user.school_id)
 
     created = 0
     skipped = 0
@@ -483,7 +527,11 @@ def import_teachers():
             skipped += 1
             continue
 
-        if _iin_taken_by_other_teacher(current_user.school_id, iin_norm):
+        if iin_taken_in_school(current_user.school_id, iin_norm):
+            skipped += 1
+            continue
+
+        if find_teacher_by_iin(iin_norm):
             skipped += 1
             continue
 
@@ -510,6 +558,8 @@ def import_teachers():
         u.set_password(password)
         u.password_enc = encrypt_password(password, current_app.config.get("PASSWORD_ENC_KEY", ""))
         db.session.add(u)
+        db.session.flush()
+        ensure_membership(u, current_user.school_id)
         created += 1
 
     db.session.commit()
@@ -546,7 +596,7 @@ def download_teachers_import_template():
 def get_teacher_password(user_id: int):
     """AJAX endpoint: return password as JSON."""
     u = db.session.get(User, user_id)
-    if not u or u.role != Role.TEACHER.value or u.school_id != current_user.school_id:
+    if not u or u.role != Role.TEACHER.value or not teacher_in_school(u.id, current_user.school_id):
         return jsonify({"error": "Not found"}), 404
     pw = decrypt_password(u.password_enc, current_app.config.get("PASSWORD_ENC_KEY", ""))
     return jsonify({"username": u.username, "password": pw or "Недоступен"})
@@ -557,7 +607,7 @@ def get_teacher_password(user_id: int):
 def update_teacher_password(user_id: int):
     """Update teacher password."""
     u = db.session.get(User, user_id)
-    if not u or u.role != Role.TEACHER.value or u.school_id != current_user.school_id:
+    if not u or u.role != Role.TEACHER.value or not teacher_in_school(u.id, current_user.school_id):
         flash("Пользователь не найден.", "danger")
         return _redirect_back(url_for("admin.management") + "#teachers-tab")
     new_password = request.form.get("new_password", "").strip()
@@ -576,7 +626,7 @@ def update_teacher_password(user_id: int):
 def edit_teacher(user_id: int):
     """Редактирование ФИО и ИИН учителя."""
     u = db.session.get(User, user_id)
-    if not u or u.role != Role.TEACHER.value or u.school_id != current_user.school_id:
+    if not u or u.role != Role.TEACHER.value or not teacher_in_school(u.id, current_user.school_id):
         flash("Учитель не найден.", "danger")
         return _redirect_back(url_for("admin.management") + "#teachers-tab")
     full_name = request.form.get("full_name", "").strip()
@@ -588,8 +638,12 @@ def edit_teacher(user_id: int):
     if not iin_norm:
         flash("Укажите корректный ИИН (ЖСН): 12 цифр.", "danger")
         return _redirect_back(url_for("admin.management") + "#teachers-tab")
-    if _iin_taken_by_other_teacher(current_user.school_id, iin_norm, exclude_id=u.id):
+    if iin_taken_in_school(current_user.school_id, iin_norm, exclude_teacher_id=u.id):
         flash("Этот ИИН уже привязан к другому учителю.", "danger")
+        return _redirect_back(url_for("admin.management") + "#teachers-tab")
+    other_with_iin = find_teacher_by_iin(iin_norm)
+    if other_with_iin and other_with_iin.id != u.id:
+        flash("Этот ИИН уже используется другим учётной записью в системе.", "danger")
         return _redirect_back(url_for("admin.management") + "#teachers-tab")
     u.full_name = full_name
     u.iin = iin_norm
@@ -603,25 +657,31 @@ def edit_teacher(user_id: int):
 def delete_teacher(user_id: int):
     """Удаление учителя и всех его данных."""
     u = db.session.get(User, user_id)
-    if not u or u.role != Role.TEACHER.value or u.school_id != current_user.school_id:
+    if not u or u.role != Role.TEACHER.value or not teacher_in_school(u.id, current_user.school_id):
         flash("Учитель не найден.", "danger")
         return _redirect_back(url_for("admin.management") + "#teachers-tab")
-    
+
     teacher_name = u.full_name or u.username
-    
-    # Удаляем связанные данные
+    memberships_count = TeacherSchool.query.filter_by(teacher_id=u.id).count()
+
+    if memberships_count > 1:
+        remove_teacher_from_school(u.id, current_user.school_id)
+        db.session.commit()
+        flash(
+            f'Учитель «{teacher_name}» отвязан от вашей школы. '
+            "Аккаунт сохранён в других школах.",
+            "success",
+        )
+        return _redirect_back(url_for("admin.management") + "#teachers-tab")
+
     GradeReport.query.filter_by(teacher_id=u.id).delete()
     ReportFile.query.filter_by(teacher_id=u.id).delete()
-    
-    # Удаляем связи учитель-класс и учитель-предмет
     teacher_subjects = TeacherSubject.query.filter_by(teacher_id=u.id).all()
     for ts in teacher_subjects:
         TeacherClass.query.filter_by(teacher_subject_id=ts.id).delete()
     TeacherSubject.query.filter_by(teacher_id=u.id).delete()
-    
-    # Снимаем классное руководство
     Class.query.filter_by(class_teacher_id=u.id).update({"class_teacher_id": None})
-    
+    TeacherSchool.query.filter_by(teacher_id=u.id).delete()
     db.session.delete(u)
     db.session.commit()
     flash(f'Учитель "{teacher_name}" удалён.', "success")

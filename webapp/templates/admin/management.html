@@ -87,6 +87,20 @@
               <button class="btn btn-primary w-100">{{ _('add_btn') }}</button>
             </div>
           </form>
+          <form class="row g-2 mb-3" method="post" action="{{ url_for('admin.add_existing_teacher') }}">
+            <input type="hidden" name="next_url">
+            <div class="col-md-8">
+              <input class="form-control" name="iin" inputmode="numeric" autocomplete="off"
+                     placeholder="Добавить существующего учителя по ИИН (12 цифр)" maxlength="14" required
+                     title="ИИН учителя, уже зарегистрированного в другой школе">
+            </div>
+            <div class="col-md-4">
+              <button class="btn btn-outline-success w-100">Добавить по ИИН</button>
+            </div>
+          </form>
+          <p class="text-muted small mb-3">
+            Если учитель уже есть в системе (зарегистрирован в другой школе), укажите его ИИН — тот же логин и пароль.
+          </p>
           <form class="row g-2 mb-3" method="post" action="{{ url_for('admin.import_teachers') }}" enctype="multipart/form-data">
             <input type="hidden" name="next_url">
             <div class="col-8">

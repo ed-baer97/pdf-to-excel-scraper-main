@@ -181,6 +181,18 @@ def create_app(config_object=None) -> Flask:
                 )
                 db.session.commit()
 
+            # teacher_schools: членство учителя в нескольких школах
+            try:
+                tables = set(inspector.get_table_names())
+            except Exception:
+                tables = set()
+            if "teacher_schools" not in tables:
+                db.create_all()
+
+            from .services.teacher_schools import backfill_memberships_from_users
+
+            backfill_memberships_from_users()
+
             # ---- Backfill local sequences (best-effort) ----
             # Teacher sequence: per school, sequential 1..N (only fills NULLs).
             for school in School.query.order_by(School.id.asc()).all():

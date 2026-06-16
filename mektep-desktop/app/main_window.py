@@ -7,9 +7,9 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QComboBox, QProgressBar,
     QTextEdit, QGroupBox, QMessageBox, QFileDialog, QFrame,
-    QFormLayout, QScrollArea, QTabWidget
+    QFormLayout, QScrollArea, QTabWidget, QProgressDialog
 )
-from PyQt6.QtCore import Qt, QSettings
+from PyQt6.QtCore import Qt, QSettings, QTimer
 from PyQt6.QtGui import QFont, QIcon
 
 from .api_client import MektepAPIClient, DEFAULT_SERVER_URL
@@ -23,24 +23,20 @@ from .translator import get_translator
 from .grades_widget import GradesWidget
 from .subject_report_widget import SubjectReportWidget
 from .class_report_widget import ClassReportWidget
+from .updater import (
+    UpdateCheckWorker,
+    UpdateDownloadWorker,
+    launch_installer_and_exit,
+)
 
 try:
     from .. import version as app_version
-    from ..pyu_config import PyuConfig
 except (ImportError, SystemError):
-    import sys, importlib
+    import importlib
     _parent = str(Path(__file__).resolve().parent.parent)
     if _parent not in sys.path:
         sys.path.insert(0, _parent)
     app_version = importlib.import_module("version")
-    from pyu_config import PyuConfig  # type: ignore[import-untyped]
-
-try:
-    from pyupdater.client import Client as PyuClient  # type: ignore
-    _PYUPDATER_AVAILABLE = True
-except Exception:
-    PyuClient = None  # type: ignore
-    _PYUPDATER_AVAILABLE = False
 
 
 class MektepMainWindow(QMainWindow):
@@ -63,8 +59,8 @@ class MektepMainWindow(QMainWindow):
         # Данные пользователя
         self.user_data = user_data or {}
 
-        # Клиент обновлений (PyUpdater), если библиотека доступна и сконфигурирована
-        self.updater_client = self._init_updater_client()
+        self._update_check_worker = None
+        self._update_download_worker = None
         
         # Менеджер отчетов (с привязкой к текущему пользователю)
         storage_path = Path(self.settings.value(
@@ -95,19 +91,8 @@ class MektepMainWindow(QMainWindow):
         # Загрузка сохраненных настроек
         self.load_settings()
 
-    def _init_updater_client(self):
-        """Инициализация клиента PyUpdater (best-effort)."""
-        if not _PYUPDATER_AVAILABLE:
-            return None
-        try:
-            client = PyuClient(PyuConfig(), refresh=True)
-            client.app_name = app_version.APP_NAME
-            client.app_version = app_version.APP_VERSION
-            return client
-        except Exception:
-            # Если что-то пошло не так (нет конфига, неверный ключ, нет сети) —
-            # просто отключаем кнопку обновлений.
-            return None
+        # Автопроверка обновлений через 2 секунды после старта
+        QTimer.singleShot(2000, lambda: self._start_update_check(silent=True))
     
     @staticmethod
     def _get_icon_path() -> Path:
@@ -210,14 +195,13 @@ class MektepMainWindow(QMainWindow):
         settings_btn.clicked.connect(self.open_settings)
         info_layout.addWidget(settings_btn)
 
-        # Кнопка проверки обновлений (если PyUpdater доступен)
-        if self.updater_client is not None:
-            update_text = "Проверить обновление" if self.translator.get_language() == 'ru' else "Жаңартуды тексеру"
-            self.update_btn = QPushButton(update_text)
-            self.update_btn.setFixedWidth(160)
-            self.update_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            self.update_btn.clicked.connect(self.check_updates)
-            info_layout.addWidget(self.update_btn)
+        # Кнопка проверки обновлений
+        update_text = "Проверить обновление" if self.translator.get_language() == 'ru' else "Жаңартуды тексеру"
+        self.update_btn = QPushButton(update_text)
+        self.update_btn.setFixedWidth(160)
+        self.update_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.update_btn.clicked.connect(self.check_updates)
+        info_layout.addWidget(self.update_btn)
         
         # Кнопка выхода
         logout_btn = QPushButton(self.translator.tr('logout'))
@@ -825,79 +809,140 @@ class MektepMainWindow(QMainWindow):
                     msg
                 )
 
-    def check_updates(self):
-        """Проверка и установка обновлений через PyUpdater."""
-        if self.updater_client is None:
-            QMessageBox.information(
-                self,
-                "Обновления",
-                "Функция обновления недоступна в этой сборке."
-            )
+    def _updates_title(self) -> str:
+        return "Обновления" if self.translator.get_language() == 'ru' else "Жаңартулар"
+
+    def _start_update_check(self, silent: bool = False):
+        """Запуск фоновой проверки обновлений."""
+        if self._update_check_worker and self._update_check_worker.isRunning():
             return
 
-        try:
-            app_update = self.updater_client.update_check(
-                app_version.APP_NAME,
-                app_version.APP_VERSION
-            )
-        except Exception as e:
-            QMessageBox.warning(
-                self,
-                "Обновления",
-                f"Не удалось проверить наличие обновлений.\n\n{e}"
-            )
+        if not silent:
+            self.update_btn.setEnabled(False)
+
+        self._update_check_worker = UpdateCheckWorker(app_version.APP_VERSION)
+        self._update_check_worker.finished.connect(
+            lambda info: self._on_update_check_finished(info, silent)
+        )
+        self._update_check_worker.failed.connect(
+            lambda err: self._on_update_check_failed(err, silent)
+        )
+        self._update_check_worker.start()
+
+    def _on_update_check_failed(self, error: str, silent: bool):
+        self.update_btn.setEnabled(True)
+        if silent:
+            return
+        QMessageBox.warning(
+            self,
+            self._updates_title(),
+            f"Не удалось проверить наличие обновлений.\n\n{error}"
+            if self.translator.get_language() == 'ru'
+            else f"Жаңартуларды тексеру мүмкін болмады.\n\n{error}",
+        )
+
+    def _on_update_check_finished(self, update_info, silent: bool):
+        self.update_btn.setEnabled(True)
+        if update_info is None:
+            if not silent:
+                msg = (
+                    "У вас установлена последняя версия."
+                    if self.translator.get_language() == 'ru'
+                    else "Сізде ең соңғы нұсқа орнатылған."
+                )
+                QMessageBox.information(self, self._updates_title(), msg)
             return
 
-        if app_update is None:
-            msg = "У вас установлена последняя версия." if self.translator.get_language() == 'ru' else "Сізде ең соңғы нұсқа орнатылған."
-            QMessageBox.information(self, "Обновления", msg)
-            return
+        self._prompt_and_install_update(update_info, silent=silent)
 
-        new_version = getattr(app_update, "version", "новая версия")
-        if self.translator.get_language() == 'ru':
-            question = f"Доступно обновление до версии {new_version}.\n\nСкачать и установить сейчас?"
+    def _prompt_and_install_update(self, update_info: dict, silent: bool = False):
+        """Спросить пользователя и начать установку обновления."""
+        new_version = update_info.get("version", "")
+        notes = update_info.get("notes", "")
+        is_ru = self.translator.get_language() == 'ru'
+
+        if is_ru:
+            question = f"Доступно обновление до версии {new_version}."
+            if notes:
+                question += f"\n\n{notes}"
+            question += "\n\nСкачать и установить сейчас?"
         else:
-            question = f"{new_version} нұсқасына жаңарту қолжетімді.\n\nҚазір жүктеп, орнату керек пе?"
+            question = f"{new_version} нұсқасына жаңарту қолжетімді."
+            if notes:
+                question += f"\n\n{notes}"
+            question += "\n\nҚазір жүктеп, орнату керек пе?"
+
+        if update_info.get("mandatory"):
+            if not silent:
+                QMessageBox.warning(self, self._updates_title(), question)
+            self._download_and_install_update(update_info)
+            return
 
         reply = QMessageBox.question(
             self,
-            "Обновления",
+            self._updates_title(),
             question,
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        downloading_msg = "Загрузка обновления..." if self.translator.get_language() == 'ru' else "Жаңарту жүктелуде..."
-        self.log_text.append(downloading_msg)
+        self._download_and_install_update(update_info)
 
-        ok = False
-        try:
-            ok = app_update.download()
-        except Exception as e:
+    def _download_and_install_update(self, update_info: dict):
+        """Скачать установщик с прогрессом и запустить тихую установку."""
+        is_ru = self.translator.get_language() == 'ru'
+        progress = QProgressDialog(
+            "Загрузка обновления..." if is_ru else "Жаңарту жүктелуде...",
+            "Отмена" if is_ru else "Болдырмау",
+            0,
+            100,
+            self,
+        )
+        progress.setWindowTitle(self._updates_title())
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+
+        self._update_download_worker = UpdateDownloadWorker(update_info)
+
+        def on_progress(percent: int):
+            progress.setValue(percent)
+
+        def on_finished(installer_path):
+            progress.close()
+            done_msg = (
+                "Обновление скачано. Приложение будет перезапущено."
+                if is_ru
+                else "Жаңарту жүктелді. Қолданба қайта іске қосылады."
+            )
+            QMessageBox.information(self, self._updates_title(), done_msg)
+            launch_installer_and_exit(installer_path)
+
+        def on_failed(error: str):
+            progress.close()
             QMessageBox.warning(
                 self,
-                "Обновления",
-                f"Не удалось скачать обновление.\n\n{e}"
+                self._updates_title(),
+                f"Не удалось скачать обновление.\n\n{error}"
+                if is_ru
+                else f"Жаңартуды жүктеу мүмкін болмады.\n\n{error}",
             )
-            return
 
-        if not ok:
-            fail_msg = "Не удалось скачать обновление." if self.translator.get_language() == 'ru' else "Жаңартуды жүктеу сәтсіз аяқталды."
-            QMessageBox.warning(self, "Обновления", fail_msg)
-            return
+        def on_canceled():
+            if self._update_download_worker and self._update_download_worker.isRunning():
+                self._update_download_worker.terminate()
+                self._update_download_worker.wait(1000)
 
-        done_msg = "Обновление скачано. Приложение будет перезапущено." if self.translator.get_language() == 'ru' else "Жаңарту жүктелді. Қолданба қайта іске қосылады."
-        QMessageBox.information(self, "Обновления", done_msg)
+        progress.canceled.connect(on_canceled)
+        self._update_download_worker.progress.connect(on_progress)
+        self._update_download_worker.finished.connect(on_finished)
+        self._update_download_worker.failed.connect(on_failed)
+        self._update_download_worker.start()
 
-        try:
-            app_update.extract_restart()
-        except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Обновления",
-                f"Не удалось применить обновление.\n\n{e}"
-            )
+    def check_updates(self):
+        """Ручная проверка и установка обновлений."""
+        self._start_update_check(silent=False)
         
     def logout(self):
         """Выход из приложения"""

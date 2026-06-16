@@ -2,7 +2,7 @@
 Версия десктоп-приложения Mektep.
 
 Эту строку нужно обновлять при каждом релизе и
-использовать в PyInstaller/PyUpdater.
+использовать в PyInstaller и Inno Setup.
 """
 
 APP_NAME = "mektep-desktop"

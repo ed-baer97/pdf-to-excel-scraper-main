@@ -82,6 +82,11 @@ a = Analysis(
         
         # dotenv
         'dotenv',
+
+        # Auto-update
+        'packaging',
+        'packaging.version',
+        'app.updater',
         
         # App modules
         'app.report_pipeline',

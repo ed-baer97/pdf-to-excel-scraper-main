@@ -76,6 +76,29 @@ class User(db.Model, UserMixin):
         return check_password_hash(self.password_hash, password)
 
 
+class TeacherSchool(db.Model):
+    """Связь учитель ↔ школа (один учитель может работать в нескольких школах)."""
+
+    __tablename__ = "teacher_schools"
+
+    id = db.Column(db.Integer, primary_key=True)
+    teacher_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    school_id = db.Column(db.Integer, db.ForeignKey("schools.id"), nullable=False, index=True)
+    # Порядковый номер учителя внутри школы (для путей teacher_{fs_teacher_seq})
+    fs_teacher_seq = db.Column(db.Integer, nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint("teacher_id", "school_id", name="uq_teacher_school"),
+    )
+
+    teacher = db.relationship("User", backref="school_memberships")
+    school = db.relationship("School", backref="teacher_memberships")
+
+    def __repr__(self):
+        return f"<TeacherSchool teacher={self.teacher_id} school={self.school_id}>"
+
+
 class ReportFile(db.Model):
     """Локальные пути к Excel/Word отчёту учителя по классу, предмету и четверти."""
 

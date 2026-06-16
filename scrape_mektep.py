@@ -2146,24 +2146,49 @@ def run(headless: bool, out_dir: Path, slow_mo_ms: int) -> int:
             log_warning("Название организации (рус) не найдено")
 
         # ===== Проверка организации (защита от передачи аккаунта) =====
-        # MEKTEP_EXPECTED_SCHOOL передаётся из scraper_runner.py / десктоп-приложения
-        # и содержит название школы, к которой привязан аккаунт в БД.
-        expected_school = os.getenv("MEKTEP_EXPECTED_SCHOOL", "").strip()
-        if expected_school and org_name_ru:
-            a = " ".join(org_name_ru.lower().split())
-            b = " ".join(expected_school.lower().split())
-            if a != b and a not in b and b not in a:
+        # MEKTEP_ALLOWED_SCHOOLS — JSON-массив школ учителя (несколько школ).
+        # MEKTEP_EXPECTED_SCHOOL — устаревший одиночный вариант (обратная совместимость).
+        allowed_schools: list[str] = []
+        allowed_raw = os.getenv("MEKTEP_ALLOWED_SCHOOLS", "").strip()
+        if allowed_raw:
+            try:
+                parsed = json.loads(allowed_raw)
+                if isinstance(parsed, list):
+                    allowed_schools = [str(x).strip() for x in parsed if str(x).strip()]
+            except Exception:
+                log_warning("Не удалось разобрать MEKTEP_ALLOWED_SCHOOLS, используем fallback")
+        if not allowed_schools:
+            expected_school = os.getenv("MEKTEP_EXPECTED_SCHOOL", "").strip()
+            if expected_school:
+                allowed_schools = [expected_school]
+
+        def _org_matches_allowed(org: str, names: list[str]) -> bool:
+            a = " ".join(org.lower().split())
+            for name in names:
+                b = " ".join(name.lower().split())
+                if not b:
+                    continue
+                if a == b or a in b or b in a:
+                    return True
+            return False
+
+        if allowed_schools and org_name_ru:
+            if not _org_matches_allowed(org_name_ru, allowed_schools):
+                allowed_label = ", ".join(allowed_schools)
                 log_error(
-                    f"Организация «{org_name_ru}» не совпадает с вашей школой «{expected_school}». "
+                    f"Организация «{org_name_ru}» не входит в ваши школы ({allowed_label}). "
                     f"Создание отчётов для других школ запрещено."
                 )
-                _update_progress(0, f"Организация «{org_name_ru}» не совпадает с «{expected_school}».")
+                _update_progress(
+                    0,
+                    f"Организация «{org_name_ru}» не входит в ваши школы ({allowed_label}).",
+                )
                 context.close()
                 browser.close()
                 if logger:
                     logger.finish(success=False)
-                return 5  # Код ошибки: несовпадение организации
-        elif expected_school and not org_name_ru:
+                return 5
+        elif allowed_schools and not org_name_ru:
             log_error("Не удалось прочитать название организации — скрапинг отклонён.")
             _update_progress(0, "Не удалось прочитать название организации с mektep.edu.kz.")
             context.close()

@@ -132,26 +132,33 @@ def apply_expected_iin_policy(api_client: Optional["MektepAPIClient"], login: st
 
 
 def apply_expected_school_policy(api_client: Optional["MektepAPIClient"]) -> None:
-    """Защита от передачи аккаунта: MEKTEP_EXPECTED_SCHOOL из API при необходимости."""
-    if "MEKTEP_EXPECTED_SCHOOL" in os.environ:
-        del os.environ["MEKTEP_EXPECTED_SCHOOL"]
+    """Защита от передачи аккаунта: список школ учителя из API."""
+    for key in ("MEKTEP_EXPECTED_SCHOOL", "MEKTEP_ALLOWED_SCHOOLS"):
+        if key in os.environ:
+            del os.environ[key]
 
     if api_client and api_client.is_authenticated():
         try:
+            import json
+
             school_info = api_client.get_my_school()
             if school_info.get("success"):
-                school_name = school_info.get("school_name")
                 _ac = school_info.get("allow_cross_school_reports", True)
                 allow_cross = (
                     _ac is True
                     if isinstance(_ac, bool)
                     else str(_ac).lower() not in ("false", "0", "no", "")
                 )
-                if school_name and not allow_cross:
-                    os.environ["MEKTEP_EXPECTED_SCHOOL"] = school_name
-                    print(f"[DEBUG] Защита: ожидаемая школа = '{school_name}'")
+                allowed_names = school_info.get("allowed_school_names") or []
+                if not allowed_names and school_info.get("school_name"):
+                    allowed_names = [school_info.get("school_name")]
+                if allowed_names and not allow_cross:
+                    os.environ["MEKTEP_ALLOWED_SCHOOLS"] = json.dumps(
+                        allowed_names, ensure_ascii=False
+                    )
+                    print(f"[DEBUG] Защита: разрешённые школы = {allowed_names}")
                 else:
-                    print("[DEBUG] Защита: cross-school разрешено или школа не назначена")
+                    print("[DEBUG] Защита: cross-school разрешено или школы не назначены")
             else:
                 print(
                     f"[DEBUG] Не удалось получить информацию о школе: "

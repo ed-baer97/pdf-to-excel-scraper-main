@@ -201,7 +201,7 @@ def _org_names_match(scraped_name: str, school_name: str) -> bool:
 
 def _check_org_name_allowed(app: Flask, job: ScrapeJob, output_dir: Path) -> str | None:
     """
-    Проверка совпадения организации со скрапинга и школы учителя.
+    Проверка совпадения организации со скрапинга и школ учителя.
 
     Использует файл org_name_ru.txt (название организации на русском,
     прочитанное ДО смены языка) для сравнения с названием школы в БД.
@@ -209,22 +209,25 @@ def _check_org_name_allowed(app: Flask, job: ScrapeJob, output_dir: Path) -> str
     Returns:
         None если всё ок, строка с ошибкой если организация не совпадает.
     """
-    school = db.session.get(School, job.school_id)
-    if not school:
-        app.logger.warning(f"Job {job.id}: school {job.school_id} not found, skipping org check")
+    from .services.teacher_schools import (
+        get_allowed_school_names,
+        teacher_can_report_for_org,
+        teacher_has_cross_school_allowed,
+    )
+
+    teacher = db.session.get(User, job.teacher_id)
+    if not teacher:
+        app.logger.warning(f"Job {job.id}: teacher {job.teacher_id} not found, skipping org check")
         return None
 
-    # Если разрешены отчёты для других школ — пропускаем проверку
-    if school.allow_cross_school_reports:
+    if teacher_has_cross_school_allowed(teacher.id):
         app.logger.info(
-            f"Job {job.id}: cross-school reports allowed for school '{school.name}', skipping org check"
+            f"Job {job.id}: cross-school reports allowed for teacher {teacher.id}, skipping org check"
         )
         return None
 
-    # Читаем org_name на русском (всегда сравниваем по русскому)
     org_name_ru_file = output_dir / "org_name_ru.txt"
     if not org_name_ru_file.exists():
-        # Fallback: пробуем обычный org_name.txt
         org_name_ru_file = output_dir / "org_name.txt"
 
     if not org_name_ru_file.exists():
@@ -244,23 +247,20 @@ def _check_org_name_allowed(app: Flask, job: ScrapeJob, output_dir: Path) -> str
             "Скрапинг отклонён в целях безопасности."
         )
 
-    if _org_names_match(scraped_org_name, school.name):
+    if teacher_can_report_for_org(teacher.id, scraped_org_name):
         app.logger.info(
-            f"Job {job.id}: org name match OK — "
-            f"scraped='{scraped_org_name}', school='{school.name}'"
+            f"Job {job.id}: org name match OK — scraped='{scraped_org_name}'"
         )
         return None
 
-    # Не совпадает!
+    allowed = ", ".join(get_allowed_school_names(teacher.id)) or "—"
     error_msg = (
         f"Организация на mektep.edu.kz «{scraped_org_name}» "
-        f"не совпадает с вашей школой «{school.name}». "
-        f"Создание отчётов для других школ запрещено администратором."
+        f"не входит в ваши школы ({allowed}). "
+        f"Попросите администратора добавить вас в эту школу по ИИН."
     )
     app.logger.warning(
-        f"Job {job.id}: org name MISMATCH — "
-        f"scraped='{scraped_org_name}', school='{school.name}'. "
-        f"Cross-school reports disabled for this school."
+        f"Job {job.id}: org name MISMATCH — scraped='{scraped_org_name}', allowed={allowed}"
     )
     return error_msg
 
@@ -427,17 +427,14 @@ def _run_scrape_job_internal(
         base_upload_dir = _resolve_upload_root(app)
         school_dir = base_upload_dir / f"school_{job.school_id}"
         
-        # Ensure teacher has fs_teacher_seq (assign if missing)
-        if teacher.fs_teacher_seq is None:
-            from sqlalchemy import func
-            max_seq = (
-                db.session.query(func.max(User.fs_teacher_seq))
-                .filter(User.school_id == job.school_id, User.role == Role.TEACHER.value)
-                .scalar()
-            )
-            teacher.fs_teacher_seq = int(max_seq or 0) + 1
+        from .services.teacher_schools import ensure_membership, get_fs_teacher_seq
+
+        membership = ensure_membership(teacher, job.school_id)
+        db.session.commit()
+        teacher_seq = get_fs_teacher_seq(teacher.id, job.school_id) or membership.fs_teacher_seq
+        if teacher.fs_teacher_seq is None and teacher.school_id == job.school_id:
+            teacher.fs_teacher_seq = teacher_seq
             db.session.commit()
-            app.logger.info(f"Assigned fs_teacher_seq={teacher.fs_teacher_seq} to teacher {teacher.id}")
         
         # Ensure job has fs_job_seq (assign if missing)
         if job.fs_job_seq is None:
@@ -451,7 +448,6 @@ def _run_scrape_job_internal(
             db.session.commit()
             app.logger.info(f"Assigned fs_job_seq={job.fs_job_seq} to job {job.id}")
         
-        teacher_seq = teacher.fs_teacher_seq
         job_seq = job.fs_job_seq
         teacher_dir = school_dir / f"teacher_{teacher_seq}"
         output_dir = teacher_dir / f"job_{job_seq}"
@@ -493,13 +489,21 @@ def _run_scrape_job_internal(
         if school_index:
             env["MEKTEP_SCHOOL_INDEX"] = school_index
 
-        # Защита от передачи аккаунта: школа + ИИН
-        school_obj = db.session.get(School, job.school_id)
+        # Защита от передачи аккаунта: список школ учителя + ИИН
+        from .services.teacher_schools import (
+            get_allowed_school_names,
+            teacher_has_cross_school_allowed,
+        )
+
         teacher_obj = db.session.get(User, job.teacher_id)
-        if school_obj and not school_obj.allow_cross_school_reports:
-            env["MEKTEP_EXPECTED_SCHOOL"] = school_obj.name
-            app.logger.info(f"Job {job_id}: org check enabled, expected school='{school_obj.name}'")
-            if teacher_obj and getattr(teacher_obj, "iin", None) and str(teacher_obj.iin).strip():
+        if teacher_obj and not teacher_has_cross_school_allowed(teacher_obj.id):
+            allowed_names = get_allowed_school_names(teacher_obj.id)
+            if allowed_names:
+                env["MEKTEP_ALLOWED_SCHOOLS"] = json.dumps(allowed_names, ensure_ascii=False)
+                app.logger.info(
+                    f"Job {job_id}: org check enabled, allowed schools={allowed_names}"
+                )
+            if getattr(teacher_obj, "iin", None) and str(teacher_obj.iin).strip():
                 env["MEKTEP_EXPECTED_IIN"] = str(teacher_obj.iin).strip()
                 app.logger.info(f"Job {job_id}: IIN check enabled for teacher {teacher_obj.id}")
         else:

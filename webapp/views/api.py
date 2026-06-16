@@ -24,6 +24,12 @@ from ..services.api_helpers import (
     get_period_reports_api,
     require_jwt,
 )
+from ..services.teacher_schools import (
+    get_allowed_school_names,
+    get_teacher_schools,
+    teacher_can_report_for_school_id,
+    teacher_has_cross_school_allowed,
+)
 from ..services.class_grades_matrix import (
     build_class_grades_matrix,
     build_teacher_analytics_map,
@@ -295,14 +301,20 @@ def api_my_school():
             out["iin_missing"] = False
         return jsonify(out), 200
     
+    teacher_schools = get_teacher_schools(user.id) if user.role == Role.TEACHER.value else []
     payload = {
         "success": True,
         "school_id": school.id,
         "school_name": school.name,
-        "allow_cross_school_reports": school.allow_cross_school_reports,
+        "allow_cross_school_reports": (
+            teacher_has_cross_school_allowed(user.id)
+            if user.role == Role.TEACHER.value
+            else school.allow_cross_school_reports
+        ),
     }
-    # ИИН учителя для проверки логина mektep.edu.kz в десктопе
     if user.role == Role.TEACHER.value:
+        payload["schools"] = [{"id": s.id, "name": s.name} for s in teacher_schools]
+        payload["allowed_school_names"] = get_allowed_school_names(user.id)
         tiin = (getattr(user, "iin", None) or "").strip()
         if tiin:
             payload["expected_iin"] = tiin
@@ -461,19 +473,19 @@ def api_upload_report():
         
         school_id = school.id
         
-        # ===== Проверка: org_name совпадает со школой учителя? =====
-        # Разрешено (allow_cross_school_reports=True) → любые школы.
-        # Запрещено (False) → только своя организация.
-        if user.school_id and school_id != user.school_id:
-            user_school = db.session.get(School, user.school_id)
-            allow_cross = user_school.allow_cross_school_reports if user_school else True
-            if user_school and not allow_cross:
-                return jsonify({
-                    "error": f"Организация «{org_name}» не совпадает с вашей школой «{user_school.name}». "
-                             "Создание отчётов для других школ запрещено. "
-                             "Включите «Отчёты для других школ» в настройках школы.",
-                    "org_mismatch": True
-                }), 403
+        # ===== Проверка: org_name в списке школ учителя? =====
+        if user.role == Role.TEACHER.value and not teacher_can_report_for_school_id(
+            user.id, school_id
+        ):
+            allowed = ", ".join(get_allowed_school_names(user.id)) or "—"
+            return jsonify({
+                "error": (
+                    f"Организация «{org_name}» не входит в ваши школы ({allowed}). "
+                    "Попросите администратора добавить вас в эту школу по ИИН "
+                    "или включите «Отчёты для других школ»."
+                ),
+                "org_mismatch": True
+            }), 403
     else:
         # Fallback: используем school_id пользователя (обратная совместимость)
         school_id = user.school_id

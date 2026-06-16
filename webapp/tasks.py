@@ -156,9 +156,15 @@ def run_scrape_task(
         if school_index:
             env["MEKTEP_SCHOOL_INDEX"] = school_index
 
-        school_obj = db.session.get(School, job.school_id)
-        if school_obj and not school_obj.allow_cross_school_reports:
-            env["MEKTEP_EXPECTED_SCHOOL"] = school_obj.name
+        from .services.teacher_schools import (
+            get_allowed_school_names,
+            teacher_has_cross_school_allowed,
+        )
+
+        if teacher_u and not teacher_has_cross_school_allowed(teacher_u.id):
+            allowed_names = get_allowed_school_names(teacher_u.id)
+            if allowed_names:
+                env["MEKTEP_ALLOWED_SCHOOLS"] = json.dumps(allowed_names, ensure_ascii=False)
             if getattr(teacher_u, "iin", None) and str(teacher_u.iin).strip():
                 env["MEKTEP_EXPECTED_IIN"] = str(teacher_u.iin).strip()
 
