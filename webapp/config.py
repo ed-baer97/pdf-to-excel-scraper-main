@@ -16,7 +16,7 @@ Environment variables:
 import os
 from pathlib import Path
 
-from .constants import DESKTOP_EXE_NAME, DESKTOP_RELEASES_REPO, DESKTOP_VERSION
+from .constants import DESKTOP_VERSION, desktop_download_url
 
 
 class Config:
@@ -70,14 +70,12 @@ class Config:
     USE_CELERY = os.getenv("USE_CELERY", "0") == "1"
 
     # Скачивание десктопного приложения:
-    # DESKTOP_DOWNLOAD_PATH — путь к exe/zip (например dist/Mektep Desktop.zip)
-    # DESKTOP_DOWNLOAD_URL — внешняя ссылка (если задана, используется вместо пути)
+    # DESKTOP_DOWNLOAD_PATH — локальный файл (маршрут /download/desktop)
+    # DESKTOP_DOWNLOAD_URL — внешняя ссылка (по умолчанию — установщик на /updates/)
     DESKTOP_DOWNLOAD_PATH = os.getenv("DESKTOP_DOWNLOAD_PATH", "")
-    # Только .../releases/download/<тег>/Mektep.Desktop.exe — не .../releases/tag/...
-    # (tag-URL открывает веб-страницу, файл по нему не качается).
     DESKTOP_DOWNLOAD_URL = os.getenv(
         "DESKTOP_DOWNLOAD_URL",
-        f"https://github.com/{DESKTOP_RELEASES_REPO}/releases/download/v{DESKTOP_VERSION}/{DESKTOP_EXE_NAME}",
+        desktop_download_url(DESKTOP_VERSION),
     )
 
 

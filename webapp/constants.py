@@ -2,14 +2,26 @@
 
 import re
 
-# Актуальный релиз Mektep Desktop (GitHub Releases + mektep-desktop/version.py).
+# Актуальный релиз Mektep Desktop (синхронизировать с mektep-desktop/version.py).
 DESKTOP_VERSION = "1.2.1"
 
 # Минимальная версия десктопа для API (логин, загрузка отчётов).
 MIN_DESKTOP_VERSION = (1, 2, 1)
 
-DESKTOP_RELEASES_REPO = "ed-baer97/mektep-desktop-releases"
-DESKTOP_EXE_NAME = "Mektep.Desktop.exe"
+# Раздача установщика и манифеста автообновления (Nginx /updates/).
+DESKTOP_UPDATES_BASE_URL = "https://mektep-analyzer.kz/updates/"
+
+
+def desktop_installer_filename(version: str | None = None) -> str:
+    """Имя Inno Setup установщика для указанной версии."""
+    v = (version or DESKTOP_VERSION).strip()
+    return f"MektepDesktopSetup-{v}.exe"
+
+
+def desktop_download_url(version: str | None = None) -> str:
+    """Прямая ссылка на установщик на сервере обновлений."""
+    base = DESKTOP_UPDATES_BASE_URL.rstrip("/")
+    return f"{base}/{desktop_installer_filename(version)}"
 
 PERIOD_MAP = {
     "1": "1 четверть",

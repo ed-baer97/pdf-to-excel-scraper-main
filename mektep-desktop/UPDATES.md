@@ -2,7 +2,7 @@
 
 ## Структура на сервере
 
-Файлы размещаются в `/var/www/mektep/updates/` и доступны по URL `https://mektep-analyzer.kz/updates/`:
+Файлы размещаются в `updates/` в корне проекта (Docker: монтируется в Nginx как `/var/www/mektep/updates/`) и доступны по URL `https://mektep-analyzer.kz/updates/`:
 
 ```
 updates/
@@ -37,9 +37,11 @@ location /updates/ {
 3. В `dist/` появятся:
    - `MektepDesktopSetup-<version>.exe`
    - `latest.json` (с sha256 и URL)
-4. Загрузите оба файла на сервер:
+4. Загрузите оба файла на сервер (или в `./updates/` при Docker-деплое):
    ```bash
    scp dist/MektepDesktopSetup-1.2.2.exe dist/latest.json user@mektep-analyzer.kz:/var/www/mektep/updates/
+   # или локально:
+   cp dist/MektepDesktopSetup-1.2.2.exe dist/latest.json ../updates/
    ```
 
 ## Формат latest.json
