@@ -61,6 +61,7 @@ def create_export():
         "grades_class",
         "class_teacher",
         "metrics_charts",
+        "final_report",
     }
     if export_kind not in allowed:
         return jsonify({"success": False, "error": f"invalid export_kind: {export_kind}"}), 400

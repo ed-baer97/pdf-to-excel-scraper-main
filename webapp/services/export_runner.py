@@ -270,6 +270,19 @@ def execute_export_job(job_id: int) -> None:
                 tr=tr,
             )
 
+        elif kind == "final_report":
+            from ..services.grade_reports.final_report import build_final_report_workbook
+
+            def tr_final(key: str) -> str:
+                return translate_gettext(key, lang)
+
+            output, filename = build_final_report_workbook(
+                school_id,
+                academic_year=academic_year,
+                years_back=int(params.get("years_back") or 3),
+                tr=tr_final,
+            )
+
         else:
             raise ValueError(f"Unknown export_kind: {kind}")
 

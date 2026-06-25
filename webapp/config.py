@@ -133,6 +133,7 @@ class TestingConfig(Config):
     
     DEBUG = True
     TESTING = True
+    LOG_JSON = False
     
     # Use in-memory SQLite for tests
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"

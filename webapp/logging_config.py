@@ -44,9 +44,26 @@ def configure_logging(app: Flask | None = None) -> None:
 
     use_json = os.getenv("LOG_JSON", "1").lower() in ("1", "true", "yes")
     if app is not None:
-        use_json = bool(app.config.get("LOG_JSON", use_json))
+        if app.config.get("TESTING"):
+            use_json = False
+        else:
+            use_json = bool(app.config.get("LOG_JSON", use_json))
 
     formatter_name = "json" if use_json else "plain"
+
+    formatters: dict = {
+        "plain": {
+            "format": "%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        },
+    }
+    if use_json:
+        formatters["json"] = {
+            "()": "pythonjsonlogger.json.JsonFormatter",
+            "format": (
+                "%(asctime)s %(levelname)s %(name)s %(message)s "
+                "%(request_id)s"
+            ),
+        }
 
     config = {
         "version": 1,
@@ -56,18 +73,7 @@ def configure_logging(app: Flask | None = None) -> None:
                 "()": _RequestContextFilter,
             },
         },
-        "formatters": {
-            "json": {
-                "()": "pythonjsonlogger.json.JsonFormatter",
-                "format": (
-                    "%(asctime)s %(levelname)s %(name)s %(message)s "
-                    "%(request_id)s"
-                ),
-            },
-            "plain": {
-                "format": "%(asctime)s %(levelname)s [%(name)s] %(message)s",
-            },
-        },
+        "formatters": formatters,
         "handlers": {
             "console": {
                 "class": "logging.StreamHandler",

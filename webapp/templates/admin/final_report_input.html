@@ -1,0 +1,140 @@
+{% extends "layout.html" %}
+{% block content %}
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+    <div>
+      <h3 class="mb-1">{{ _('final_report_input_title') }}</h3>
+      <p class="text-muted small mb-0">{{ _('final_report_input_hint') }}</p>
+    </div>
+    <form method="get" class="d-flex align-items-center gap-2">
+      <label for="year-select" class="form-label mb-0 small text-muted">{{ _('academic_year_label') }}</label>
+      <select id="year-select" name="academic_year" class="form-select form-select-sm" onchange="this.form.submit()">
+        {% for y in years %}
+        <option value="{{ y }}" {% if y == academic_year %}selected{% endif %}>{{ format_academic_year(y) }}</option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
+
+  <ul class="nav nav-tabs mb-3" role="tablist">
+    <li class="nav-item"><a class="nav-link {% if active_section == 'gia9' %}active{% endif %}" href="?academic_year={{ academic_year }}&section=gia9">{{ _('final_report_tab_gia9') }}</a></li>
+    <li class="nav-item"><a class="nav-link {% if active_section == 'gia11' %}active{% endif %}" href="?academic_year={{ academic_year }}&section=gia11">{{ _('final_report_tab_gia11') }}</a></li>
+    <li class="nav-item"><a class="nav-link {% if active_section == 'ent' %}active{% endif %}" href="?academic_year={{ academic_year }}&section=ent">{{ _('final_report_tab_ent') }}</a></li>
+    <li class="nav-item"><a class="nav-link {% if active_section == 'awards' %}active{% endif %}" href="?academic_year={{ academic_year }}&section=awards">{{ _('final_report_tab_awards') }}</a></li>
+  </ul>
+
+  <div class="card border-0 shadow-sm">
+    <div class="card-body">
+      <form method="post" id="final-report-form">
+        <input type="hidden" name="academic_year" value="{{ academic_year }}">
+        <input type="hidden" name="section" value="{{ active_section }}">
+        <input type="hidden" name="data_json" id="data-json-field">
+
+        {% if active_section in ('gia9', 'gia11') %}
+        <p class="text-muted small">{{ _('final_report_gia_hint') }}</p>
+        <div class="mb-3">
+          <label class="form-label">{{ _('final_report_gia_classes_json') }}</label>
+          <textarea class="form-control font-monospace" id="gia-classes-json" rows="12">{{ sections_data[active_section].classes | tojson(indent=2) }}</textarea>
+          <div class="form-text">{{ _('final_report_gia_json_example') }}</div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">{{ _('notes_label') }}</label>
+          <textarea class="form-control" id="gia-notes" rows="2">{{ sections_data[active_section].notes or '' }}</textarea>
+        </div>
+        {% elif active_section == 'ent' %}
+        <p class="text-muted small">{{ _('final_report_ent_hint') }}</p>
+        <div class="mb-3">
+          <label class="form-label">{{ _('final_report_ent_periods') }}</label>
+          <textarea class="form-control font-monospace" id="ent-periods-json" rows="6">{{ sections_data.ent.periods | tojson(indent=2) }}</textarea>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">{{ _('final_report_ent_quality') }}</label>
+          <textarea class="form-control font-monospace" id="ent-quality-json" rows="5">{{ sections_data.ent.quality_levels | tojson(indent=2) }}</textarea>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">{{ _('final_report_ent_slices') }}</label>
+          <textarea class="form-control font-monospace" id="ent-slices-json" rows="5">{{ sections_data.ent.class_slices | tojson(indent=2) }}</textarea>
+        </div>
+        <div class="row g-3 mb-3">
+          <div class="col-md-4">
+            <label class="form-label">{{ _('final_report_ent_forecast') }}</label>
+            <input type="number" step="0.1" class="form-control" id="ent-forecast" value="{{ sections_data.ent.forecast_avg or '' }}">
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">{{ _('final_report_recommendations') }}</label>
+          <textarea class="form-control" id="ent-recommendations" rows="3">{{ sections_data.ent.recommendations or '' }}</textarea>
+        </div>
+        {% elif active_section == 'awards' %}
+        <p class="text-muted small">{{ _('final_report_awards_hint') }}</p>
+        <div class="row g-3 mb-3">
+          <div class="col-md-4">
+            <label class="form-label">{{ _('final_report_awards_altyn') }}</label>
+            <input type="number" min="0" class="form-control" id="awards-altyn" value="{{ sections_data.awards.altyn_belgi or 0 }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">{{ _('final_report_awards_excellent_11') }}</label>
+            <input type="number" min="0" class="form-control" id="awards-ex11" value="{{ sections_data.awards.excellent_11 or 0 }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">{{ _('final_report_awards_excellent_9') }}</label>
+            <input type="number" min="0" class="form-control" id="awards-ex9" value="{{ sections_data.awards.excellent_9 or 0 }}">
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">{{ _('final_report_awards_students') }}</label>
+          <textarea class="form-control font-monospace" id="awards-students-json" rows="10">{{ sections_data.awards.students | tojson(indent=2) }}</textarea>
+          <div class="form-text">{{ _('final_report_awards_students_hint') }}</div>
+        </div>
+        {% endif %}
+
+        <div class="d-flex gap-2">
+          <button type="submit" class="btn btn-primary">{{ _('save') }}</button>
+          <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline-secondary">{{ _('cancel') }}</a>
+        </div>
+      </form>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  function parseJson(text, fallback) {
+    try {
+      const v = JSON.parse(text || "null");
+      return v === null ? fallback : v;
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  document.getElementById("final-report-form").addEventListener("submit", function (ev) {
+    const section = "{{ active_section }}";
+    let data = {};
+    if (section === "gia9" || section === "gia11") {
+      data = {
+        classes: parseJson(document.getElementById("gia-classes-json").value, []),
+        notes: document.getElementById("gia-notes").value || "",
+      };
+    } else if (section === "ent") {
+      const forecast = document.getElementById("ent-forecast").value;
+      data = {
+        periods: parseJson(document.getElementById("ent-periods-json").value, []),
+        quality_levels: parseJson(document.getElementById("ent-quality-json").value, []),
+        class_slices: parseJson(document.getElementById("ent-slices-json").value, []),
+        forecast_avg: forecast === "" ? null : parseFloat(forecast),
+        recommendations: document.getElementById("ent-recommendations").value || "",
+      };
+    } else if (section === "awards") {
+      data = {
+        altyn_belgi: parseInt(document.getElementById("awards-altyn").value || "0", 10),
+        excellent_11: parseInt(document.getElementById("awards-ex11").value || "0", 10),
+        excellent_9: parseInt(document.getElementById("awards-ex9").value || "0", 10),
+        students: parseJson(document.getElementById("awards-students-json").value, []),
+      };
+    }
+    document.getElementById("data-json-field").value = JSON.stringify(data);
+  });
+})();
+</script>
+{% endblock %}

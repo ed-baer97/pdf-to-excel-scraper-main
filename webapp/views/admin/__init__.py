@@ -97,7 +97,7 @@ from iin_utils import normalize_kz_iin
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
-from . import exports, management, reports  # noqa: E402, F401
+from . import exports, final_report, management, reports  # noqa: E402, F401
 
 def _iin_taken_by_other_teacher(school_id: int, iin_norm: str, exclude_id: int | None = None) -> bool:
     q = User.query.filter_by(role=Role.TEACHER.value, school_id=school_id, iin=iin_norm)

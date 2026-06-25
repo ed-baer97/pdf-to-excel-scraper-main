@@ -295,6 +295,26 @@
       </a>
     </div>
     <div class="col">
+      <a href="{{ url_for('admin.final_report_input') }}" class="card shadow-sm text-decoration-none h-100 border border-success border-opacity-25">
+        <div class="card-body text-center">
+          <h4 class="text-success"><i class="bi bi-file-earmark-spreadsheet"></i></h4>
+          <h6>{{ _('final_report_input_title') }}</h6>
+          <small class="text-muted">{{ _('final_report_input_nav_desc') }}</small>
+        </div>
+      </a>
+    </div>
+    <div class="col">
+      <button type="button" class="card shadow-sm text-decoration-none h-100 border border-success border-opacity-50 w-100 btn p-0 text-start"
+              data-async-export="final_report"
+              data-export-params='{"academic_year": {{ active_academic_year }}, "years_back": 3}'>
+        <div class="card-body text-center">
+          <h4 class="text-success"><i class="bi bi-download"></i></h4>
+          <h6>{{ _('final_report_export_btn') }}</h6>
+          <small class="text-muted">{{ _('final_report_export_desc') }}</small>
+        </div>
+      </button>
+    </div>
+    <div class="col">
       <a href="{{ url_for('admin.management') }}" class="card shadow-sm text-decoration-none h-100 border border-primary border-opacity-25">
         <div class="card-body text-center">
           <h4 class="text-primary"><i class="bi bi-kanban"></i></h4>
@@ -304,5 +324,6 @@
       </a>
     </div>
   </div>
-  
+
+  <script src="{{ url_for('static', filename='js/admin_async_export.js') }}"></script>
 {% endblock %}

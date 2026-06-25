@@ -374,6 +374,44 @@ class GradeReport(db.Model):
         return f"<GradeReport {self.class_name} {self.subject_name} {self.period_type}/{self.period_number}>"
 
 
+class FinalReportSection(str, Enum):
+    """Разделы ручных данных итогового отчёта школы."""
+
+    GIA9 = "gia9"
+    GIA11 = "gia11"
+    ENT = "ent"
+    AWARDS = "awards"
+
+
+class FinalReportData(db.Model):
+    """
+    Ручные данные итогового отчёта (ГИА, ЕНТ, аттестаты) — JSON по школе/году/разделу.
+    """
+
+    __tablename__ = "final_report_data"
+
+    id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey("schools.id"), nullable=False, index=True)
+    academic_year = db.Column(db.SmallInteger, nullable=False, index=True)
+    section = db.Column(db.String(16), nullable=False)
+    data_json = db.Column(db.Text, nullable=True, default="{}")
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "school_id",
+            "academic_year",
+            "section",
+            name="uq_final_report_school_year_section",
+        ),
+    )
+
+    school = db.relationship("School", backref="final_report_data")
+
+    def __repr__(self):
+        return f"<FinalReportData school={self.school_id} year={self.academic_year} {self.section}>"
+
+
 class ExportJobStatus(str, Enum):
     """Состояния фоновой задачи экспорта Excel."""
 
