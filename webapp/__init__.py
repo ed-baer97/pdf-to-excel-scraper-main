@@ -37,6 +37,13 @@ def create_app(config_object=None) -> Flask:
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.config.from_object(config_object)
 
+    from .logging_config import configure_logging, init_sentry
+    from .request_logging import register_error_handlers, register_request_logging
+    from .slow_sql import register_slow_sql_logging
+
+    configure_logging(app)
+    init_sentry(app)
+
     # Prometheus metrics (internal /metrics endpoint)
     try:
         from prometheus_flask_exporter import PrometheusMetrics
@@ -47,7 +54,11 @@ def create_app(config_object=None) -> Flask:
     db.init_app(app)
     migrate.init_app(app, db)
     login_manager.init_app(app)
-    
+
+    register_request_logging(app)
+    register_error_handlers(app)
+    register_slow_sql_logging(app)
+
     def get_locale():
         """Возвращает код текущей локали из сессии (по умолчанию ru)."""
         return session.get('language', 'ru')

@@ -46,6 +46,19 @@ services:
       - USE_CELERY=0
       - UPLOAD_ROOT=/app/data/uploads
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_JSON=${LOG_JSON:-1}
+      - SLOW_SQL_MS=${SLOW_SQL_MS:-500}
+      - SLOW_REQUEST_MS=${SLOW_REQUEST_MS:-1000}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0.1}
+    labels:
+      service: mektep-web
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     volumes:
       - ./data:/app/data
       - ./instance:/app/instance
@@ -137,6 +150,33 @@ services:
       - GF_SERVER_ROOT_URL=http://localhost:3000
     volumes:
       - grafana-data:/var/lib/grafana
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+      - loki
+    networks:
+      - mektep-network
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:2.9.0
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./deploy/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    networks:
+      - mektep-network
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:2.9.0
+    volumes:
+      - ./deploy/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
     networks:
       - mektep-network
     restart: unless-stopped
@@ -164,6 +204,10 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - UPLOAD_ROOT=/app/data/uploads
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_JSON=${LOG_JSON:-1}
+      - SLOW_SQL_MS=${SLOW_SQL_MS:-500}
+      - SENTRY_DSN=${SENTRY_DSN:-}
     volumes:
       - ./data:/app/data
       - ./instance:/app/instance
@@ -179,6 +223,7 @@ services:
 volumes:
   postgres-data:
   grafana-data:
+  loki-data:
 
 networks:
   mektep-network:

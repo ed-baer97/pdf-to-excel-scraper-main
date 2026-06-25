@@ -1072,12 +1072,7 @@ sum(increase(flask_http_request_total{status=~"5.."}[1h]))
 - Логин: `admin`
 - Пароль: `GRAFANA_ADMIN_PASSWORD` (по умолчанию `admin`).
 - Данные сохраняются в Docker volume `grafana-data`.
-
-Первичная настройка источника данных:
-
-1. Откройте `http://localhost:3000` и войдите.
-2. `Connections` → `Data sources` → `Add data source` → `Prometheus`.
-3. URL: `http://prometheus:9090` (внутри Docker-сети) → `Save & test`.
+- Источники данных **Prometheus** и **Loki** подключаются автоматически через [deploy/grafana/provisioning/datasources/datasources.yml](deploy/grafana/provisioning/datasources/datasources.yml).
 
 Готовые дашборды не поставляются — импортируйте из [Grafana Dashboards](https://grafana.com/grafana/dashboards/), например:
 
@@ -1085,12 +1080,55 @@ sum(increase(flask_http_request_total{status=~"5.."}[1h]))
 - `9628`/`9964` — PostgreSQL.
 - Кастомный — на базе `flask_http_request_*` метрик `prometheus-flask-exporter`.
 
+### Loki (централизованные логи)
+
+- Сервисы `loki` и `promtail` поднимаются вместе со стеком.
+- Конфиги: [deploy/loki-config.yml](deploy/loki-config.yml), [deploy/promtail-config.yml](deploy/promtail-config.yml).
+- Retention: 31 день (`loki-data` volume).
+- Приложение пишет **структурированные JSON-логи** в stdout с полями `request_id`, `duration_ms`, `user_id`, `school_id` (см. [webapp/logging_config.py](webapp/logging_config.py), [webapp/request_logging.py](webapp/request_logging.py)).
+
+Просмотр в Grafana → **Explore** → источник **Loki**. Примеры LogQL:
+
+```logql
+# Все HTTP-запросы контейнера web
+{container=~".*web.*"} |= "http_request"
+
+# Ошибки (5xx)
+{container=~".*web.*"} | json | status >= 500
+
+# Медленные запросы (> 1 сек)
+{container=~".*web.*"} | json | duration_ms > 1000
+
+# Медленные SQL
+{container=~".*web.*"} |= "slow_sql"
+
+# Поиск по request_id (из заголовка X-Request-ID)
+{container=~".*web.*"} | json | request_id = "abc-123"
+```
+
+Переменные окружения: `LOG_LEVEL`, `LOG_JSON`, `SLOW_SQL_MS`, `SLOW_REQUEST_MS` — см. [env.example](env.example).
+
+### GlitchTip (трекинг ошибок)
+
+Self-hosted Sentry-совместимый сервис — данные об ошибках остаются на вашем сервере.
+
+```bash
+docker compose -f deploy/glitchtip-compose.yml up -d
+```
+
+1. Откройте `http://localhost:8000` (или `GLITCHTIP_DOMAIN`).
+2. Создайте организацию и проект, скопируйте **DSN**.
+3. Пропишите в `.env`: `SENTRY_DSN=https://...@.../1`
+4. Перезапустите `web`: `docker compose -f deploy/docker-compose.yml up -d web`
+
+Интеграция: [webapp/logging_config.py](webapp/logging_config.py) (`init_sentry`). Необработанные исключения также логируются через [webapp/request_logging.py](webapp/request_logging.py).
+
 ### Логи
 
-- Приложение: stdout/stderr контейнера `web` (`docker compose logs -f web`). В Gunicorn — `GUNICORN_ACCESS_LOG`/`GUNICORN_ERROR_LOG` (по умолчанию `-` = stdout).
-- Nginx: внутри контейнера `nginx` — `/var/log/nginx/access.log` и `/var/log/nginx/error.log`.
-- Скрапер: `out/platform_runs/<job_id>_<ts>/progress.json` и `debug-*.log` в корне репо.
-- Десктоп: `mektep-debug.log` (корень репо), `mektep-desktop/debug-*.log`.
+- **Приложение (JSON)**: stdout контейнера `web` — собирается Promtail → Loki → Grafana. Быстрый просмотр: `docker compose logs -f web`.
+- **Nginx**: внутри контейнера `nginx` — `/var/log/nginx/access.log` и `/var/log/nginx/error.log`.
+- **Скрапер**: `out/platform_runs/<job_id>_<ts>/progress.json` и `debug-*.log` в корне репо.
+- **Десктоп**: `mektep-debug.log` (корень репо), `mektep-desktop/debug-*.log`.
 
 ---
 

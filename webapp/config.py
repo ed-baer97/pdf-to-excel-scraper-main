@@ -69,6 +69,14 @@ class Config:
     # Use Celery for background jobs (set to False to use threads)
     USE_CELERY = os.getenv("USE_CELERY", "0") == "1"
 
+    # Logging & observability
+    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+    LOG_JSON = os.getenv("LOG_JSON", "1") == "1"
+    SLOW_SQL_MS = float(os.getenv("SLOW_SQL_MS", "500"))
+    SLOW_REQUEST_MS = float(os.getenv("SLOW_REQUEST_MS", "1000"))
+    SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+    SENTRY_TRACES_SAMPLE_RATE = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1"))
+
     # Скачивание десктопного приложения:
     # DESKTOP_DOWNLOAD_PATH — локальный файл (маршрут /download/desktop)
     # DESKTOP_DOWNLOAD_URL — внешняя ссылка (по умолчанию — установщик на /updates/)

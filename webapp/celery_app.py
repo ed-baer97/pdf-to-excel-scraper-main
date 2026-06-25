@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 from celery import Celery
+from celery.signals import setup_logging, worker_process_init
 
 # Redis URL from environment (default: localhost)
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -78,6 +79,36 @@ def make_celery(app_name: str = "mektep_scraper") -> Celery:
 celery_app = make_celery()
 
 
+@setup_logging.connect
+def _configure_celery_logging(**kwargs):
+    """Apply the same JSON logging config as the Flask web process."""
+    from .logging_config import configure_logging
+
+    configure_logging()
+
+
+@worker_process_init.connect
+def _init_celery_sentry(**kwargs):
+    """Initialize Sentry/GlitchTip in Celery worker processes."""
+    dsn = os.getenv("SENTRY_DSN", "")
+    if not dsn:
+        return
+
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.celery import CeleryIntegration
+    except ImportError:
+        return
+
+    sentry_sdk.init(
+        dsn=dsn,
+        integrations=[CeleryIntegration()],
+        environment=os.getenv("FLASK_ENV", "production"),
+        traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
+        send_default_pii=False,
+    )
+
+
 def init_celery(flask_app):
     """
     Initialize Celery with Flask app context.
@@ -94,4 +125,8 @@ def init_celery(flask_app):
                 return self.run(*args, **kwargs)
     
     celery_app.Task = ContextTask
+
+    from .logging_config import configure_logging
+
+    configure_logging(flask_app)
     return celery_app

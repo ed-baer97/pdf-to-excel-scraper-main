@@ -1,0 +1,92 @@
+version: "3.8"
+
+# Self-hosted GlitchTip (Sentry-compatible) for error tracking.
+# Data stays on your server — important for IIN / personal data compliance.
+#
+# Usage:
+#   docker compose -f deploy/glitchtip-compose.yml up -d
+#   Open http://localhost:8000, create org + project, copy DSN to SENTRY_DSN in .env
+
+x-glitchtip-environment: &glitchtip-environment
+  DATABASE_URL: postgres://glitchtip:${GLITCHTIP_DB_PASSWORD:-glitchtip123}@glitchtip-db:5432/glitchtip
+  SECRET_KEY: ${GLITCHTIP_SECRET_KEY:-change-me-generate-a-long-random-secret}
+  PORT: 8000
+  EMAIL_URL: ${GLITCHTIP_EMAIL_URL:-consolemail://}
+  GLITCHTIP_DOMAIN: ${GLITCHTIP_DOMAIN:-http://localhost:8000}
+  DEFAULT_FROM_EMAIL: ${GLITCHTIP_FROM_EMAIL:-glitchtip@localhost}
+  CELERY_WORKER_AUTOSCALE: "1,3"
+  REDIS_URL: redis://glitchtip-redis:6379/0
+  ENABLE_USER_REGISTRATION: "False"
+  ENABLE_ORGANIZATION_CREATION: "False"
+
+services:
+  glitchtip-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: glitchtip
+      POSTGRES_PASSWORD: ${GLITCHTIP_DB_PASSWORD:-glitchtip123}
+      POSTGRES_DB: glitchtip
+    volumes:
+      - glitchtip-postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - glitchtip-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U glitchtip -d glitchtip"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  glitchtip-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks:
+      - glitchtip-network
+
+  glitchtip-migrate:
+    image: glitchtip/glitchtip:v4
+    command: ./bin/run-migrate.sh
+    environment: *glitchtip-environment
+    depends_on:
+      glitchtip-db:
+        condition: service_healthy
+    networks:
+      - glitchtip-network
+
+  glitchtip-web:
+    image: glitchtip/glitchtip:v4
+    ports:
+      - "${GLITCHTIP_PORT:-8000}:8000"
+    environment: *glitchtip-environment
+    depends_on:
+      glitchtip-db:
+        condition: service_healthy
+      glitchtip-redis:
+        condition: service_started
+      glitchtip-migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    networks:
+      - glitchtip-network
+
+  glitchtip-worker:
+    image: glitchtip/glitchtip:v4
+    command: ./bin/run-worker.sh
+    environment: *glitchtip-environment
+    depends_on:
+      glitchtip-db:
+        condition: service_healthy
+      glitchtip-redis:
+        condition: service_started
+      glitchtip-migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    networks:
+      - glitchtip-network
+
+volumes:
+  glitchtip-postgres-data:
+
+networks:
+  glitchtip-network:
+    driver: bridge
