@@ -9,6 +9,7 @@ English summary: multi-user web app plus optional PyQt6 desktop client; Playwrig
 - Многопользовательская система (суперадмин → школы → учителя), учитель может работать в нескольких школах
 - Сбор данных с mektep.edu.kz (Playwright), в т.ч. критериальное оценивание (СОР/СОЧ)
 - Генерация Excel и Word из шаблонов; сводная аналитика, отчёты предметника и классного руководителя, годовые оценки
+- **Итоговый отчёт школы** — многолистовой Excel со сводкой по школе (успеваемость, качество, динамика за 3 года, ГИА, ЕНТ, аттестаты); авто-разделы из `GradeReport`, ручной ввод ГИА/ЕНТ/аттестатов через админ-панель. Подробнее: [Итоговый отчёт школы](#итоговый-отчёт-школы).
 - Асинхронный экспорт Excel из админ-панели (Celery или фоновый поток)
 - Прогресс задач в реальном времени
 - Десктоп-клиент с автообновлением через установщик (Inno Setup + `latest.json`)
@@ -199,7 +200,7 @@ pdf-to-excel-scraper-main/
 | [webapp/config.py](webapp/config.py) | Классы `Config` / `DevelopmentConfig` / `ProductionConfig` / `TestingConfig` + `get_config()` по `FLASK_ENV`. |
 | [webapp/constants.py](webapp/constants.py) | `DESKTOP_VERSION`, `MIN_DESKTOP_VERSION`, `DESKTOP_UPDATES_BASE_URL` + хелперы `desktop_installer_filename()`/`desktop_download_url()`; `PERIOD_MAP`, `DEFAULT_SUBJECT_ALIASES`, `normalize_subject_name()`, `kazakh_sort_key()` (казахская кириллическая сортировка). |
 | [webapp/extensions.py](webapp/extensions.py) | Singleton-экземпляры `db` (SQLAlchemy), `migrate` (Flask-Migrate), `login_manager` (Flask-Login, `login_view="main.index"`). |
-| [webapp/models.py](webapp/models.py) | Enum `Role`, `ScrapeJobStatus`, `ExportJobStatus`; модели `School`, `User`, `TeacherSchool` (учитель ↔ несколько школ), `Class`, `Subject`, `SubjectNameAlias` (алиасы названий предметов по школе), `TeacherClass`, `TeacherSubject`, `GradeReport`, `ReportFile`, `ScrapeJob`, `ExportJob` (фоновый экспорт Excel). |
+| [webapp/models.py](webapp/models.py) | Enum `Role`, `ScrapeJobStatus`, `ExportJobStatus`, `FinalReportSection`; модели `School`, `User`, `TeacherSchool` (учитель ↔ несколько школ), `Class`, `Subject`, `SubjectNameAlias` (алиасы названий предметов по школе), `TeacherClass`, `TeacherSubject`, `GradeReport`, `FinalReportData` (ручные данные итогового отчёта: ГИА, ЕНТ, аттестаты), `ReportFile`, `ScrapeJob`, `ExportJob` (фоновый экспорт Excel). |
 | [webapp/security.py](webapp/security.py) | `encrypt_password()` / `decrypt_password()` через `Fernet` с ключом `PASSWORD_ENC_KEY`. |
 | [webapp/tasks.py](webapp/tasks.py) | Celery-задачи (`run_scrape_task`, `generate_ai_text`, `run_export_task`) — альтернатива потокам в `scraper_runner`/`export_runner`. |
 | [webapp/celery_app.py](webapp/celery_app.py) | `make_celery()` + `init_celery(flask_app)` (очереди `scraping`/`ai`, лимиты времени). |
@@ -216,7 +217,7 @@ pdf-to-excel-scraper-main/
 | [views/auth.py](webapp/views/auth.py) | `/auth` | anonymous | Обрабатывает `POST /auth/login` (учителя блокируются — вход только через десктоп) и `POST /auth/logout`. |
 | [views/setup.py](webapp/views/setup.py) | `/setup` | (только если нет суперадмина) | One-time мастер создания первого суперадмина. |
 | [views/superadmin.py](webapp/views/superadmin.py) | `/superadmin` | `SUPERADMIN` | Школы (создание/активация), школьные админы, смена пароля, AI-модели, квоты отчётов. |
-| [views/admin/](webapp/views/admin/__init__.py) | `/admin` | `SCHOOL_ADMIN` | Пакет дашборда школы (разбит из бывшего монолитного `admin.py`): `management.py` (учителя/классы/предметы/алиасы), `reports.py` (оценки, аналитика, графики, критериальное оценивание, отчёты предметника/классрука), `exports.py` (асинхронный экспорт Excel). |
+| [views/admin/](webapp/views/admin/__init__.py) | `/admin` | `SCHOOL_ADMIN` | Пакет дашборда школы (разбит из бывшего монолитного `admin.py`): `management.py` (учителя/классы/предметы/алиасы), `reports.py` (оценки, аналитика, графики, критериальное оценивание, отчёты предметника/классрука), `final_report.py` (ввод ГИА/ЕНТ/аттестатов), `exports.py` (асинхронный экспорт Excel). |
 | [views/teacher.py](webapp/views/teacher.py) | (без префикса) | `TEACHER` (+ API для десктопа) | Запуск скрапинга, просмотр своих отчётов, скачивание zip, AI-генерация текста с Redis rate-limit. |
 | [views/api.py](webapp/views/api.py) | `/api` | JWT (десктоп) | REST-API для Mektep Desktop: логин/рефреш токена, загрузка отчётов, проверка версии (`MIN_DESKTOP_VERSION`). |
 | [views/health.py](webapp/views/health.py) | `/health` | любые | `GET /health[/live]` (жив), `GET /health/ready` (БД), `GET /health/stats` (счётчики задач, школ, пользователей). |
@@ -227,10 +228,11 @@ pdf-to-excel-scraper-main/
 
 | Файл | Что делает |
 |------|------------|
-| [views/admin/__init__.py](webapp/views/admin/__init__.py) | Создаёт `Blueprint("admin")`, общие хелперы (`_management_list_context()` и пр.), импортирует подмодули `exports`, `management`, `reports`. |
+| [views/admin/__init__.py](webapp/views/admin/__init__.py) | Создаёт `Blueprint("admin")`, общие хелперы (`_management_list_context()` и пр.), импортирует подмодули `exports`, `final_report`, `management`, `reports`. |
 | [views/admin/management.py](webapp/views/admin/management.py) | CRUD учителей/классов/предметов, связи «учитель↔класс/предмет», словарь алиасов названий предметов. |
 | [views/admin/reports.py](webapp/views/admin/reports.py) | Просмотр оценок, аналитика, графики, критериальное оценивание (СОР/СОЧ), отчёты предметника и классного руководителя, годовые оценки. |
-| [views/admin/exports.py](webapp/views/admin/exports.py) | Асинхронный экспорт Excel: `POST /admin/exports` (Celery или поток через `export_runner`), опрос статуса и скачивание готового файла. |
+| [views/admin/final_report.py](webapp/views/admin/final_report.py) | Ручной ввод данных итогового отчёта: ГИА 9/11 классов, ЕНТ, аттестаты (`GET/POST /admin/final-report/input`). |
+| [views/admin/exports.py](webapp/views/admin/exports.py) | Асинхронный экспорт Excel: `POST /admin/exports` (`export_kind`: `analytics`, `criteria_zip`, `grades_class`, `class_teacher`, `metrics_charts`, `final_report`), опрос статуса и скачивание. |
 
 #### `webapp/services/` — прикладные сервисы
 
@@ -245,7 +247,7 @@ pdf-to-excel-scraper-main/
 | [services/api_helpers.py](webapp/services/api_helpers.py) | JWT: `generate_jwt_token()`, декоратор `require_jwt`; `auto_create_class_and_subject()`, `find_school_by_org_name()`, `get_quarter_reports_api()` (слияние полугодий для четвертей 2/4). |
 | [services/class_grades_matrix.py](webapp/services/class_grades_matrix.py) | Построение матрицы оценок класса (ученик × предмет) для сводных таблиц и отчётов классного руководителя. |
 | [services/criteria_grades.py](webapp/services/criteria_grades.py) | Критериальное оценивание: разбор `grades_json.criteria`, построение таблиц СОР/СОЧ/итог, ZIP-выгрузка по периоду, сводка по предмету. |
-| [services/export_runner.py](webapp/services/export_runner.py) | Исполнитель фонового экспорта Excel: формирует файл по `ExportJob.export_kind` (вызывается из Celery-задачи или потока). |
+| [services/export_runner.py](webapp/services/export_runner.py) | Исполнитель фонового экспорта Excel: формирует файл по `ExportJob.export_kind` (в т.ч. `final_report` — итоговый отчёт школы). |
 | [services/report_teacher.py](webapp/services/report_teacher.py) | Имя учителя по `GradeReport`/синтетическому отчёту. |
 | [services/subject_aliases.py](webapp/services/subject_aliases.py) | Per-school нормализация названий предметов через `SubjectNameAlias`: `ensure_default_aliases()`, `restore_default_aliases()`. |
 | [services/teacher_schools.py](webapp/services/teacher_schools.py) | Учитель в нескольких школах: членство, `fs_teacher_seq`, активная школа сессии. |
@@ -267,6 +269,8 @@ pdf-to-excel-scraper-main/
 | [grade_reports/class_teacher.py](webapp/services/grade_reports/class_teacher.py) | Отчёт классного руководителя: категории учеников и блоки. |
 | [grade_reports/student_edits.py](webapp/services/grade_reports/student_edits.py) | Редактирование списка учеников в `grade_reports/excel`-сводных таблицах. |
 | [grade_reports/periods.py](webapp/services/grade_reports/periods.py) | Периоды UI и соответствие кодам четвертей/полугодий. |
+| [grade_reports/final_report_data.py](webapp/services/grade_reports/final_report_data.py) | Загрузка/сохранение ручных JSON-разделов итогового отчёта (`gia9`, `gia11`, `ent`, `awards`) в `FinalReportData`. |
+| [grade_reports/final_report.py](webapp/services/grade_reports/final_report.py) | Сборка многолистового Excel итогового отчёта школы: агрегации из `GradeReport`, диаграммы, ручные секции. |
 | [grade_reports/excel/](webapp/services/grade_reports/excel/__init__.py) | Генерация Excel-отчётов: `analytics.py`, `charts.py`, `class_teacher.py`, `grades_class.py`, `criteria.py` (ZIP по критериям), общие `styles.py`. |
 
 #### `webapp/templates/` — Jinja2-шаблоны
@@ -290,6 +294,7 @@ pdf-to-excel-scraper-main/
 | [templates/admin/criteria_class.html](webapp/templates/admin/criteria_class.html) | Критериальные оценки по классу. |
 | [templates/admin/criteria_subject.html](webapp/templates/admin/criteria_subject.html) | Критериальные оценки по предмету. |
 | [templates/admin/class_metrics_charts.html](webapp/templates/admin/class_metrics_charts.html) | Графики метрик по классу. |
+| [templates/admin/final_report_input.html](webapp/templates/admin/final_report_input.html) | Форма ввода ручных данных итогового отчёта (ГИА, ЕНТ, аттестаты) по учебным годам. |
 | [templates/admin/class_teacher_report.html](webapp/templates/admin/class_teacher_report.html) | Сводный отчёт «класс × классный руководитель». |
 | [templates/admin/subject_detail.html](webapp/templates/admin/subject_detail.html) | Карточка предмета (учителя, классы, оценки). |
 | [templates/admin/school_detail.html](webapp/templates/admin/school_detail.html) | Детальная карточка школы. |
@@ -415,6 +420,7 @@ Gettext-каталоги для двух локалей:
 |------|------------|
 | [scripts/db/add_ai_api_key_column.py](scripts/db/add_ai_api_key_column.py) | Миграция: добавляет колонку `ai_api_key VARCHAR(512)` в таблицу `schools`. |
 | [scripts/db/add_progress_columns.py](scripts/db/add_progress_columns.py) | Миграция: добавляет в `scrape_jobs` колонки `progress_percent`, `progress_message`, `total_reports`, `processed_reports`. |
+| [scripts/db/add_final_report_data.py](scripts/db/add_final_report_data.py) | Миграция: создаёт таблицу `final_report_data` для ручных данных итогового отчёта (ГИА, ЕНТ, аттестаты). |
 | [scripts/db/fix_semester_grades.py](scripts/db/fix_semester_grades.py) | Чистка: удаляет некорректные `GradeReport` c `period_type="quarter"` для полугодовых предметов (dry-run по умолчанию, `--apply` применяет). |
 | [scripts/db/recover_reports.py](scripts/db/recover_reports.py) | Восстанавливает записи `ReportFile` из файлов на диске (каталоги задач скрапинга) — полезно после потери БД. |
 | [scripts/db/reset_platform_db.py](scripts/db/reset_platform_db.py) | Удаляет SQLite-файл `instance/mektep_platform.db` и чистит `migrations/versions/`. Используется в dev. |
@@ -477,6 +483,7 @@ Gettext-каталоги для двух локалей:
 | [tests/test_subject_aliases.py](tests/test_subject_aliases.py) | Нормализация названий предметов по словарю алиасов. |
 | [tests/test_teacher_schools.py](tests/test_teacher_schools.py) | Учитель в нескольких школах: членство и активная школа. |
 | [tests/test_year_grades.py](tests/test_year_grades.py) | Расчёт годовых оценок (`year_grades`). |
+| [tests/test_final_report.py](tests/test_final_report.py) | Сборка итогового отчёта школы в Excel и round-trip `FinalReportData`. |
 
 Конфиг [pytest.ini](pytest.ini) добавляет `mektep-desktop/` в `pythonpath`, чтобы `app.*` (десктоп) импортировался из корня репо. Запуск: `python -m pytest` (из корня).
 
@@ -733,6 +740,55 @@ scp dist/MektepDesktopSetup-<ver>.exe dist/latest.json deploy@server:~/pdf-to-ex
 
 ---
 
+## Итоговый отчёт школы
+
+Школьный **итоговый отчёт** — многолистовой Excel-файл со сводной аналитикой за учебный год (и динамикой до 3 лет). Автоматические разделы строятся из загруженных в платформу `GradeReport`; данные ГИА, ЕНТ и аттестатов вводятся вручную (их нет в оценках mektep).
+
+### Что входит в Excel
+
+| Лист | Источник |
+|------|----------|
+| Сводка | KPI школы и ступеней (1–4 / 5–9 / 10–11) за учебный год |
+| Численность | Динамика учащихся и наполняемости по годам |
+| Успеваемость по классам | Распределение на «5»/«4»/«3»/«2», % успеваемости и качества |
+| По ступеням / По четвертям | Агрегации + диаграмма динамики качества |
+| Качество по предметам | Матрица предмет × класс |
+| Проблемные зоны | Предметы/классы с наименьшим качеством |
+| Отличники | Ученики со всеми оценками «5» |
+| ГИА-9, ГИА-11, ЕНТ, Аттестаты | Ручной ввод (`FinalReportData`) |
+
+### Как сформировать (школьный админ)
+
+1. Убедитесь, что учителя загрузили оценки за нужные четверти/год (через десктоп-клиент).
+2. На дашборде `/admin` откройте **«Итоговый отчёт — ввод данных»** (`/admin/final-report/input`) и заполните вкладки **ГИА 9**, **ГИА 11**, **ЕНТ**, **Аттестаты** для выбранного учебного года.
+3. На дашборде нажмите **«Сформировать итоговый отчёт»** — файл соберётся асинхронно (`export_kind=final_report`) и скачается как `Итоговый_отчёт_<годы>.xlsx`.
+
+Параметры экспорта (JSON в `POST /admin/exports`):
+
+```json
+{
+  "export_kind": "final_report",
+  "academic_year": 2025,
+  "years_back": 3
+}
+```
+
+### Миграция БД (существующие инсталляции)
+
+Таблица `final_report_data` создаётся при `db.create_all()` при старте приложения. На production можно выполнить явно:
+
+```bash
+python -m scripts.db.add_final_report_data
+```
+
+### Код
+
+- Модель: `FinalReportData` в [webapp/models.py](webapp/models.py) (`section`: `gia9` | `gia11` | `ent` | `awards`).
+- Сборщик: [webapp/services/grade_reports/final_report.py](webapp/services/grade_reports/final_report.py).
+- Тесты: [tests/test_final_report.py](tests/test_final_report.py).
+
+---
+
 ## Разработка и тесты
 
 ### Инструменты разработки
@@ -765,7 +821,7 @@ python -m pytest --cov=webapp --cov=mektep-desktop/app --cov-report=term-missing
 Юнит-тесты двух слоёв:
 
 - **Десктоп** (`app.report_pipeline.*`, `grade_table_signals`) — нормализация входных данных, определение периода отчёта, парсинг `progress.json`, распознавание таблицы критериев.
-- **Веб** (`webapp.services.grade_reports.*`, `class_grades_matrix`, `subject_aliases`, `teacher_schools`, `year_grades`, критериальное оценивание) — разбор payload, выборки по периодам, агрегации, категории классного руководителя, алиасы предметов, годовые оценки.
+- **Веб** (`webapp.services.grade_reports.*`, `class_grades_matrix`, `subject_aliases`, `teacher_schools`, `year_grades`, критериальное оценивание, итоговый отчёт школы) — разбор payload, выборки по периодам, агрегации, категории классного руководителя, алиасы предметов, годовые оценки, сборка `final_report` Excel.
 
 ### Типовые dev-операции
 
@@ -778,6 +834,7 @@ python -m pytest --cov=webapp --cov=mektep-desktop/app --cov-report=term-missing
 | Почистить выход скрапера | `python -m scripts.dev.clean_out --yes` |
 | Наполнить тестовыми данными | `python seed_test_data.py` |
 | Проверить/удалить тестовые данные | `python -m scripts.dev.clear_test_data [--delete]` |
+| Миграция `final_report_data` | `python -m scripts.db.add_final_report_data` |
 
 ### Диагностика
 
