@@ -260,6 +260,7 @@ def build_class_teacher_categories_data(
     class_teacher_filter: str | None = None,
     student_filter: str | None = None,
     class_names: list[str] | None = None,
+    academic_year: int | None = None,
 ) -> dict[str, list]:
     """
     Собирает categories_data для HTML/Excel отчёта классного руководителя.
@@ -272,7 +273,9 @@ def build_class_teacher_categories_data(
     class_teacher_filter = (class_teacher_filter or "").strip().lower()
     student_filter = (student_filter or "").strip().lower()
 
-    all_reports = get_period_reports(school_id, period_number)
+    all_reports = get_period_reports(
+        school_id, period_number, academic_year=academic_year
+    )
     active_class_names = {
         row.name
         for row in Class.query.filter_by(school_id=school_id).with_entities(Class.name).all()
@@ -315,7 +318,12 @@ def build_class_teacher_categories_data(
         ):
             continue
 
-        matrix = build_class_grades_matrix(school_id, cls_name, period_number)
+        matrix = build_class_grades_matrix(
+            school_id,
+            cls_name,
+            period_number,
+            academic_year=academic_year,
+        )
         if matrix["empty"]:
             continue
 

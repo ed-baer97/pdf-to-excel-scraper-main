@@ -39,7 +39,7 @@ from ..services.class_grades_matrix import (
     subject_column_stats,
 )
 from ..services.grade_reports.class_teacher import categorize_students
-from ..services.year_grades import YEAR_UI_PERIOD
+from ..services.academic_year import current_academic_year, resolve_academic_year
 from ..constants import MIN_DESKTOP_VERSION, normalize_subject_name, kazakh_sort_key
 
 bp = Blueprint("api", __name__, url_prefix="/api")
@@ -214,11 +214,13 @@ def api_log_reports():
     
     for report_data in reports:
         try:
+            academic_year = resolve_academic_year(report_data.get("academic_year"))
             # Создаем запись в БД (только метаданные)
             report = ReportFile(
                 school_id=user.school_id,
                 teacher_id=user.id,
                 period_code=report_data.get("period", "2"),
+                academic_year=academic_year,
                 class_name=report_data.get("class", ""),
                 subject=report_data.get("subject", ""),
                 excel_path=None,  # Файлы не хранятся на сервере
@@ -436,6 +438,7 @@ def api_upload_report():
     subject_name = data["subject_name"]
     period_type = data["period_type"]
     period_number = int(data["period_number"])
+    academic_year = resolve_academic_year(data.get("academic_year"))
     grades_payload = data.get("grades_json")
     analytics_payload = data.get("analytics_json")
     
@@ -557,7 +560,8 @@ def api_upload_report():
         class_name=class_name,
         subject_name=subject_name,
         period_type=period_type,
-        period_number=period_number
+        period_number=period_number,
+        academic_year=academic_year,
     ).first()
     
     if existing_report:
@@ -576,6 +580,7 @@ def api_upload_report():
             subject_name=subject_name,
             period_type=period_type,
             period_number=period_number,
+            academic_year=academic_year,
             grades_json=grades_json,
             analytics_json=analytics_json
         )
@@ -687,9 +692,13 @@ def api_get_my_reports():
         }
     """
     user = request.current_user
-    
+    academic_year = resolve_academic_year(request.args.get("academic_year"))
+
     # Фильтры
-    query = GradeReport.query.filter_by(teacher_id=user.id)
+    query = GradeReport.query.filter_by(
+        teacher_id=user.id,
+        academic_year=academic_year,
+    )
     
     period_type = request.args.get("period_type")
     if period_type:
@@ -710,6 +719,7 @@ def api_get_my_reports():
                 "subject_name": r.subject_name,
                 "period_type": r.period_type,
                 "period_number": r.period_number,
+                "academic_year": r.academic_year,
                 "created_at": r.created_at.isoformat(),
                 "updated_at": r.updated_at.isoformat()
             }
@@ -757,9 +767,12 @@ def api_get_class_grades(class_name: str):
     """
     user = request.current_user
     period_number = int(request.args.get("period_number", 2))
+    academic_year = resolve_academic_year(request.args.get("academic_year"))
     school_id = user.school_id
 
-    matrix = build_class_grades_matrix(school_id, class_name, period_number)
+    matrix = build_class_grades_matrix(
+        school_id, class_name, period_number, academic_year=academic_year
+    )
     if matrix["empty"]:
         return jsonify({
             "success": True,
@@ -896,12 +909,16 @@ def api_teacher_subject_report():
     """
     user = request.current_user
     period_number = int(request.args.get("period_number", 2))
+    academic_year = resolve_academic_year(request.args.get("academic_year"))
     school_id = user.school_id
 
     pairs = get_teacher_subject_class_pairs(user.id, school_id)
     if not pairs:
         reports = get_period_reports_api(
-            school_id, period_number, teacher_id=user.id
+            school_id,
+            period_number,
+            teacher_id=user.id,
+            academic_year=academic_year,
         )
         seen_pairs: set[tuple[str, str]] = set()
         for report in reports:
@@ -912,7 +929,7 @@ def api_teacher_subject_report():
                 pairs.append(key)
 
     analytics_map = build_teacher_analytics_map(
-        school_id, user.id, period_number
+        school_id, user.id, period_number, academic_year=academic_year
     )
 
     subjects_map: dict[str, dict[str, dict]] = {}
@@ -921,7 +938,7 @@ def api_teacher_subject_report():
     for subj, cls in pairs:
         if cls not in matrix_cache:
             matrix_cache[cls] = build_class_grades_matrix(
-                school_id, cls, period_number
+                school_id, cls, period_number, academic_year=academic_year
             )
         matrix = matrix_cache[cls]
         if matrix["empty"]:
@@ -984,6 +1001,7 @@ def api_teacher_class_teacher_report():
     """
     user = request.current_user
     period_number = int(request.args.get("period_number", 2))
+    academic_year = resolve_academic_year(request.args.get("academic_year"))
     
     # Находим классы, где учитель — классный руководитель
     managed_classes = Class.query.filter_by(
@@ -1003,7 +1021,7 @@ def api_teacher_class_teacher_report():
     for cls_obj in managed_classes:
         cls_name = cls_obj.name
         matrix = build_class_grades_matrix(
-            user.school_id, cls_name, period_number
+            user.school_id, cls_name, period_number, academic_year=academic_year
         )
         if matrix["empty"]:
             continue

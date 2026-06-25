@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ...models import Class
+from ..academic_year import resolve_academic_year
 from .payload import report_analytics_payload, report_grades_payload
 from .queries import fetch_semester_subject_pairs, get_period_reports
 
@@ -16,6 +17,7 @@ class SchoolPeriodContext:
     period_number: int
     active_class_names: set[str]
     reports: list
+    academic_year: int
 
     _payload_cache: dict[int, dict[str, Any] | None] = field(
         default_factory=dict, repr=False
@@ -49,7 +51,10 @@ class SchoolPeriodContext:
         if self.semester_pairs is None:
             from .queries import fetch_semester_subject_pairs
 
-            self.semester_pairs = fetch_semester_subject_pairs(self.school_id)
+            self.semester_pairs = fetch_semester_subject_pairs(
+                self.school_id,
+                academic_year=self.academic_year,
+            )
         return self.semester_pairs
 
 
@@ -58,8 +63,10 @@ def load_school_period_context(
     period_number: int,
     *,
     class_name: str | None = None,
+    academic_year: int | None = None,
 ) -> SchoolPeriodContext:
     """Загружает отчёты за период и список активных классов школы."""
+    year = resolve_academic_year(academic_year)
     active_class_names = {
         row.name
         for row in Class.query.filter_by(school_id=school_id).with_entities(Class.name).all()
@@ -67,11 +74,12 @@ def load_school_period_context(
     extra_filters: dict[str, Any] = {}
     if class_name is not None:
         extra_filters["class_name"] = class_name
-    semester_pairs = fetch_semester_subject_pairs(school_id)
+    semester_pairs = fetch_semester_subject_pairs(school_id, academic_year=year)
     reports = get_period_reports(
         school_id,
         period_number,
         semester_pairs=semester_pairs,
+        academic_year=year,
         **extra_filters,
     )
     return SchoolPeriodContext(
@@ -80,4 +88,5 @@ def load_school_period_context(
         active_class_names=active_class_names,
         reports=reports,
         semester_pairs=semester_pairs,
+        academic_year=year,
     )

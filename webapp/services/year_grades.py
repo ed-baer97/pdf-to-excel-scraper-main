@@ -92,11 +92,16 @@ def build_period_grade_maps(
     school_id: int,
     class_name: str,
     get_quarter_reports: GetQuarterReportsFn,
+    *,
+    academic_year: int | None = None,
 ) -> dict[int, dict[str, dict[str, int]]]:
     maps: dict[int, dict[str, dict[str, int]]] = {}
     for period_number in (1, 2, 3, 4):
         reports = get_quarter_reports(
-            school_id, period_number, class_name=class_name
+            school_id,
+            period_number,
+            class_name=class_name,
+            academic_year=academic_year,
         )
         maps[period_number] = grades_map_from_reports(reports, school_id)
     return maps
@@ -106,9 +111,16 @@ def build_year_student_subjects(
     school_id: int,
     class_name: str,
     get_quarter_reports: GetQuarterReportsFn,
+    *,
+    academic_year: int | None = None,
 ) -> dict[str, dict[str, int]]:
     """Ученик → предмет → годовая оценка."""
-    period_maps = build_period_grade_maps(school_id, class_name, get_quarter_reports)
+    period_maps = build_period_grade_maps(
+        school_id,
+        class_name,
+        get_quarter_reports,
+        academic_year=academic_year,
+    )
 
     all_students: set[str] = set()
     all_subjects: set[str] = set()
@@ -195,14 +207,18 @@ def build_synthetic_year_reports(
     *,
     class_name: str | None = None,
     teacher_id: int | None = None,
+    academic_year: int | None = None,
 ) -> list[SyntheticGradeReport]:
     """Синтетические отчёты по предметам для UI/API (period_number=5)."""
+    from .academic_year import resolve_academic_year
+
+    year = resolve_academic_year(academic_year)
     if class_name:
         class_names = [class_name]
     else:
         q = (
             db.session.query(GradeReport.class_name)
-            .filter_by(school_id=school_id)
+            .filter_by(school_id=school_id, academic_year=year)
             .distinct()
         )
         if teacher_id is not None:
@@ -213,7 +229,12 @@ def build_synthetic_year_reports(
 
     reports: list[SyntheticGradeReport] = []
     for cn in class_names:
-        year_map = build_year_student_subjects(school_id, cn, get_quarter_reports)
+        year_map = build_year_student_subjects(
+            school_id,
+            cn,
+            get_quarter_reports,
+            academic_year=year,
+        )
         by_subject: dict[str, list[tuple[str, int]]] = {}
         for student, subjs in year_map.items():
             for subj, grade in subjs.items():
@@ -233,6 +254,8 @@ def aggregate_year_metrics(
     school_id: int,
     active_class_names: set[str],
     get_quarter_reports: GetQuarterReportsFn,
+    *,
+    academic_year: int | None = None,
 ) -> dict:
     """
     KPI за учебный год: качество/успеваемость по классу — из пула годовых оценок
@@ -252,7 +275,10 @@ def aggregate_year_metrics(
 
     for class_name in sorted(active_class_names):
         year_map = build_year_student_subjects(
-            school_id, class_name, get_quarter_reports
+            school_id,
+            class_name,
+            get_quarter_reports,
+            academic_year=academic_year,
         )
         all_grades: list[int] = []
         for subjs in year_map.values():

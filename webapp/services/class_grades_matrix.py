@@ -59,6 +59,8 @@ def build_class_grades_matrix(
     school_id: int,
     class_name: str,
     period_number: int,
+    *,
+    academic_year: int | None = None,
 ) -> dict[str, Any]:
     """
     Матрица оценок класса за период (та же логика, что «Оценки по классу»).
@@ -75,22 +77,33 @@ def build_class_grades_matrix(
 
     if period_number == YEAR_UI_PERIOD:
         year_map = build_year_student_subjects(
-            school_id, class_name, get_quarter_reports_api
+            school_id,
+            class_name,
+            get_quarter_reports_api,
+            academic_year=academic_year,
         )
         students_data = students_data_from_year_map(year_map)
         subjects = {subj for subjs in students_data.values() for subj in subjs}
-        reports = get_quarter_reports_api(school_id, 1, class_name=class_name)
+        reports = get_quarter_reports_api(
+            school_id, 1, class_name=class_name, academic_year=academic_year
+        )
         if not reports:
             for pn in (2, 3, 4):
                 reports = get_period_reports_api(
-                    school_id, pn, class_name=class_name
+                    school_id,
+                    pn,
+                    class_name=class_name,
+                    academic_year=academic_year,
                 )
                 if reports:
                     break
         subject_teachers = build_subject_teachers_map(reports)
     else:
         reports = get_period_reports_api(
-            school_id, period_number, class_name=class_name
+            school_id,
+            period_number,
+            class_name=class_name,
+            academic_year=academic_year,
         )
         if not reports:
             return {
@@ -274,10 +287,15 @@ def build_teacher_analytics_map(
     school_id: int,
     teacher_id: int,
     period_number: int,
+    *,
+    academic_year: int | None = None,
 ) -> dict[tuple[str, str], dict]:
     """(class_name, subject) → analytics_json для отчёта предметника."""
     reports = get_period_reports_api(
-        school_id, period_number, teacher_id=teacher_id
+        school_id,
+        period_number,
+        teacher_id=teacher_id,
+        academic_year=academic_year,
     )
     out: dict[tuple[str, str], dict] = {}
     for report in reports:

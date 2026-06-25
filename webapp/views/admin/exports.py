@@ -12,6 +12,7 @@ from flask_login import current_user
 from ...extensions import db
 from ...models import ExportJob, ExportJobStatus
 from ...services.auth_guards import admin_or_superadmin_required as admin_required
+from ...services.academic_year import resolve_academic_year
 from ...services.export_runner import run_export_job
 from . import bp
 
@@ -67,6 +68,7 @@ def create_export():
     params = dict(data) if hasattr(data, "items") else {}
     params.pop("export_kind", None)
     params["lang"] = session.get("language", "ru")
+    params["academic_year"] = resolve_academic_year(params.get("academic_year"))
 
     job = ExportJob(
         school_id=current_user.school_id,

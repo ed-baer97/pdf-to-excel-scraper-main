@@ -9,6 +9,7 @@ from flask_login import UserMixin
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .extensions import db
+from .services.academic_year import current_academic_year
 
 
 class Role(str, Enum):
@@ -117,6 +118,12 @@ class ReportFile(db.Model):
     school_id = db.Column(db.Integer, db.ForeignKey("schools.id"), nullable=False, index=True)
     teacher_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
     period_code = db.Column(db.String(16), nullable=False, index=True)
+    academic_year = db.Column(
+        db.SmallInteger,
+        nullable=False,
+        index=True,
+        default=current_academic_year,
+    )
     class_name = db.Column(db.String(64), nullable=False)
     subject = db.Column(db.String(255), nullable=False)
     excel_path = db.Column(db.String(1024), nullable=True)
@@ -308,7 +315,13 @@ class GradeReport(db.Model):
     subject_name = db.Column(db.String(255), nullable=False)  # "Математика"
     period_type = db.Column(db.String(20), nullable=False)  # "quarter", "semester" или "year"
     period_number = db.Column(db.Integer, nullable=False)  # 1-4 для четверти, 1-2 для полугодия, 1 для учебного года
-    
+    academic_year = db.Column(
+        db.SmallInteger,
+        nullable=False,
+        index=True,
+        default=current_academic_year,
+    )
+
     # JSON данные оценок
     # Формат grades_json:
     # {
@@ -333,8 +346,14 @@ class GradeReport(db.Model):
     # Уникальность: один отчёт на учителя/класс/предмет/период
     __table_args__ = (
         db.UniqueConstraint(
-            "teacher_id", "school_id", "class_name", "subject_name", "period_type", "period_number",
-            name="uq_grade_report_teacher_class_subject_period"
+            "teacher_id",
+            "school_id",
+            "class_name",
+            "subject_name",
+            "period_type",
+            "period_number",
+            "academic_year",
+            name="uq_grade_report_teacher_class_subject_period",
         ),
         db.Index("ix_grade_report_school_class_subject", "school_id", "class_name", "subject_name"),
         db.Index(
@@ -342,6 +361,7 @@ class GradeReport(db.Model):
             "school_id",
             "period_type",
             "period_number",
+            "academic_year",
         ),
     )
 

@@ -6,11 +6,18 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from flask import Flask, request, session
+from flask import Flask, g, request, session
 
 from .config import get_config
 from .extensions import db, login_manager, migrate
 from .models import ReportFile, Role, School, ScrapeJob, ScrapeJobStatus, User
+from .services.academic_year import (
+    DEFAULT_BACKFILL_ACADEMIC_YEAR,
+    available_academic_years,
+    current_academic_year,
+    format_academic_year,
+    resolve_academic_year,
+)
 from .translator import gettext as custom_gettext
 
 # Celery app (initialized lazily)
@@ -50,10 +57,41 @@ def create_app(config_object=None) -> Flask:
     def inject_locale():
         """Прокидывает в шаблоны get_locale и функцию перевода _()."""
         current_lang = get_locale()
+        school_id = None
+        try:
+            from flask_login import current_user
+
+            if current_user.is_authenticated and getattr(current_user, "school_id", None):
+                school_id = current_user.school_id
+        except Exception:
+            pass
+        active_year = resolve_academic_year()
         return dict(
             get_locale=lambda: current_lang,
-            _=lambda key: custom_gettext(key, current_lang)
+            _=lambda key: custom_gettext(key, current_lang),
+            active_academic_year=active_year,
+            current_academic_year_value=current_academic_year(),
+            format_academic_year=format_academic_year,
+            available_academic_years=available_academic_years(school_id),
+            is_archive_academic_year=active_year != current_academic_year(),
         )
+
+    @app.before_request
+    def _set_academic_year_context():
+        """Сохраняет выбранный учебный год в session и g."""
+        explicit = request.args.get("academic_year")
+        if explicit is not None and str(explicit).strip() != "":
+            try:
+                year = int(explicit)
+                session["academic_year"] = year
+                g.active_academic_year = year
+                return
+            except (TypeError, ValueError):
+                pass
+        if "academic_year" in session:
+            g.active_academic_year = int(session["academic_year"])
+        else:
+            g.active_academic_year = current_academic_year()
 
     @login_manager.user_loader
     def load_user(user_id: str):
@@ -161,7 +199,56 @@ def create_app(config_object=None) -> Flask:
 
             _create_index_if_missing(
                 "ix_grade_report_school_period",
-                "CREATE INDEX ix_grade_report_school_period ON grade_reports (school_id, period_type, period_number)",
+                "CREATE INDEX ix_grade_report_school_period ON grade_reports (school_id, period_type, period_number, academic_year)",
+            )
+
+            def _migrate_academic_year_column(table: str) -> None:
+                if not _has_column(table, "academic_year"):
+                    db.session.execute(
+                        text(f"ALTER TABLE {table} ADD COLUMN academic_year SMALLINT")
+                    )
+                    db.session.commit()
+                    db.session.execute(
+                        text(
+                            f"UPDATE {table} SET academic_year = :yr "
+                            "WHERE academic_year IS NULL"
+                        ),
+                        {"yr": DEFAULT_BACKFILL_ACADEMIC_YEAR},
+                    )
+                    db.session.commit()
+                    _create_index_if_missing(
+                        f"ix_{table}_academic_year",
+                        f"CREATE INDEX ix_{table}_academic_year ON {table} (academic_year)",
+                    )
+
+            _migrate_academic_year_column("grade_reports")
+            _migrate_academic_year_column("report_files")
+
+            # Пересоздать уникальный индекс grade_reports с academic_year (SQLite).
+            try:
+                db.session.execute(
+                    text(
+                        "DROP INDEX IF EXISTS uq_grade_report_teacher_class_subject_period"
+                    )
+                )
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+            _create_index_if_missing(
+                "uq_grade_report_teacher_class_subject_period",
+                "CREATE UNIQUE INDEX uq_grade_report_teacher_class_subject_period "
+                "ON grade_reports (teacher_id, school_id, class_name, subject_name, "
+                "period_type, period_number, academic_year)",
+            )
+            try:
+                db.session.execute(text("DROP INDEX IF EXISTS ix_grade_report_school_period"))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+            _create_index_if_missing(
+                "ix_grade_report_school_period",
+                "CREATE INDEX ix_grade_report_school_period ON grade_reports "
+                "(school_id, period_type, period_number, academic_year)",
             )
 
             # schools.ai_model (модель AI для школы, выбирает супер-админ)
@@ -338,7 +425,9 @@ def _recover_interrupted_jobs(app):
                     teacher_id=job.teacher_id,
                     class_name=class_name,
                     subject=subject,
-                    period_code=job.period_code
+                    period_code=job.period_code,
+                    academic_year=getattr(job, "academic_year", None)
+                    or current_academic_year(),
                 ).first()
                 
                 if existing:
@@ -352,6 +441,8 @@ def _recover_interrupted_jobs(app):
                         school_id=job.school_id,
                         teacher_id=job.teacher_id,
                         period_code=job.period_code,
+                        academic_year=getattr(job, "academic_year", None)
+                        or current_academic_year(),
                         class_name=class_name,
                         subject=subject,
                         excel_path=excel_abs,

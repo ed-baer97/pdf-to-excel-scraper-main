@@ -31,6 +31,7 @@ from ..services.grade_reports.excel import (
 )
 from ..services.grade_reports.payload import report_grades_payload
 from ..services.grade_reports.periods import parse_ui_period_number, ui_period_display_name
+from ..services.academic_year import resolve_academic_year
 from ..services.admin_dashboard import aggregate_class_metrics
 from ..translator import gettext as translate_gettext
 
@@ -64,6 +65,7 @@ def execute_export_job(job_id: int) -> None:
     try:
         params = json.loads(job.params_json or "{}")
         lang = params.get("lang", "ru")
+        academic_year = resolve_academic_year(params.get("academic_year"))
         school_id = job.school_id
         out_dir = _export_dir(job_id)
         filename: str
@@ -73,7 +75,9 @@ def execute_export_job(job_id: int) -> None:
 
         if kind == "analytics":
             period_number = parse_ui_period_number(params.get("period_number", 2))
-            ctx = load_school_period_context(school_id, period_number)
+            ctx = load_school_period_context(
+                school_id, period_number, academic_year=academic_year
+            )
             sor, soch, grades = build_analytics_maps(ctx)
             if any(
                 params.get(k)
@@ -96,7 +100,9 @@ def execute_export_job(job_id: int) -> None:
             school = db.session.get(School, school_id)
             if not school:
                 raise ValueError("School not found")
-            ctx = load_school_period_context(school_id, period_number)
+            ctx = load_school_period_context(
+                school_id, period_number, academic_year=academic_year
+            )
             zip_buf = build_criteria_period_zip(
                 school.name,
                 period_number,
@@ -123,7 +129,10 @@ def execute_export_job(job_id: int) -> None:
             from ..services.grade_reports.queries import get_period_reports
 
             reports = get_period_reports(
-                school_id, period_number, class_name=class_name
+                school_id,
+                period_number,
+                class_name=class_name,
+                academic_year=academic_year,
             )
             subjects: set[str] = set()
             students_data: dict[str, dict[str, dict]] = {}
@@ -226,6 +235,7 @@ def execute_export_job(job_id: int) -> None:
                 class_filter=params.get("class_filter", ""),
                 class_teacher_filter=params.get("class_teacher_filter", ""),
                 student_filter=params.get("student_filter", ""),
+                academic_year=academic_year,
             )
             period_name = _period_name(period_number, lang)
             output, filename = build_class_teacher_workbook(
@@ -244,7 +254,10 @@ def execute_export_job(job_id: int) -> None:
                 .all()
             }
             agg = aggregate_class_metrics(
-                school_id, period_number, active_class_names
+                school_id,
+                period_number,
+                active_class_names,
+                academic_year=academic_year,
             )
 
             def tr(key: str) -> str:

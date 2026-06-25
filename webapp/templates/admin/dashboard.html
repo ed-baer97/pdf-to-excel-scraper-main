@@ -15,6 +15,7 @@
           <p class="text-muted small mb-0">{{ _('school_kpi_hint') }}</p>
         </div>
         <form method="get" class="d-flex align-items-center gap-2 flex-wrap">
+          <input type="hidden" name="academic_year" value="{{ active_academic_year }}">
           <label for="dash-period" class="form-label mb-0 text-nowrap small text-muted">{{ _('quarter_label') }}</label>
           <select id="dash-period" name="period_number" class="form-select form-select-sm" style="min-width: 12rem;" onchange="this.form.submit()">
             <option value="1" {% if period_number == 1 %}selected{% endif %}>{{ _('quarter_1') }}</option>

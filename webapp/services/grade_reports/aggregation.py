@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ...models import GradeReport
+from ..academic_year import resolve_academic_year
 from ..year_grades import (
     YEAR_UI_PERIOD,
     aggregate_year_metrics as _aggregate_year_metrics,
@@ -122,21 +123,40 @@ def _build_metrics_from_reports(reports: list, active_class_names: set[str]) -> 
 
 
 def aggregate_class_metrics(
-    school_id: int, period_number: int, active_class_names: set[str]
+    school_id: int,
+    period_number: int,
+    active_class_names: set[str],
+    *,
+    academic_year: int | None = None,
 ) -> dict:
     """KPI по классам/школе за выбранный период."""
+    year = resolve_academic_year(academic_year)
     if period_number == YEAR_UI_PERIOD:
         return _aggregate_year_metrics(
-            school_id, active_class_names, get_quarter_reports
+            school_id,
+            active_class_names,
+            get_quarter_reports,
+            academic_year=year,
         )
-    reports = get_quarter_reports(school_id, period_number)
+    reports = get_quarter_reports(
+        school_id, period_number, academic_year=year
+    )
     return _build_metrics_from_reports(reports, active_class_names)
 
 
-def aggregate_year_metrics(school_id: int, active_class_names: set[str]) -> dict:
+def aggregate_year_metrics(
+    school_id: int,
+    active_class_names: set[str],
+    *,
+    academic_year: int | None = None,
+) -> dict:
     """KPI за учебный год (расчёт из четвертей)."""
+    year = resolve_academic_year(academic_year)
     return _aggregate_year_metrics(
-        school_id, active_class_names, get_quarter_reports
+        school_id,
+        active_class_names,
+        get_quarter_reports,
+        academic_year=year,
     )
 
 

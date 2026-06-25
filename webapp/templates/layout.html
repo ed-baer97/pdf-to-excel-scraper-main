@@ -12,12 +12,32 @@
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
       <div class="container">
         <a class="navbar-brand" href="{{ url_for('main.index') }}">Mektep Scraper</a>
-        <div class="ms-auto d-flex gap-2 align-items-center">
-          <!-- Language selector -->
+        <div class="ms-auto d-flex gap-2 align-items-center flex-wrap justify-content-end">
+          {% if current_user.is_authenticated and current_user.role in ('school_admin', 'teacher') %}
+          <div class="dropdown">
+            <button class="btn btn-sm btn-outline-light dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+              <i class="bi bi-calendar3" aria-hidden="true"></i>
+              {{ format_academic_year(active_academic_year) }}
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+              {% for year in available_academic_years %}
+              <li>
+                <a class="dropdown-item {% if year == active_academic_year %}active{% endif %}"
+                   href="{{ request.path }}?academic_year={{ year }}{% if request.args.get('period_number') %}&period_number={{ request.args.get('period_number') }}{% endif %}">
+                  {{ format_academic_year(year) }}
+                  {% if year == current_academic_year_value %}
+                  <span class="badge bg-success ms-1">{{ _('current') if _('current') != 'current' else 'текущий' }}</span>
+                  {% endif %}
+                </a>
+              </li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% endif %}
           <div class="btn-group btn-group-sm">
-            <a href="{{ url_for('main.set_language', lang='ru') }}" 
+            <a href="{{ url_for('main.set_language', lang='ru') }}"
                class="btn btn-sm {{ 'btn-light' if get_locale() == 'ru' else 'btn-outline-light' }}">РУ</a>
-            <a href="{{ url_for('main.set_language', lang='kk') }}" 
+            <a href="{{ url_for('main.set_language', lang='kk') }}"
                class="btn btn-sm {{ 'btn-light' if get_locale() == 'kk' else 'btn-outline-light' }}">ҚЗ</a>
           </div>
           {% if current_user.is_authenticated %}
@@ -29,6 +49,15 @@
         </div>
       </div>
     </nav>
+
+    {% if is_archive_academic_year %}
+    <div class="bg-warning-subtle border-bottom text-center small py-2">
+      <i class="bi bi-archive" aria-hidden="true"></i>
+      {{ _('archive_year_view') if _('archive_year_view') != 'archive_year_view' else 'Архив' }}
+      {{ format_academic_year(active_academic_year) }} —
+      {{ _('archive_readonly') if _('archive_readonly') != 'archive_readonly' else 'только просмотр' }}
+    </div>
+    {% endif %}
 
     <main class="container py-4">
       {% with messages = get_flashed_messages(with_categories=true) %}
@@ -46,4 +75,3 @@
     {% block scripts %}{% endblock %}
   </body>
 </html>
-

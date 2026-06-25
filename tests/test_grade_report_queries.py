@@ -32,6 +32,7 @@ def _add_report(
     subject_name: str,
     period_type: str,
     period_number: int,
+    academic_year: int = 2025,
 ) -> GradeReport:
     report = GradeReport(
         teacher_id=teacher_id,
@@ -40,6 +41,7 @@ def _add_report(
         subject_name=subject_name,
         period_type=period_type,
         period_number=period_number,
+        academic_year=academic_year,
         grades_json=json.dumps(
             {"students": [{"name": "A", "grade": 5}], "total_students": 1},
             ensure_ascii=False,
@@ -174,3 +176,35 @@ def test_api_aliases_match_central_queries(app, school_ctx):
         assert {r.id for r in central} == {r.id for r in via_api}
         assert get_period_reports is get_period_reports_api
         assert get_quarter_reports is get_quarter_reports_api
+
+
+def test_academic_years_do_not_mix(app, school_ctx):
+    sid = school_ctx["school_id"]
+    tid = school_ctx["teacher_id"]
+    with app.app_context():
+        _add_report(
+            school_id=sid,
+            teacher_id=tid,
+            class_name="7А",
+            subject_name="Математика",
+            period_type="quarter",
+            period_number=1,
+            academic_year=2024,
+        )
+        _add_report(
+            school_id=sid,
+            teacher_id=tid,
+            class_name="7А",
+            subject_name="Математика",
+            period_type="quarter",
+            period_number=1,
+            academic_year=2025,
+        )
+
+        reports_2024 = get_quarter_reports(sid, 1, academic_year=2024)
+        reports_2025 = get_quarter_reports(sid, 1, academic_year=2025)
+
+        assert len(reports_2024) == 1
+        assert len(reports_2025) == 1
+        assert reports_2024[0].academic_year == 2024
+        assert reports_2025[0].academic_year == 2025
