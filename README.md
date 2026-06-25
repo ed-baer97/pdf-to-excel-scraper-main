@@ -6,10 +6,12 @@ English summary: multi-user web app plus optional PyQt6 desktop client; Playwrig
 
 ## Возможности
 
-- Многопользовательская система (суперадмин → школы → учителя)
-- Сбор данных с mektep.edu.kz (Playwright)
-- Генерация Excel и Word из шаблонов
+- Многопользовательская система (суперадмин → школы → учителя), учитель может работать в нескольких школах
+- Сбор данных с mektep.edu.kz (Playwright), в т.ч. критериальное оценивание (СОР/СОЧ)
+- Генерация Excel и Word из шаблонов; сводная аналитика, отчёты предметника и классного руководителя, годовые оценки
+- Асинхронный экспорт Excel из админ-панели (Celery или фоновый поток)
 - Прогресс задач в реальном времени
+- Десктоп-клиент с автообновлением через установщик (Inno Setup + `latest.json`)
 - Опционально: аналитика через AI API (Qwen и др.)
 
 ## Требования
@@ -52,6 +54,7 @@ pdf-to-excel-scraper-main/
 ├── gunicorn_config.py               # Корневой прокси → entrypoints/gunicorn_config.py
 ├── scrape_mektep.py                 # CLI-скрапер mektep.edu.kz (Playwright)
 ├── scraper_logger.py                # Логгер этапов скрапинга (INIT/AUTH/... /COMPLETE)
+├── grade_table_signals.py           # Эвристики структуры видимой таблицы критериального оценивания
 ├── build_report.py                  # Генератор Excel-отчёта из JSON по шаблону
 ├── build_word_report.py             # Генератор Word-отчёта из Excel + шаблон .docx
 ├── iin_utils.py                     # Нормализация казахстанского ИИН (12 цифр)
@@ -84,34 +87,36 @@ pdf-to-excel-scraper-main/
 │   ├── redis_utils.py               # Обёртки над Redis (лимиты, кэш)
 │   ├── translator.py                # i18n-утилиты (ru/kk) + словари
 │   ├── scraper_runner.py            # Оркестрация прогонов скрапера из веба
-│   ├── views/                       # Blueprint-модули (auth, admin, teacher, api, ...)
-│   ├── services/                    # Прикладные сервисы (dashboard, API-хелперы, guards)
-│   ├── templates/                   # Jinja2-шаблоны (layout + 6 подпапок ролей)
+│   ├── views/                       # Blueprint-модули (auth, admin/ (пакет), teacher, api, ...)
+│   ├── services/                    # Прикладные сервисы (grade_reports/, criteria, экспорт, guards)
+│   ├── templates/                   # Jinja2-шаблоны (layout + подпапки ролей)
+│   ├── static/                      # JS для асинхронного экспорта Excel (admin_async_export.js, ...)
 │   └── translations/                # gettext-каталоги (ru/, kk/)
 │
 ├── mektep-desktop/                  # PyQt6-клиент для учителя
 │   ├── main.py                      # Точка входа десктоп-приложения
-│   ├── build.py                     # Сборка EXE (PyInstaller, onefile/onedir)
+│   ├── build.py                     # Сборка EXE + установщик Inno Setup + latest.json
 │   ├── mektep_desktop.spec          # PyInstaller spec (onedir)
 │   ├── mektep_desktop_onefile.spec  # PyInstaller spec (onefile)
-│   ├── pyu_config.py                # Конфигурация PyUpdater
-│   ├── client_config.py             # Конфиг клиента (URL сервера и т.п.)
-│   ├── version.py                   # Версия клиента
-│   ├── requirements.txt             # Зависимости десктопа (PyQt6, requests, ...)
+│   ├── installer.iss                # Inno Setup: сборка MektepDesktopSetup-<ver>.exe
+│   ├── version.py                   # Версия клиента (APP_VERSION)
+│   ├── UPDATES.md                   # Публикация обновлений (Nginx /updates/, latest.json)
+│   ├── RELEASE.md                   # Чек-лист релиза десктопа
+│   ├── requirements.txt             # Зависимости десктопа (PyQt6, requests, packaging, ...)
 │   ├── scrape_mektep.py             # Копия скрапера (используется внутри EXE)
 │   ├── scraper_logger.py            # Копия логгера скрапера
+│   ├── grade_table_signals.py       # Копия эвристик таблицы критериев
 │   ├── build_report.py              # Копия генератора Excel
 │   ├── build_word_report.py         # Копия генератора Word
 │   ├── iin_utils.py                 # Копия ИИН-утилит
 │   ├── _download_logo.py            # Служебный скрипт загрузки логотипа
 │   ├── Шаблон.xlsx / .docx / _каз.docx # Копии шаблонов для сборки EXE
-│   ├── app/                         # UI-слой (widgets, dialogs) + report_pipeline
+│   ├── app/                         # UI-слой (widgets, dialogs, updater) + report_pipeline
 │   ├── ai/                          # AI-генерация текста (Qwen/DashScope)
 │   ├── resources/                   # Иконки и изображения (icons/, img/)
-│   ├── .pyupdater/                  # Рабочие файлы PyUpdater (артефакт)
-│   ├── pyu-data/                    # Данные PyUpdater (артефакт)
+│   ├── .pyupdater/, pyu-data/       # Наследие PyUpdater (артефакт, в .gitignore)
 │   ├── build/                       # PyInstaller build (артефакт)
-│   └── dist/                        # PyInstaller dist (артефакт)
+│   └── dist/                        # PyInstaller dist + Inno Setup установщик (артефакт)
 │
 ├── scripts/                         # Обслуживающие скрипты
 │   ├── __init__.py
@@ -133,10 +138,12 @@ pdf-to-excel-scraper-main/
 ├── nginx/
 │   └── nginx.conf                   # Reverse-proxy, rate-limit, статика
 │
-├── tests/                           # Pytest-тесты
-│   └── test_report_utils.py
+├── tests/                           # Pytest-тесты (report_pipeline, grade_reports, criteria, ...)
 │
 ├── docs/                            # Зарезервировано (пока пусто)
+│
+├── updates/                         # Раздача установщика десктопа (latest.json + setup.exe)
+│   └── .gitkeep
 │
 ├── instance/                        # Flask instance folder
 │   └── mektep_platform.db           # SQLite (dev-база)
@@ -159,6 +166,7 @@ pdf-to-excel-scraper-main/
 | [gunicorn_config.py](gunicorn_config.py) | Тонкий прокси: `from entrypoints.gunicorn_config import *` (для команд вида `gunicorn -c gunicorn_config.py`). |
 | [scrape_mektep.py](scrape_mektep.py) | Основной CLI-скрапер mektep.edu.kz на Playwright: авторизация, выбор языка/периода, сбор оценок, вызов построителей отчётов. |
 | [scraper_logger.py](scraper_logger.py) | Класс `ScraperLogger` с этапами (`INIT`, `BROWSER`, `AUTH`, `STUDENTS`, `EXCEL_REPORT`, ...) и хелперы `log_info/log_stage/...`. |
+| [grade_table_signals.py](grade_table_signals.py) | Эвристики распознавания структуры видимой таблицы критериального оценивания на `mektep.edu.kz` (заголовки СОР/СОЧ/ТЖБ/БЖБ, колонки четвертей). Копируется в десктоп при сборке. |
 | [build_report.py](build_report.py) | Сборка Excel-отчёта из `progress.json`-подобного JSON и [Шаблон.xlsx](Шаблон.xlsx): СОР, СОЧ, формативные, лист «Оценки». |
 | [build_word_report.py](build_word_report.py) | Сборка Word-отчёта из готового Excel и [Шаблон.docx](Шаблон.docx) / [Шаблон_каз.docx](Шаблон_каз.docx): таблицы анализа, уровни, цели. |
 | [iin_utils.py](iin_utils.py) | `normalize_kz_iin` и `format_iin_for_display` — нормализация и маскирование ИИН (12 цифр, показ `****1234`). |
@@ -189,11 +197,11 @@ pdf-to-excel-scraper-main/
 |------|------------|
 | [webapp/\_\_init\_\_.py](webapp/__init__.py) | `create_app()`, регистрация blueprint'ов, bootstrap суперадмина, `_recover_interrupted_jobs()` после рестарта. |
 | [webapp/config.py](webapp/config.py) | Классы `Config` / `DevelopmentConfig` / `ProductionConfig` / `TestingConfig` + `get_config()` по `FLASK_ENV`. |
-| [webapp/constants.py](webapp/constants.py) | `MIN_DESKTOP_VERSION`, `PERIOD_MAP`, `normalize_subject_name()`, `kazakh_sort_key()` (казахская кириллическая сортировка). |
+| [webapp/constants.py](webapp/constants.py) | `DESKTOP_VERSION`, `MIN_DESKTOP_VERSION`, `DESKTOP_UPDATES_BASE_URL` + хелперы `desktop_installer_filename()`/`desktop_download_url()`; `PERIOD_MAP`, `DEFAULT_SUBJECT_ALIASES`, `normalize_subject_name()`, `kazakh_sort_key()` (казахская кириллическая сортировка). |
 | [webapp/extensions.py](webapp/extensions.py) | Singleton-экземпляры `db` (SQLAlchemy), `migrate` (Flask-Migrate), `login_manager` (Flask-Login, `login_view="main.index"`). |
-| [webapp/models.py](webapp/models.py) | Enum `Role`, `ScrapeJobStatus`; модели `School`, `User`, `Class`, `Subject`, `TeacherClass`, `TeacherSubject`, `GradeReport`, `ReportFile`, `ScrapeJob`. |
+| [webapp/models.py](webapp/models.py) | Enum `Role`, `ScrapeJobStatus`, `ExportJobStatus`; модели `School`, `User`, `TeacherSchool` (учитель ↔ несколько школ), `Class`, `Subject`, `SubjectNameAlias` (алиасы названий предметов по школе), `TeacherClass`, `TeacherSubject`, `GradeReport`, `ReportFile`, `ScrapeJob`, `ExportJob` (фоновый экспорт Excel). |
 | [webapp/security.py](webapp/security.py) | `encrypt_password()` / `decrypt_password()` через `Fernet` с ключом `PASSWORD_ENC_KEY`. |
-| [webapp/tasks.py](webapp/tasks.py) | Celery-задачи (`run_scrape_task`, `generate_ai_text`) — альтернатива потокам в `scraper_runner`. |
+| [webapp/tasks.py](webapp/tasks.py) | Celery-задачи (`run_scrape_task`, `generate_ai_text`, `run_export_task`) — альтернатива потокам в `scraper_runner`/`export_runner`. |
 | [webapp/celery_app.py](webapp/celery_app.py) | `make_celery()` + `init_celery(flask_app)` (очереди `scraping`/`ai`, лимиты времени). |
 | [webapp/cli.py](webapp/cli.py) | Flask-команды `flask create-superadmin <user> <pass>` и `flask clear-cache` (Redis FLUSHDB). |
 | [webapp/redis_utils.py](webapp/redis_utils.py) | Лимитер AI-запросов, кэш, FLUSHDB. Автоматический fallback на in-memory при недоступности Redis. |
@@ -208,10 +216,21 @@ pdf-to-excel-scraper-main/
 | [views/auth.py](webapp/views/auth.py) | `/auth` | anonymous | Обрабатывает `POST /auth/login` (учителя блокируются — вход только через десктоп) и `POST /auth/logout`. |
 | [views/setup.py](webapp/views/setup.py) | `/setup` | (только если нет суперадмина) | One-time мастер создания первого суперадмина. |
 | [views/superadmin.py](webapp/views/superadmin.py) | `/superadmin` | `SUPERADMIN` | Школы (создание/активация), школьные админы, смена пароля, AI-модели, квоты отчётов. |
-| [views/admin.py](webapp/views/admin.py) | (без префикса) | `SCHOOL_ADMIN` | Дашборд школы: управление учителями/классами/предметами, аналитика, графики, экспорт Excel. Самый большой модуль (~2500 строк). |
+| [views/admin/](webapp/views/admin/__init__.py) | `/admin` | `SCHOOL_ADMIN` | Пакет дашборда школы (разбит из бывшего монолитного `admin.py`): `management.py` (учителя/классы/предметы/алиасы), `reports.py` (оценки, аналитика, графики, критериальное оценивание, отчёты предметника/классрука), `exports.py` (асинхронный экспорт Excel). |
 | [views/teacher.py](webapp/views/teacher.py) | (без префикса) | `TEACHER` (+ API для десктопа) | Запуск скрапинга, просмотр своих отчётов, скачивание zip, AI-генерация текста с Redis rate-limit. |
 | [views/api.py](webapp/views/api.py) | `/api` | JWT (десктоп) | REST-API для Mektep Desktop: логин/рефреш токена, загрузка отчётов, проверка версии (`MIN_DESKTOP_VERSION`). |
 | [views/health.py](webapp/views/health.py) | `/health` | любые | `GET /health[/live]` (жив), `GET /health/ready` (БД), `GET /health/stats` (счётчики задач, школ, пользователей). |
+
+##### `webapp/views/admin/` — пакет дашборда школы
+
+Бывший монолитный `admin.py` разбит на пакет с общим blueprint `bp` (префикс `/admin`).
+
+| Файл | Что делает |
+|------|------------|
+| [views/admin/__init__.py](webapp/views/admin/__init__.py) | Создаёт `Blueprint("admin")`, общие хелперы (`_management_list_context()` и пр.), импортирует подмодули `exports`, `management`, `reports`. |
+| [views/admin/management.py](webapp/views/admin/management.py) | CRUD учителей/классов/предметов, связи «учитель↔класс/предмет», словарь алиасов названий предметов. |
+| [views/admin/reports.py](webapp/views/admin/reports.py) | Просмотр оценок, аналитика, графики, критериальное оценивание (СОР/СОЧ), отчёты предметника и классного руководителя, годовые оценки. |
+| [views/admin/exports.py](webapp/views/admin/exports.py) | Асинхронный экспорт Excel: `POST /admin/exports` (Celery или поток через `export_runner`), опрос статуса и скачивание готового файла. |
 
 #### `webapp/services/` — прикладные сервисы
 
@@ -222,8 +241,33 @@ pdf-to-excel-scraper-main/
 | [services/__init__.py](webapp/services/__init__.py) | Пустой «пакетный» модуль (docstring). |
 | [services/auth_guards.py](webapp/services/auth_guards.py) | Декораторы `role_required`, `superadmin_required`, `admin_required`, `admin_or_superadmin_required`, `teacher_required`; проверки `can_access_report_file()`, `can_access_grade_report()`. |
 | [services/admin_common.py](webapp/services/admin_common.py) | `is_safe_redirect_url()`, `redirect_back()` и `apply_analytics_filters()` для админских страниц. |
-| [services/admin_dashboard.py](webapp/services/admin_dashboard.py) | Хелперы дашборда: `parse_class_grade()`, `class_accordion_group()` (аккордеоны 1–4 / 5–9 / 10–11) и агрегации `GradeReport`. |
+| [services/admin_dashboard.py](webapp/services/admin_dashboard.py) | Хелперы дашборда: `parse_class_grade()`, `class_accordion_group()`/`teacher_accordion_group()` (аккордеоны 1–4 / 5–9 / 10–11), агрегации метрик класса/года, серии для графиков. |
 | [services/api_helpers.py](webapp/services/api_helpers.py) | JWT: `generate_jwt_token()`, декоратор `require_jwt`; `auto_create_class_and_subject()`, `find_school_by_org_name()`, `get_quarter_reports_api()` (слияние полугодий для четвертей 2/4). |
+| [services/class_grades_matrix.py](webapp/services/class_grades_matrix.py) | Построение матрицы оценок класса (ученик × предмет) для сводных таблиц и отчётов классного руководителя. |
+| [services/criteria_grades.py](webapp/services/criteria_grades.py) | Критериальное оценивание: разбор `grades_json.criteria`, построение таблиц СОР/СОЧ/итог, ZIP-выгрузка по периоду, сводка по предмету. |
+| [services/export_runner.py](webapp/services/export_runner.py) | Исполнитель фонового экспорта Excel: формирует файл по `ExportJob.export_kind` (вызывается из Celery-задачи или потока). |
+| [services/report_teacher.py](webapp/services/report_teacher.py) | Имя учителя по `GradeReport`/синтетическому отчёту. |
+| [services/subject_aliases.py](webapp/services/subject_aliases.py) | Per-school нормализация названий предметов через `SubjectNameAlias`: `ensure_default_aliases()`, `restore_default_aliases()`. |
+| [services/teacher_schools.py](webapp/services/teacher_schools.py) | Учитель в нескольких школах: членство, `fs_teacher_seq`, активная школа сессии. |
+| [services/year_grades.py](webapp/services/year_grades.py) | Расчёт годовых оценок из четвертных/полугодовых отчётов (`YEAR_UI_PERIOD`, округление процентов). |
+
+##### `webapp/services/grade_reports/` — централизованная логика отчётов об оценках
+
+Пакет, в который вынесена бизнес-логика парсинга, агрегации, аналитики и генерации Excel из `GradeReport`.
+
+| Файл | Содержание |
+|------|------------|
+| [grade_reports/__init__.py](webapp/services/grade_reports/__init__.py) | Реэкспорт ключевых функций (`get_period_reports`, `parse_grades_json`, `report_*_payload`, ...). |
+| [grade_reports/payload.py](webapp/services/grade_reports/payload.py) | Разбор JSON-полей `GradeReport` (`grades_json`, `analytics_json`). |
+| [grade_reports/queries.py](webapp/services/grade_reports/queries.py) | Выборки `GradeReport` по периоду (учитель, полугодия, год, итог). |
+| [grade_reports/context.py](webapp/services/grade_reports/context.py) | `SchoolPeriodContext`: загрузка и кэширование отчётов и их распарсенного JSON. |
+| [grade_reports/aggregation.py](webapp/services/grade_reports/aggregation.py) | Агрегации метрик учеников/успеваемости по классам и школе. |
+| [grade_reports/analytics.py](webapp/services/grade_reports/analytics.py) | Сводная аналитика СОР/СОЧ/оценок по предметам и классам. |
+| [grade_reports/overview.py](webapp/services/grade_reports/overview.py) | Сводка оценок для страницы обзора (`grades_overview`). |
+| [grade_reports/class_teacher.py](webapp/services/grade_reports/class_teacher.py) | Отчёт классного руководителя: категории учеников и блоки. |
+| [grade_reports/student_edits.py](webapp/services/grade_reports/student_edits.py) | Редактирование списка учеников в `grade_reports/excel`-сводных таблицах. |
+| [grade_reports/periods.py](webapp/services/grade_reports/periods.py) | Периоды UI и соответствие кодам четвертей/полугодий. |
+| [grade_reports/excel/](webapp/services/grade_reports/excel/__init__.py) | Генерация Excel-отчётов: `analytics.py`, `charts.py`, `class_teacher.py`, `grades_class.py`, `criteria.py` (ZIP по критериям), общие `styles.py`. |
 
 #### `webapp/templates/` — Jinja2-шаблоны
 
@@ -242,6 +286,9 @@ pdf-to-excel-scraper-main/
 | [templates/admin/analytics_home.html](webapp/templates/admin/analytics_home.html) | Аналитика школы: карточки и сводные графики. |
 | [templates/admin/grades_overview.html](webapp/templates/admin/grades_overview.html) | Сводная таблица оценок по предметам/классам. |
 | [templates/admin/grades_class.html](webapp/templates/admin/grades_class.html) | Детальная таблица оценок по классу с фильтрами. |
+| [templates/admin/criteria_overview.html](webapp/templates/admin/criteria_overview.html) | Обзор критериального оценивания (СОР/СОЧ) по классам/предметам. |
+| [templates/admin/criteria_class.html](webapp/templates/admin/criteria_class.html) | Критериальные оценки по классу. |
+| [templates/admin/criteria_subject.html](webapp/templates/admin/criteria_subject.html) | Критериальные оценки по предмету. |
 | [templates/admin/class_metrics_charts.html](webapp/templates/admin/class_metrics_charts.html) | Графики метрик по классу. |
 | [templates/admin/class_teacher_report.html](webapp/templates/admin/class_teacher_report.html) | Сводный отчёт «класс × классный руководитель». |
 | [templates/admin/subject_detail.html](webapp/templates/admin/subject_detail.html) | Карточка предмета (учителя, классы, оценки). |
@@ -249,7 +296,14 @@ pdf-to-excel-scraper-main/
 | [templates/admin/password.html](webapp/templates/admin/password.html) | Смена пароля школьного админа. |
 | [templates/teacher/dashboard.html](webapp/templates/teacher/dashboard.html) | Кабинет учителя: запуск скрапера, список отчётов, цели, скачивание, AI-текст. |
 
-> Папка `webapp/static/` в репозитории отсутствует — CSS/JS подключаются из `layout.html` (через CDN/инлайн).
+#### `webapp/static/` — статика
+
+CSS подключается из `layout.html` (CDN/инлайн); собственный JS — для асинхронного экспорта Excel из админ-панели:
+
+| Путь | Назначение |
+|------|------------|
+| [static/js/admin_async_export.js](webapp/static/js/admin_async_export.js) | Запуск фонового экспорта (`POST /admin/exports`) и UI-индикация. |
+| [static/js/admin_export_poll.js](webapp/static/js/admin_export_poll.js) | Опрос статуса `ExportJob` и автоскачивание готового файла. |
 
 #### `webapp/translations/` — i18n (Babel)
 
@@ -266,22 +320,23 @@ Gettext-каталоги для двух локалей:
 
 ### `mektep-desktop/` — PyQt6-клиент
 
-Десктоп-приложение для учителя: логин в платформу по JWT, запуск Playwright-скрапера `scrape_mektep.py`, финализация отчётов (перемещение, переименование, загрузка на сервер), локальный SQLite-архив отчётов, просмотр сводных таблиц оценок, редактирование «целей обучения» и AI-генерация текста. Собирается в EXE через PyInstaller, обновления — через PyUpdater.
+Десктоп-приложение для учителя: логин в платформу по JWT, запуск Playwright-скрапера `scrape_mektep.py`, финализация отчётов (перемещение, переименование, загрузка на сервер), локальный SQLite-архив отчётов, просмотр сводных таблиц оценок, редактирование «целей обучения» и AI-генерация текста. Собирается в EXE через PyInstaller и упаковывается в установщик Inno Setup; автообновление — через манифест `latest.json` на `/updates/` (см. [UPDATES.md](mektep-desktop/UPDATES.md) и [RELEASE.md](mektep-desktop/RELEASE.md)).
 
 #### Файлы корня пакета
 
 | Файл | Назначение |
 |------|------------|
 | [mektep-desktop/main.py](mektep-desktop/main.py) | Точка входа: `QApplication`, настройка палитры/шрифта, диалог логина, `MektepMainWindow`. Защищает `sys.stdout/stderr` от `None` в frozen-режиме. |
-| [mektep-desktop/version.py](mektep-desktop/version.py) | `APP_NAME = "mektep-desktop"`, `APP_VERSION` — обновляется при релизе, используется в PyInstaller/PyUpdater. |
-| [mektep-desktop/pyu_config.py](mektep-desktop/pyu_config.py) | Конфигурация PyUpdater-клиента (`UPDATE_URLS`, `PUBLIC_KEY`, `MAX_DOWNLOAD_RETRIES`). |
-| [mektep-desktop/client_config.py](mektep-desktop/client_config.py) | `ClientConfig` для production-сборки: `UPDATE_URLS = ['https://mektep-analyzer.kz/updates/']`. |
-| [mektep-desktop/build.py](mektep-desktop/build.py) | Сборка EXE: копирует модули скрапера/шаблоны из корня, проверяет иконку, ставит PyInstaller и запускает `.spec`. Режимы `folder` (default) и `onefile`. |
+| [mektep-desktop/version.py](mektep-desktop/version.py) | `APP_NAME = "mektep-desktop"`, `APP_VERSION` — обновляется при релизе, читается `build.py`, передаётся в PyInstaller и Inno Setup. |
+| [mektep-desktop/build.py](mektep-desktop/build.py) | Сборка: копирует модули скрапера/шаблоны из корня, проверяет иконку, ставит PyInstaller, запускает `.spec`; в режиме folder затем собирает установщик через Inno Setup (`ISCC`) и генерирует `dist/latest.json` (с sha256). Режимы `folder` (default) и `onefile`. |
 | [mektep-desktop/mektep_desktop.spec](mektep-desktop/mektep_desktop.spec) | PyInstaller spec: onedir-сборка (`dist/Mektep Desktop/`). |
 | [mektep-desktop/mektep_desktop_onefile.spec](mektep-desktop/mektep_desktop_onefile.spec) | PyInstaller spec: одиночный EXE (`dist/Mektep Desktop.exe`). |
+| [mektep-desktop/installer.iss](mektep-desktop/installer.iss) | Inno Setup script: упаковывает onedir-папку в `dist/MektepDesktopSetup-<ver>.exe` (тихая установка, `AppId` фиксирован для in-place upgrade). |
+| [mektep-desktop/UPDATES.md](mektep-desktop/UPDATES.md) | Публикация обновлений: структура `/updates/`, Nginx, формат `latest.json`, откат. |
+| [mektep-desktop/RELEASE.md](mektep-desktop/RELEASE.md) | Чек-лист релиза десктопа (версии, сборка, публикация). |
 | [mektep-desktop/_download_logo.py](mektep-desktop/_download_logo.py) | Скачивает логотип EDUS и конвертирует его в `.ico`; вызывается из `build.py` при отсутствии иконки. |
-| [mektep-desktop/requirements.txt](mektep-desktop/requirements.txt) | Зависимости клиента: `PyQt6`, `playwright`, `openpyxl`, `python-docx`, `openai`, `PyJWT`, `requests`, `python-dotenv`, `pyupdater`. |
-| `scrape_mektep.py`, `scraper_logger.py`, `build_report.py`, `build_word_report.py`, `iin_utils.py` | Копии корневых модулей, автоматически синхронизируемые `build.py` перед сборкой EXE. |
+| [mektep-desktop/requirements.txt](mektep-desktop/requirements.txt) | Зависимости клиента: `PyQt6`, `playwright`, `openpyxl`, `python-docx`, `openai`, `PyJWT`, `requests`, `python-dotenv`, `packaging`. |
+| `scrape_mektep.py`, `scraper_logger.py`, `grade_table_signals.py`, `build_report.py`, `build_word_report.py`, `iin_utils.py` | Копии корневых модулей, автоматически синхронизируемые `build.py` перед сборкой EXE (в `.gitignore` десктопа). |
 | `Шаблон.xlsx` / `Шаблон.docx` / `Шаблон_каз.docx` | Копии шаблонов отчётов (копируются `build.py` из корня). |
 
 #### `mektep-desktop/app/` — UI-слой
@@ -302,6 +357,9 @@ Gettext-каталоги для двух локалей:
 | [app/scraper_thread.py](mektep-desktop/app/scraper_thread.py) | `ScraperThread(QThread)` — запускает `scrape_mektep.run()` в отдельном потоке, эмитит сигналы прогресса, взаимодействует с `ReportFinalizer`. |
 | [app/reports_manager.py](mektep-desktop/app/reports_manager.py) | `ReportsManager` — локальная SQLite-база метаданных отчётов (путь к файлам, период, класс/предмет). |
 | [app/translator.py](mektep-desktop/app/translator.py) | `Translator(QObject)` с сигналом `language_changed` — переводы UI на `ru`/`kk`. |
+| [app/updater.py](mektep-desktop/app/updater.py) | Автообновление через Inno Setup: `check_for_update()` (манифест `latest.json`), `download_installer()` (скачивание + проверка sha256), `launch_installer_and_exit()` (тихая установка `/SILENT`); фоновые `UpdateCheckWorker`/`UpdateDownloadWorker` (QThread). |
+| [app/period_ui.py](mektep-desktop/app/period_ui.py) | Общие значения селектора периода (четверти 1–4, `YEAR_UI_PERIOD`). |
+| [app/sort_utils.py](mektep-desktop/app/sort_utils.py) | `kazakh_sort_key()` — казахская кириллическая сортировка (аналог `webapp/constants.py`). |
 | [app/debug_log.py](mektep-desktop/app/debug_log.py) | JSON-логгер в `mektep-debug.log` (корень репо): `debug_log()` (развёрнутый) и `dbg_log()` (краткий). |
 
 > Папка `mektep-desktop/app/scraper/` существует, но на данный момент пустая (зарезервирована для будущего вынесения Playwright-логики из корневого `scrape_mektep.py`).
@@ -334,14 +392,17 @@ Gettext-каталоги для двух локалей:
 | [resources/img/logo_edus_logo_white.png](mektep-desktop/resources/img/logo_edus_logo_white.png) | Логотип EDUS для главного окна. |
 | `resources/img/.gitkeep`, `resources/img/README.txt` | Служебные файлы папки. |
 
-#### Инфраструктура обновлений (PyUpdater)
+#### Инфраструктура обновлений (Inno Setup + `latest.json`)
+
+Обновления выпускаются как установщик Inno Setup; клиент сравнивает свою `APP_VERSION` с манифестом `latest.json` на сервере и при наличии новой версии скачивает и тихо устанавливает `setup.exe`.
 
 | Путь | Что это |
 |------|---------|
-| `mektep-desktop/.pyupdater/` | Внутренние данные PyUpdater (keys-конфиг, `client_config.py`-исходник). Артефакт, не коммитить. |
-| `mektep-desktop/pyu-data/` | Рабочий каталог PyUpdater (`new/`, `deploy/`, `files/`). Артефакт. |
+| `mektep-desktop/dist/MektepDesktopSetup-<ver>.exe` | Готовый установщик Inno Setup (артефакт сборки `python build.py`). |
+| `mektep-desktop/dist/latest.json` | Манифест автообновления (`version`, `url`, `sha256`, `min_version`, `mandatory`, `notes`). Публикуется на сервер в `updates/`. |
 | `mektep-desktop/build/` | PyInstaller build (spec-temp). Артефакт. |
-| `mektep-desktop/dist/` | Готовые EXE и onedir-папки (`Mektep Desktop.exe`, `Mektep Desktop/`). Артефакт. |
+| `mektep-desktop/dist/` | Готовые EXE, onedir-папки и установщик. Артефакт. |
+| `mektep-desktop/.pyupdater/`, `mektep-desktop/pyu-data/` | Наследие PyUpdater; больше не используется, оставлено в `.gitignore`. Артефакт. |
 | `mektep-desktop/debug-*.log` | Отладочные логи клиента. Артефакт. |
 
 ### `scripts/` — обслуживающие скрипты
@@ -366,6 +427,7 @@ Gettext-каталоги для двух локалей:
 | [scripts/dev/clear_test_data.py](scripts/dev/clear_test_data.py) | Показывает тестовые `GradeReport`/`ReportFile`/`Class`; с флагом `--delete` удаляет и сбрасывает привязки. |
 | [scripts/dev/compile_translations.py](scripts/dev/compile_translations.py) | Компилирует `webapp/translations/*/LC_MESSAGES/messages.po` → `messages.mo` через `msgfmt` или `polib`. |
 | [scripts/dev/seed_test_data.py](scripts/dev/seed_test_data.py) | Тонкая обёртка: `from seed_test_data import *` — запуск корневого `seed_test_data.py` как модуля пакета. |
+| [scripts/dev/split_admin_views.py](scripts/dev/split_admin_views.py) | Разовая dev-утилита: помогала разнести монолитный `views/admin.py` на пакет `views/admin/` (management/reports/exports). |
 
 ### `entrypoints/` — точки входа веба
 
@@ -395,7 +457,7 @@ Gettext-каталоги для двух локалей:
 
 | Файл | Назначение |
 |------|------------|
-| [nginx/nginx.conf](nginx/nginx.conf) | Reverse-proxy для `web:5000`: gzip, security-заголовки (`X-Frame-Options`, `X-Content-Type-Options`, `X-XSS-Protection`), `limit_req_zone api_limit=10r/s` (burst 20) на `/api/`, `client_max_body_size 50M`, кэш `/static/` на 30 дней, закомментированный HTTPS-server с HSTS. |
+| [nginx/nginx.conf](nginx/nginx.conf) | Reverse-proxy для `web:5000`: gzip, security-заголовки (`X-Frame-Options`, `X-Content-Type-Options`, `X-XSS-Protection`), `limit_req_zone api_limit=10r/s` (burst 20) на `/api/`, `client_max_body_size 50M`, статика `/static/` → `/app/webapp/static/`, раздача обновлений десктопа `/updates/` → `/var/www/mektep/updates/` (`latest.json` с `no-cache`), закомментированный HTTPS-server с HSTS. |
 
 ### `tests/` и `docs/`
 
@@ -403,9 +465,20 @@ Gettext-каталоги для двух локалей:
 
 | Файл | Что тестирует |
 |------|---------------|
-| [tests/test_report_utils.py](tests/test_report_utils.py) | Юнит-тесты `app.report_pipeline.*`: `parse_class_liter`, `parse_number`, `sanitize_filename`, `resolve_period` (quarter/semester/invalid), `normalize_period_code`, `is_semester_subject`, `parse_schools_from_progress_message`, `format_progress_line`. Конфиг [pytest.ini](pytest.ini) добавляет `mektep-desktop/` в `pythonpath`, чтобы `app.*` импортировался из корня репо. |
+| [tests/test_report_utils.py](tests/test_report_utils.py) | Юнит-тесты `app.report_pipeline.*` (десктоп): `parse_class_liter`, `parse_number`, `sanitize_filename`, `resolve_period`, `normalize_period_code`, `is_semester_subject`, `parse_schools_from_progress_message`, `format_progress_line`. |
+| [tests/test_grade_table_signals.py](tests/test_grade_table_signals.py) | Эвристики распознавания видимой таблицы критериального оценивания (`grade_table_signals`). |
+| [tests/test_grade_report_payload.py](tests/test_grade_report_payload.py) | Хелперы `grade_reports.payload` (разбор `grades_json`/`analytics_json`). |
+| [tests/test_grade_report_queries.py](tests/test_grade_report_queries.py) | Выборки `grade_reports.queries` по периодам. |
+| [tests/test_grade_report_context.py](tests/test_grade_report_context.py) | Кэширование payload/analytics в `SchoolPeriodContext`. |
+| [tests/test_class_grades_matrix.py](tests/test_class_grades_matrix.py) | Матрица оценок класса (`class_grades_matrix`). |
+| [tests/test_class_teacher_categories.py](tests/test_class_teacher_categories.py) | Категоризация учеников и блоки отчёта классного руководителя. |
+| [tests/test_criteria_subject_entries.py](tests/test_criteria_subject_entries.py) | Сопоставление предметов в нескольких школах (критериальное оценивание). |
+| [tests/test_student_edits.py](tests/test_student_edits.py) | Удаление ученика из `grades_json` (`student_edits`). |
+| [tests/test_subject_aliases.py](tests/test_subject_aliases.py) | Нормализация названий предметов по словарю алиасов. |
+| [tests/test_teacher_schools.py](tests/test_teacher_schools.py) | Учитель в нескольких школах: членство и активная школа. |
+| [tests/test_year_grades.py](tests/test_year_grades.py) | Расчёт годовых оценок (`year_grades`). |
 
-Запуск: `python -m pytest` (из корня).
+Конфиг [pytest.ini](pytest.ini) добавляет `mektep-desktop/` в `pythonpath`, чтобы `app.*` (десктоп) импортировался из корня репо. Запуск: `python -m pytest` (из корня).
 
 #### `docs/`
 
@@ -426,8 +499,9 @@ Gettext-каталоги для двух локалей:
 | `out/platform_uploads/school_<id>/` | [webapp/views/teacher.py](webapp/views/teacher.py), [webapp/views/api.py](webapp/views/api.py) | Загруженные финальные отчёты, сгруппированные по школе. |
 | `data/` (в Docker) | [deploy/docker-compose.yml](deploy/docker-compose.yml) | Монтируется в `/app/data` контейнера `web` (upload root). |
 | `build/`, `dist/` (корень) | PyInstaller | Артефакты сборки EXE, если собирать из корня. Обычно пусты, реальная сборка идёт в `mektep-desktop/`. |
-| `mektep-desktop/build/`, `mektep-desktop/dist/` | PyInstaller | Промежуточные и итоговые файлы EXE-сборки. |
-| `mektep-desktop/.pyupdater/`, `mektep-desktop/pyu-data/` | PyUpdater | Ключи, `versions.json`, подписанные пакеты обновлений. |
+| `mektep-desktop/build/`, `mektep-desktop/dist/` | PyInstaller / Inno Setup | Промежуточные и итоговые файлы сборки (EXE, `MektepDesktopSetup-*.exe`, `latest.json`). |
+| `updates/` | релиз десктопа | Опубликованные `latest.json` + установщик; раздаётся Nginx по `/updates/`. В git хранится только `.gitkeep`. |
+| `mektep-desktop/.pyupdater/`, `mektep-desktop/pyu-data/` | PyUpdater (наследие) | Старые рабочие каталоги PyUpdater; больше не используются. |
 | `migrations/` | Flask-Migrate | Alembic-миграции (создаются командой `flask db init`). Сейчас схема поднимается через `db.create_all()` + runtime-ALTER в [webapp/__init__.py](webapp/__init__.py). |
 | `postgres-data/` | Docker volume | Тома PostgreSQL (в `docker compose`). Исключён через `postgres-data/`. |
 | `nginx/ssl/` | оператор | TLS-сертификаты (не коммитить). Исключены через `nginx/ssl/`. |
@@ -608,51 +682,52 @@ python main.py
 
 При первом запуске откроется диалог логина. Настройки подключения:
 
-- **URL сервера** — по умолчанию берётся из `QSettings("Mektep","MektepDesktop")` или из [mektep-desktop/client_config.py](mektep-desktop/client_config.py) (`https://mektep-analyzer.kz/`). Для локальной разработки укажите `http://127.0.0.1:5000` в диалоге «Настройки» → «Сервер».
+- **URL сервера** — по умолчанию берётся из `QSettings("Mektep","MektepDesktop")` (production: `https://mektep-analyzer.kz/`). Для локальной разработки укажите `http://127.0.0.1:5000` в диалоге «Настройки» → «Сервер».
 - **Логин/пароль** — те, что создал школьный админ для учителя. На десктопе учитель дополнительно вводит учётные данные `mektep.edu.kz` (логин/ИИН + пароль), которые используются Playwright-скрапером.
 
 Папка для сохранения отчётов задаётся в «Настройки» → «Папка отчётов» (по умолчанию — `Documents/Mektep Reports/`).
 
-### Сборка EXE
+### Сборка установщика
 
-[mektep-desktop/build.py](mektep-desktop/build.py) автоматизирует всю цепочку: копирует модули скрапера и шаблоны из корня, проверяет иконку (при отсутствии — скачивает через [`_download_logo.py`](mektep-desktop/_download_logo.py)), ставит PyInstaller и запускает нужный `.spec`.
+[mektep-desktop/build.py](mektep-desktop/build.py) автоматизирует всю цепочку: копирует модули скрапера и шаблоны из корня, проверяет иконку (при отсутствии — скачивает через [`_download_logo.py`](mektep-desktop/_download_logo.py)), ставит PyInstaller, запускает нужный `.spec`, а в режиме `folder` дополнительно собирает установщик Inno Setup и генерирует `latest.json`.
 
 ```bash
 cd mektep-desktop
 
-# onedir — быстро стартует, поставляется как папка
+# folder + установщик Inno Setup + latest.json (для релиза и автообновления)
 python build.py
 
-# onefile — один EXE-файл (медленнее старт, удобнее распространять)
+# onefile — один EXE-файл, без установщика (для быстрой раздачи)
 python build.py onefile
 ```
 
 Результаты:
 
 - `mektep-desktop/dist/Mektep Desktop/Mektep Desktop.exe` (onedir)
+- `mektep-desktop/dist/MektepDesktopSetup-<version>.exe` + `dist/latest.json` (folder + Inno Setup)
 - `mektep-desktop/dist/Mektep Desktop.exe` (onefile)
 
-Иконка лежит в [mektep-desktop/resources/icons/app_icon.ico](mektep-desktop/resources/icons/app_icon.ico), логотип — в [mektep-desktop/resources/img/logo_edus_logo_white.png](mektep-desktop/resources/img/logo_edus_logo_white.png). Для сборки на Windows PyInstaller подхватит ICO автоматически; под Linux потребуется PNG/иной формат иконки.
+Для сборки установщика нужен установленный **Inno Setup 6** (`ISCC.exe` ищется в `C:\Program Files (x86)\Inno Setup 6\`). Если он не найден, `build.py` соберёт только папку и подскажет, что установщик не создан. Иконка лежит в [mektep-desktop/resources/icons/app_icon.ico](mektep-desktop/resources/icons/app_icon.ico), логотип — в [mektep-desktop/resources/img/logo_edus_logo_white.png](mektep-desktop/resources/img/logo_edus_logo_white.png).
 
-### Обновления через PyUpdater
+### Автообновление (Inno Setup + `latest.json`)
 
-Перед релизом обновите [mektep-desktop/version.py](mektep-desktop/version.py) (`APP_VERSION`). Типичный цикл:
+Перед релизом обновите [mektep-desktop/version.py](mektep-desktop/version.py) (`APP_VERSION`) и при необходимости [webapp/constants.py](webapp/constants.py) (`DESKTOP_VERSION` для кнопки на сайте, `MIN_DESKTOP_VERSION` для блокировки старых клиентов). Типичный цикл (только Windows):
 
 ```bash
 cd mektep-desktop
-python build.py onefile        # собрать EXE
-pyupdater pkg --process        # упаковать и подписать бинарник
-pyupdater upload               # залить пакет (см. plugin PyUpdater для S3/SSH/...)
+python build.py                # собрать setup.exe + latest.json
+# залить оба файла на сервер в updates/ (Nginx /updates/)
+scp dist/MektepDesktopSetup-<ver>.exe dist/latest.json deploy@server:~/pdf-to-excel-scraper-main/updates/
 ```
 
-Клиент проверяет обновления по URL из [mektep-desktop/client_config.py](mektep-desktop/client_config.py) (`UPDATE_URLS`) и [mektep-desktop/pyu_config.py](mektep-desktop/pyu_config.py) (`PUBLIC_KEY`). Рабочие каталоги `.pyupdater/` и `pyu-data/` игнорируются git.
+Клиент через ~2 с после старта фоном запрашивает `https://mektep-analyzer.kz/updates/latest.json` ([app/updater.py](mektep-desktop/app/updater.py)); если версия новее — предлагает скачать `setup.exe`, проверяет sha256 и запускает тихую установку. Также есть ручная кнопка «Проверить обновление». Полный регламент — [UPDATES.md](mektep-desktop/UPDATES.md) и [RELEASE.md](mektep-desktop/RELEASE.md).
 
-### Раздача EXE через веб
+### Раздача установщика через веб
 
-Можно встроить ссылку на скачивание на лендинг:
+Кнопка «Скачать приложение» на лендинге по умолчанию ведёт на установщик в `/updates/` (имя формируется из `DESKTOP_VERSION` через `desktop_download_url()` в [webapp/constants.py](webapp/constants.py)). Переопределить можно через env:
 
-- Локальный файл: `DESKTOP_DOWNLOAD_PATH=dist/Mektep Desktop.exe` → маршрут `/download/desktop` отдаст файл.
-- Внешний URL: `DESKTOP_DOWNLOAD_URL=https://github.com/<org>/<repo>/releases/latest/download/Mektep.Desktop.exe` → **прямая ссылка на ассет** (`/releases/download/...` или `/releases/latest/download/<имя>`), не страница `/releases/tag/...`.
+- Локальный файл: `DESKTOP_DOWNLOAD_PATH=dist/Mektep Desktop/Mektep Desktop.exe` → маршрут `/download/desktop` отдаст файл.
+- Внешний URL: `DESKTOP_DOWNLOAD_URL=https://mektep-analyzer.kz/updates/MektepDesktopSetup-1.2.1.exe` (имеет приоритет; GitHub Releases-ссылки нормализуются в прямую ссылку на ассет).
 
 См. [webapp/views/main.py](webapp/views/main.py) (`_get_desktop_download_info`).
 
@@ -687,11 +762,10 @@ python -m pytest --cov=webapp --cov=mektep-desktop/app --cov-report=term-missing
 
 ### Что покрыто
 
-На данный момент — юнит-тесты `app.report_pipeline.*` ([tests/test_report_utils.py](tests/test_report_utils.py)):
+Юнит-тесты двух слоёв:
 
-- `parse_class_liter`, `parse_number`, `sanitize_filename` — нормализация входных данных.
-- `resolve_period`, `normalize_period_code`, `is_semester_subject` — определение периода отчёта.
-- `parse_schools_from_progress_message`, `format_progress_line` — парсинг `progress.json`.
+- **Десктоп** (`app.report_pipeline.*`, `grade_table_signals`) — нормализация входных данных, определение периода отчёта, парсинг `progress.json`, распознавание таблицы критериев.
+- **Веб** (`webapp.services.grade_reports.*`, `class_grades_matrix`, `subject_aliases`, `teacher_schools`, `year_grades`, критериальное оценивание) — разбор payload, выборки по периодам, агрегации, категории классного руководителя, алиасы предметов, годовые оценки.
 
 ### Типовые dev-операции
 
@@ -747,6 +821,8 @@ python -m pytest --cov=webapp --cov=mektep-desktop/app --cov-report=term-missing
 | `JOB_TIMEOUT_SECONDS` | `1800` (prod), `600` (dev) | Макс. время одного прогона. |
 | `SCRAPER_HEADLESS` | `1` | `1` — без UI, `0` — показывать браузер (для отладки). |
 | `SCRAPER_SLOWMO_MS` | `0` | Задержка между действиями Playwright, мс. |
+| `MEKTEP_TIMING` | `1` | Логировать `[TIMING]`-строки для ожиданий и ключевых шагов скрапера. |
+| `MEKTEP_DEBUG_ARTIFACTS` | `1` | Сохранять HTML/скриншоты-артефакты даже при успешном прогоне. |
 | `UPLOAD_ROOT` | `out/platform_uploads` | Корень для загруженных/сгенерированных отчётов. В Docker — `/app/data/uploads`. |
 
 ### CLI-скрапер (`scrape_mektep.py`)
@@ -792,7 +868,7 @@ python -m pytest --cov=webapp --cov=mektep-desktop/app --cov-report=term-missing
 | Переменная | Описание |
 |------------|----------|
 | `DESKTOP_DOWNLOAD_PATH` | Путь к локальному EXE/ZIP, который отдаётся через `GET /download/desktop`. |
-| `DESKTOP_DOWNLOAD_URL` | Внешний URL (например, GitHub Releases). Имеет приоритет: если задан — пользователь будет перенаправлен на него. |
+| `DESKTOP_DOWNLOAD_URL` | Внешний URL установщика. Имеет приоритет; если не задан — кнопка ведёт на `MektepDesktopSetup-<DESKTOP_VERSION>.exe` в `/updates/` (см. `desktop_download_url()` в [webapp/constants.py](webapp/constants.py)). GitHub Releases-ссылки нормализуются в прямую ссылку на ассет. |
 
 ---
 

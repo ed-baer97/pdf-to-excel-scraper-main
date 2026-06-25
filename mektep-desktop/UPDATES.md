@@ -1,5 +1,7 @@
 # Публикация обновлений Mektep Desktop
 
+Полный чек-лист релиза: [RELEASE.md](RELEASE.md).
+
 ## Структура на сервере
 
 Файлы размещаются в `updates/` в корне проекта (Docker: монтируется в Nginx как `/var/www/mektep/updates/`) и доступны по URL `https://mektep-analyzer.kz/updates/`:
