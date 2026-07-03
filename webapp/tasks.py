@@ -193,14 +193,36 @@ def run_scrape_task(
             text=True,
             cwd=str(project_root),
         )
-        
+
+        # PID в БД — для диагностики и аварийной остановки из веб-процесса
+        job.worker_pid = process.pid
+        db.session.commit()
+
         # Monitor progress
         progress_file = Path(output_dir) / "progress.json"
         last_progress = 0
         
         while process.poll() is None:
             time.sleep(1)
-            
+
+            # Кооперативная отмена: флаг/статус ставит веб-процесс через БД
+            db.session.refresh(job)
+            if job.cancel_requested or job.status == ScrapeJobStatus.CANCELLED.value:
+                logger.info(f"Job {job_id} cancelled, terminating subprocess {process.pid}")
+                try:
+                    process.terminate()
+                    time.sleep(2)
+                    if process.poll() is None:
+                        process.kill()
+                except Exception:
+                    pass
+                job.status = ScrapeJobStatus.CANCELLED.value
+                job.worker_pid = None
+                if not job.finished_at:
+                    job.finished_at = datetime.utcnow()
+                db.session.commit()
+                return {"success": False, "cancelled": True}
+
             # Read progress
             if progress_file.exists():
                 try:
@@ -224,6 +246,8 @@ def run_scrape_task(
         
         # Get return code
         return_code = process.returncode
+        job.worker_pid = None
+        db.session.commit()
         logger.info(f"Scraper finished with code {return_code}")
         
         if return_code != 0:

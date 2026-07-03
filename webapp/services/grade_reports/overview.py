@@ -31,12 +31,16 @@ def build_grades_overview(ctx: SchoolPeriodContext) -> dict[str, dict[str, Any]]
         if subj_norm not in classes_data[class_name]["subjects"]:
             classes_data[class_name]["subjects"].append(subj_norm)
 
-        grades_data = ctx.payload(report)
-        if grades_data:
-            classes_data[class_name]["students_count"] = max(
-                classes_data[class_name]["students_count"],
-                grades_data.get("total_students", 0),
-            )
+        # Предрассчитанная колонка вместо парсинга grades_json; fallback —
+        # старые строки до бэкфилла.
+        total_students = getattr(report, "total_students", None)
+        if total_students is None:
+            grades_data = ctx.payload(report)
+            total_students = (grades_data or {}).get("total_students", 0)
+        classes_data[class_name]["students_count"] = max(
+            classes_data[class_name]["students_count"],
+            int(total_students or 0),
+        )
 
     return classes_data
 

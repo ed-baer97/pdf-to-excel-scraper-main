@@ -458,7 +458,7 @@ Gettext-каталоги для двух локалей:
 | Файл | Назначение |
 |------|------------|
 | [deploy/Dockerfile](deploy/Dockerfile) | Двухстадийная сборка на `python:3.13-slim`: builder ставит зависимости из [requirements.txt](requirements.txt), final-образ — минимальный runtime с `libpq5`; CMD `python run_production.py`. |
-| [deploy/docker-compose.yml](deploy/docker-compose.yml) | Сервисы: `nginx` (80/443), `web` (expose 5000, `USE_CELERY=0`, маунтит `data/` и `instance/`), `db` (postgres:16-alpine, healthcheck `pg_isready`), `node-exporter`, `prometheus` (9090), `grafana` (3000). Общая сеть `mektep-network`, тома `postgres-data` и `grafana-data`. |
+| [deploy/docker-compose.yml](deploy/docker-compose.yml) | Сервисы: `nginx` (80/443), `web` (expose 5000, `USE_CELERY=1`, маунтит `data/` и `instance/`), `redis` (брокер Celery), `worker` (Celery: очереди `scraping,ai,exports,default`), `db` (postgres:16-alpine, healthcheck `pg_isready`), `node-exporter`, `prometheus` (9090), `grafana` (3000). Общая сеть `mektep-network`, тома `postgres-data` и `grafana-data`. |
 | [deploy/prometheus.yml](deploy/prometheus.yml) | Scrape-конфиг: job `mektep-webapp` → `web:5000/metrics` и job `node-exporter` → `node-exporter:9100`. |
 
 #### `nginx/`
@@ -653,7 +653,9 @@ python -c "from waitress import serve; from entrypoints.wsgi import app; serve(a
 | Сервис | Порт (host) | Назначение |
 |--------|-------------|------------|
 | `nginx` | 80, 443 | Reverse-proxy на `web:5000`, rate-limit `/api/`, кэш `/static/`. |
-| `web` | — (только внутри сети) | Flask + Waitress/Gunicorn, `USE_CELERY=0` в простой архитектуре. |
+| `web` | — (только внутри сети) | Flask + Waitress/Gunicorn, `USE_CELERY=1` — фоновые задачи уходят в `worker`. |
+| `redis` | — | Брокер Celery и кэш аналитики (версионная инвалидация). |
+| `worker` | — | Celery-worker: скрапинг, AI-генерация, экспорты Excel (очереди `scraping,ai,exports,default`). |
 | `db` | — (по умолчанию без проброса) | PostgreSQL 16-alpine, healthcheck `pg_isready`. Для локальной отладки раскомментируйте `ports: 5432:5432`. |
 | `node-exporter` | — | Системные метрики (CPU/RAM/диск) для Prometheus. |
 | `prometheus` | 9090 | Сбор метрик с `web:5000/metrics` и `node-exporter:9100`. |

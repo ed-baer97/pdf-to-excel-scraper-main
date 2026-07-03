@@ -42,8 +42,11 @@ services:
       - FLASK_ENV=production
       - SECRET_KEY=${SECRET_KEY}
       - DATABASE_URL=postgresql://mektep:${POSTGRES_PASSWORD:-mektep123}@db:5432/mektep_db
-      # Disable Celery/Redis (not needed in simplified architecture)
-      - USE_CELERY=0
+      # Background jobs go to Celery worker (USE_CELERY=0 falls back to threads)
+      - USE_CELERY=${USE_CELERY:-1}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - UPLOAD_ROOT=/app/data/uploads
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
@@ -65,6 +68,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_started
     restart: unless-stopped
     networks:
       - mektep-network
@@ -182,19 +187,18 @@ services:
     restart: unless-stopped
 
   # =============================================================================
-  # Async exports (optional): docker compose --profile async up
+  # Background jobs: Redis (broker) + Celery worker.
+  # Отключение: USE_CELERY=0 для web (fallback на потоки внутри веб-процесса).
   # =============================================================================
   redis:
-    profiles: ["async"]
     image: redis:7-alpine
     restart: unless-stopped
     networks:
       - mektep-network
 
   worker:
-    profiles: ["async"]
     build: .
-    command: celery -A webapp.celery_app worker --loglevel=info --pool=solo
+    command: celery -A webapp.celery_app worker --loglevel=info -Q scraping,ai,exports,default --concurrency=${CELERY_CONCURRENCY:-2}
     environment:
       - FLASK_ENV=production
       - SECRET_KEY=${SECRET_KEY}

@@ -33,6 +33,12 @@ def enqueue_export_job(job: ExportJob) -> None:
         except Exception as exc:
             current_app.logger.error("Celery export failed, using thread: %s", exc)
 
+    if not current_app.debug and not current_app.testing:
+        current_app.logger.warning(
+            "Export job %s runs in a daemon thread inside the web process; "
+            "it will not survive a worker restart. Enable USE_CELERY=1 in production.",
+            job.id,
+        )
     thread = threading.Thread(
         target=_run_export_in_app,
         kwargs={"app": app_obj, "job_id": job.id},

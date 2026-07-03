@@ -108,6 +108,7 @@ class ProductionConfig(Config):
     
     # In production, SECRET_KEY MUST be set via environment variable
     SECRET_KEY = os.getenv("SECRET_KEY", "")
+    PASSWORD_ENC_KEY = os.getenv("PASSWORD_ENC_KEY", "")
     
     # Production should use PostgreSQL (set DATABASE_URL in .env)
     # Handle Heroku-style postgres:// URLs
@@ -126,6 +127,20 @@ class ProductionConfig(Config):
     
     # More concurrent jobs allowed in production
     MAX_CONCURRENT_JOBS = int(os.getenv("MAX_CONCURRENT_JOBS", "5"))
+
+    @classmethod
+    def validate(cls) -> None:
+        """Проверяет обязательные переменные окружения перед стартом в production."""
+        missing = []
+        if not os.getenv("SECRET_KEY"):
+            missing.append("SECRET_KEY")
+        if not os.getenv("PASSWORD_ENC_KEY"):
+            missing.append("PASSWORD_ENC_KEY")
+        if missing:
+            raise RuntimeError(
+                "Production configuration requires environment variables: "
+                + ", ".join(missing)
+            )
 
 
 class TestingConfig(Config):

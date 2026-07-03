@@ -12,6 +12,8 @@ from ..extensions import db
 from ..models import GradeReport, ReportFile, Role
 from .academic_year import resolve_academic_year
 from .api_helpers import auto_create_class_and_subject, find_school_by_org_name
+from .grade_reports.aggregates import apply_grade_aggregates
+from .grade_reports.cache import bump_grade_reports_version
 from .teacher_schools import get_allowed_school_names, teacher_can_report_for_school_id
 
 
@@ -173,6 +175,10 @@ def upsert_grade_report(user, data: dict) -> dict[str, Any]:
         existing_report.grades_json = grades_json
         existing_report.analytics_json = analytics_json
         existing_report.updated_at = datetime.utcnow()
+        apply_grade_aggregates(
+            existing_report,
+            grades_payload if isinstance(grades_payload, dict) else None,
+        )
         report_id = existing_report.id
         action = "updated"
     else:
@@ -187,12 +193,17 @@ def upsert_grade_report(user, data: dict) -> dict[str, Any]:
             grades_json=grades_json,
             analytics_json=analytics_json,
         )
+        apply_grade_aggregates(
+            new_report,
+            grades_payload if isinstance(grades_payload, dict) else None,
+        )
         db.session.add(new_report)
         db.session.flush()  # Чтобы получить ID
         report_id = new_report.id
         action = "created"
 
     db.session.commit()
+    bump_grade_reports_version(school_id)
     return {"report_id": report_id, "action": action}
 
 

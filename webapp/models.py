@@ -179,6 +179,13 @@ class ScrapeJob(db.Model):
     # Celery task ID (for async job tracking)
     celery_task_id = db.Column(db.String(64), nullable=True, index=True)
 
+    # PID подпроцесса скрапера — виден всем воркерам через БД
+    # (позволяет диагностировать/останавливать задачу не только из процесса-владельца).
+    worker_pid = db.Column(db.Integer, nullable=True)
+    # Флаг кооперативной отмены: view ставит True, процесс-исполнитель
+    # периодически проверяет и убивает свой subprocess.
+    cancel_requested = db.Column(db.Boolean, nullable=False, default=False)
+
 
 # =============================================================================
 # Модели для веб-панели админа и сводных таблиц
@@ -339,7 +346,18 @@ class GradeReport(db.Model):
     #   "soch": {"count_5": 6, "count_4": 9, ...}
     # }
     analytics_json = db.Column(db.Text, nullable=True)
-    
+
+    # Предрассчитанные агрегаты (denormalized из grades_json).
+    # Заполняются при записи отчёта, чтобы страницы обзора/аналитики читали
+    # обычные колонки SQL вместо парсинга JSON на каждый запрос.
+    quality_percent = db.Column(db.Float, nullable=True)
+    success_percent = db.Column(db.Float, nullable=True)
+    total_students = db.Column(db.Integer, nullable=True)
+    count_5 = db.Column(db.Integer, nullable=True)
+    count_4 = db.Column(db.Integer, nullable=True)
+    count_3 = db.Column(db.Integer, nullable=True)
+    count_2 = db.Column(db.Integer, nullable=True)
+
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 

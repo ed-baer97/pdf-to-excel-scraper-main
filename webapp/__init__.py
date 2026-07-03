@@ -33,6 +33,11 @@ def create_app(config_object=None) -> Flask:
     """
     if config_object is None:
         config_object = get_config()
+
+    from .config import ProductionConfig
+
+    if config_object is ProductionConfig:
+        ProductionConfig.validate()
     
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.config.from_object(config_object)
@@ -54,6 +59,23 @@ def create_app(config_object=None) -> Flask:
     db.init_app(app)
     migrate.init_app(app, db)
     login_manager.init_app(app)
+
+    # SQLite (dev): WAL позволяет читать во время записи — убирает
+    # "database is locked" при параллельных фоновых потоках/задачах.
+    if (app.config.get("SQLALCHEMY_DATABASE_URI") or "").startswith("sqlite"):
+        from sqlalchemy import event
+
+        with app.app_context():
+            engine = db.engine
+
+        @event.listens_for(engine, "connect")
+        def _sqlite_pragmas(dbapi_connection, connection_record):
+            cursor = dbapi_connection.cursor()
+            try:
+                cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.execute("PRAGMA busy_timeout=5000")
+            finally:
+                cursor.close()
 
     register_request_logging(app)
     register_error_handlers(app)
@@ -207,6 +229,35 @@ def create_app(config_object=None) -> Flask:
                     "ix_scrape_jobs_celery_task_id",
                     "CREATE INDEX ix_scrape_jobs_celery_task_id ON scrape_jobs (celery_task_id)",
                 )
+
+            # scrape_jobs.worker_pid (PID подпроцесса скрапера, виден всем воркерам)
+            if not _has_column("scrape_jobs", "worker_pid"):
+                db.session.execute(text("ALTER TABLE scrape_jobs ADD COLUMN worker_pid INTEGER"))
+                db.session.commit()
+
+            # scrape_jobs.cancel_requested (кооперативная отмена через БД)
+            if not _has_column("scrape_jobs", "cancel_requested"):
+                db.session.execute(
+                    text("ALTER TABLE scrape_jobs ADD COLUMN cancel_requested BOOLEAN NOT NULL DEFAULT FALSE")
+                )
+                db.session.commit()
+
+            # grade_reports.*: предрассчитанные агрегаты (denormalized из grades_json).
+            # Бэкфилл существующих строк: python -m scripts.db.backfill_grade_aggregates
+            for _agg_col, _agg_type in (
+                ("quality_percent", "FLOAT"),
+                ("success_percent", "FLOAT"),
+                ("total_students", "INTEGER"),
+                ("count_5", "INTEGER"),
+                ("count_4", "INTEGER"),
+                ("count_3", "INTEGER"),
+                ("count_2", "INTEGER"),
+            ):
+                if not _has_column("grade_reports", _agg_col):
+                    db.session.execute(
+                        text(f"ALTER TABLE grade_reports ADD COLUMN {_agg_col} {_agg_type}")
+                    )
+                    db.session.commit()
 
             _create_index_if_missing(
                 "ix_grade_report_school_period",

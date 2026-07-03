@@ -20,8 +20,8 @@ bind = os.getenv("GUNICORN_BIND", "0.0.0.0:5000")
 _default_workers = min(4, max(1, multiprocessing.cpu_count() * 2))
 workers = int(os.getenv("GUNICORN_WORKERS", str(_default_workers)))
 
-# Threads per worker
-threads = int(os.getenv("GUNICORN_THREADS", 2))
+# Threads per worker (фоновые задачи ушли в Celery — потоки заняты только HTTP)
+threads = int(os.getenv("GUNICORN_THREADS", 4))
 
 # Worker class
 worker_class = os.getenv("GUNICORN_WORKER_CLASS", "sync")

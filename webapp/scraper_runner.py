@@ -24,37 +24,58 @@ from .extensions import db
 from .models import ReportFile, Role, School, ScrapeJob, ScrapeJobStatus, User
 
 # Store running processes by job_id for cancellation
+# (только для процессов, запущенных ЭТИМ процессом; кросс-процессное состояние — в БД:
+#  ScrapeJob.worker_pid и ScrapeJob.cancel_requested)
 _running_processes: dict[int, subprocess.Popen] = {}
 _processes_lock = threading.Lock()
 
-# Semaphore for limiting concurrent jobs (initialized lazily)
-_jobs_semaphore: threading.Semaphore | None = None
-_semaphore_lock = threading.Lock()
 _max_concurrent_jobs: int = 3  # Default, overridden by config
 
 
-def _get_jobs_semaphore(app: Flask) -> threading.Semaphore:
-    """Get or create the jobs semaphore with config-based limit."""
-    global _jobs_semaphore, _max_concurrent_jobs
-    with _semaphore_lock:
-        max_jobs = app.config.get("MAX_CONCURRENT_JOBS", 3)
-        if _jobs_semaphore is None or _max_concurrent_jobs != max_jobs:
-            _max_concurrent_jobs = max_jobs
-            _jobs_semaphore = threading.Semaphore(max_jobs)
-            app.logger.info(f"Initialized jobs semaphore with max_concurrent_jobs={max_jobs}")
-        return _jobs_semaphore
-
-
 def get_active_jobs_count() -> int:
-    """Get the number of currently active (running) jobs."""
-    with _processes_lock:
-        # Count processes that are still running
-        return sum(1 for p in _running_processes.values() if p.poll() is None)
+    """Число выполняющихся задач по БД (видно из любого процесса)."""
+    try:
+        return ScrapeJob.query.filter_by(status=ScrapeJobStatus.RUNNING.value).count()
+    except Exception:
+        # Fallback: локальные процессы (например, если нет app context)
+        with _processes_lock:
+            return sum(1 for p in _running_processes.values() if p.poll() is None)
 
 
 def get_max_concurrent_jobs() -> int:
     """Get the configured maximum concurrent jobs."""
     return _max_concurrent_jobs
+
+
+def _wait_for_job_slot(app: Flask, job_id: int) -> bool:
+    """
+    Ждать свободный слот, считая RUNNING-задачи в БД (работает при любом
+    числе воркеров Gunicorn — в отличие от прежнего per-process семафора).
+
+    Returns:
+        True — слот получен; False — задача отменена во время ожидания.
+    """
+    global _max_concurrent_jobs
+    max_jobs = app.config.get("MAX_CONCURRENT_JOBS", 3)
+    _max_concurrent_jobs = max_jobs
+    poll_interval = 2.0
+
+    while True:
+        db.session.expire_all()
+        job: ScrapeJob | None = db.session.get(ScrapeJob, job_id)
+        if not job or job.status == ScrapeJobStatus.CANCELLED.value or job.cancel_requested:
+            return False
+
+        running = (
+            ScrapeJob.query.filter_by(status=ScrapeJobStatus.RUNNING.value).count()
+        )
+        if running < max_jobs:
+            return True
+
+        app.logger.info(
+            f"Job {job_id}: waiting for slot (running: {running}/{max_jobs})"
+        )
+        time.sleep(poll_interval)
 
 
 def get_running_process(job_id: int) -> subprocess.Popen | None:
@@ -135,7 +156,14 @@ def _safe_rmtree(app: Flask, path: Path, *, job_id: int, reason: str) -> None:
 
 
 def kill_job_process(job_id: int) -> bool:
-    """Kill the process for a job. Returns True if process was found and killed."""
+    """
+    Kill the process for a job. Returns True if process was found and killed.
+
+    Сначала пробует handle из этого процесса; если задача запущена другим
+    воркером на этой же машине — пробует PID из БД (ScrapeJob.worker_pid).
+    Если и это не удалось, полагаемся на кооперативную отмену: исполнитель
+    сам увидит cancel_requested/CANCELLED в БД и убьёт свой subprocess.
+    """
     with _processes_lock:
         process = _running_processes.get(job_id)
         if process and process.poll() is None:
@@ -145,6 +173,25 @@ def kill_job_process(job_id: int) -> bool:
         elif process:
             # Process already finished, remove from dict
             _running_processes.pop(job_id, None)
+
+    # Fallback: PID из БД (другой воркер на этом же хосте)
+    try:
+        job = db.session.get(ScrapeJob, job_id)
+        pid = job.worker_pid if job else None
+        if pid:
+            if sys.platform == "win32":
+                subprocess.run(
+                    ["taskkill", "/PID", str(pid), "/T", "/F"],
+                    capture_output=True,
+                    timeout=10,
+                )
+            else:
+                os.kill(pid, 15)  # SIGTERM
+            return True
+    except (ProcessLookupError, PermissionError):
+        pass
+    except Exception:
+        pass
     return False
 
 
@@ -341,21 +388,19 @@ def run_scrape_job(
 ) -> None:
     """
     Run a scraping job with concurrency limiting.
-    
-    Uses a semaphore to limit the number of concurrent jobs to prevent
-    resource exhaustion (each Playwright browser uses ~1-2 GB RAM).
+
+    Лимит параллельности считается по числу RUNNING-задач в БД, поэтому
+    действует суммарно на все воркеры (каждый Playwright-браузер ест ~1-2 GB RAM).
     """
-    semaphore = _get_jobs_semaphore(app)
-    
-    # Try to acquire semaphore (wait for slot)
-    app.logger.info(f"Job {job_id}: waiting for available slot (active: {get_active_jobs_count()}/{_max_concurrent_jobs})")
-    
-    with semaphore:
-        app.logger.info(f"Job {job_id}: acquired slot, starting execution")
-        _run_scrape_job_internal(app, job_id=job_id, mektep_login=mektep_login,
-                                  mektep_password=mektep_password, period_code=period_code,
-                                  lang=lang, school_index=school_index, limit=limit, headless=headless)
-    
+    with app.app_context():
+        if not _wait_for_job_slot(app, job_id):
+            app.logger.info(f"Job {job_id}: cancelled while waiting for slot")
+            return
+
+    app.logger.info(f"Job {job_id}: acquired slot, starting execution")
+    _run_scrape_job_internal(app, job_id=job_id, mektep_login=mektep_login,
+                              mektep_password=mektep_password, period_code=period_code,
+                              lang=lang, school_index=school_index, limit=limit, headless=headless)
     app.logger.info(f"Job {job_id}: released slot")
 
 
@@ -548,7 +593,11 @@ def _run_scrape_job_internal(
             
             with _processes_lock:
                 _running_processes[job_id] = process
-            
+
+            # PID в БД — виден всем воркерам (диагностика, аварийная остановка)
+            job.worker_pid = process.pid
+            db.session.commit()
+
             app.logger.info(f"Started subprocess for job {job_id}, PID: {process.pid}")
             
             # Read output in real-time and log it
@@ -615,9 +664,9 @@ def _run_scrape_job_internal(
                     _safe_rmtree(app, output_dir, job_id=job_id, reason="timeout")
                     return
                 
-                # Check if job was cancelled
+                # Check if job was cancelled (status или флаг cancel_requested из другого воркера)
                 db.session.refresh(job)
-                if job.status == ScrapeJobStatus.CANCELLED.value:
+                if job.status == ScrapeJobStatus.CANCELLED.value or job.cancel_requested:
                     app.logger.info(f"Job {job_id} was cancelled, terminating process {process.pid}")
                     try:
                         _terminate_process(process, timeout=2.0)
@@ -654,9 +703,11 @@ def _run_scrape_job_internal(
             # Remove from running processes
             with _processes_lock:
                 _running_processes.pop(job_id, None)
-            
+
             # Check if job was cancelled during execution
             db.session.refresh(job)
+            job.worker_pid = None
+            db.session.commit()
             if job.status == ScrapeJobStatus.CANCELLED.value:
                 app.logger.info(f"Job {job_id} was cancelled, process return code: {return_code}")
                 # DO NOT delete output directory when cancelled - keep it for debugging

@@ -222,6 +222,12 @@ def start_scrape():
             use_celery = False
     
     if not use_celery:
+        if not current_app.debug and not current_app.testing:
+            current_app.logger.warning(
+                "Scrape job %s runs in a daemon thread inside the web process; "
+                "it will not survive a worker restart. Enable USE_CELERY=1 in production.",
+                job.id,
+            )
         t = threading.Thread(
             target=run_scrape_job,
             kwargs={
@@ -401,13 +407,20 @@ def cancel_job(job_id: int):
         flash("Можно отменить только задачи в статусе 'queued' или 'running'.", "warning")
         return redirect(url_for("teacher.dashboard"))
     
+    # Кооперативная отмена: флаг в БД видят все воркеры/Celery,
+    # исполнитель сам убьёт свой subprocess при следующей проверке.
+    job.cancel_requested = True
+    db.session.commit()
+
     # Try to kill the running process if it exists
     from ..scraper_runner import kill_job_process
     
     if kill_job_process(job_id):
         current_app.logger.info(f"Process for job {job_id} terminated successfully")
     else:
-        current_app.logger.info(f"No running process found for job {job_id}")
+        current_app.logger.info(
+            f"No local process found for job {job_id}; relying on cooperative cancellation"
+        )
     
     job.status = ScrapeJobStatus.CANCELLED.value
     job.finished_at = datetime.utcnow()

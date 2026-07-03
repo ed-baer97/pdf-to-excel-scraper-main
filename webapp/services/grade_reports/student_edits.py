@@ -9,6 +9,8 @@ from ...extensions import db
 from ...models import GradeReport
 from ..criteria_grades import grade_distribution
 from ..year_grades import YEAR_UI_PERIOD
+from .aggregates import apply_grade_aggregates
+from .cache import bump_grade_reports_version
 from .payload import parse_grades_json
 
 
@@ -144,8 +146,10 @@ def delete_student_from_class_reports(
         if not remove_student_from_payload(payload, target):
             continue
         report.grades_json = json.dumps(payload, ensure_ascii=False)
+        apply_grade_aggregates(report, payload)
         updated += 1
 
     if updated:
         db.session.commit()
+        bump_grade_reports_version(school_id)
     return updated

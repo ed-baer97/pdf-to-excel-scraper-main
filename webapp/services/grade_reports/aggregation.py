@@ -8,6 +8,7 @@ from ..year_grades import (
     YEAR_UI_PERIOD,
     aggregate_year_metrics as _aggregate_year_metrics,
 )
+from .cache import cached_computation
 from .payload import report_grades_payload
 from .periods import class_accordion_group, class_name_sort_key
 from .queries import get_quarter_reports
@@ -29,30 +30,43 @@ def _accumulate_report_into_class_totals(
             "report_count": 0,
             "weight_total": 0,
         }
-    grades_data = report_grades_payload(report)
-    if not grades_data:
-        return
-    students = grades_data.get("students", []) or []
-    total = int(grades_data.get("total_students") or len(students) or 0)
+    # Быстрый путь: предрассчитанные агрегатные колонки (заполняются при записи
+    # отчёта, см. grade_reports.aggregates) — без парсинга grades_json.
+    total = getattr(report, "total_students", None)
+    quality = getattr(report, "quality_percent", None)
+    success = getattr(report, "success_percent", None)
+
+    if total is None or quality is None or success is None:
+        # Fallback: старые строки до бэкфилла и синтетические отчёты —
+        # считаем из JSON, как раньше.
+        grades_data = report_grades_payload(report)
+        if not grades_data:
+            return
+        students = grades_data.get("students", []) or []
+        total = int(grades_data.get("total_students") or len(students) or 0)
+        if total <= 0:
+            return
+        quality = grades_data.get("quality_percent")
+        success = grades_data.get("success_percent")
+        if quality is None:
+            s5 = s4 = s3 = s2 = 0
+            for student in students:
+                grade = student.get("grade")
+                if grade == 5:
+                    s5 += 1
+                elif grade == 4:
+                    s4 += 1
+                elif grade == 3:
+                    s3 += 1
+                elif grade is not None and grade <= 2:
+                    s2 += 1
+            denom = s5 + s4 + s3 + s2
+            quality = round((s5 + s4) / denom * 100, 1) if denom else None
+            success = round((s5 + s4 + s3) / denom * 100, 1) if denom else None
+
+    total = int(total or 0)
     if total <= 0:
         return
-    quality = grades_data.get("quality_percent")
-    success = grades_data.get("success_percent")
-    if quality is None:
-        s5 = s4 = s3 = s2 = 0
-        for student in students:
-            grade = student.get("grade")
-            if grade == 5:
-                s5 += 1
-            elif grade == 4:
-                s4 += 1
-            elif grade == 3:
-                s3 += 1
-            elif grade is not None and grade <= 2:
-                s2 += 1
-        denom = s5 + s4 + s3 + s2
-        quality = round((s5 + s4) / denom * 100, 1) if denom else None
-        success = round((s5 + s4 + s3) / denom * 100, 1) if denom else None
     if quality is None or success is None:
         return
     class_totals[class_name]["quality_sum"] += float(quality)
@@ -129,19 +143,36 @@ def aggregate_class_metrics(
     *,
     academic_year: int | None = None,
 ) -> dict:
-    """KPI по классам/школе за выбранный период."""
+    """KPI по классам/школе за выбранный период.
+
+    Результат кэшируется в Redis (версионная инвалидация при записи
+    GradeReport, см. grade_reports.cache); без Redis считается напрямую.
+    """
     year = resolve_academic_year(academic_year)
-    if period_number == YEAR_UI_PERIOD:
-        return _aggregate_year_metrics(
-            school_id,
-            active_class_names,
-            get_quarter_reports,
-            academic_year=year,
+
+    def _build() -> dict:
+        if period_number == YEAR_UI_PERIOD:
+            return _aggregate_year_metrics(
+                school_id,
+                active_class_names,
+                get_quarter_reports,
+                academic_year=year,
+            )
+        reports = get_quarter_reports(
+            school_id, period_number, academic_year=year
         )
-    reports = get_quarter_reports(
-        school_id, period_number, academic_year=year
+        return _build_metrics_from_reports(reports, active_class_names)
+
+    return cached_computation(
+        school_id,
+        "class_metrics",
+        {
+            "period": period_number,
+            "year": year,
+            "classes": sorted(active_class_names),
+        },
+        _build,
     )
-    return _build_metrics_from_reports(reports, active_class_names)
 
 
 def aggregate_year_metrics(

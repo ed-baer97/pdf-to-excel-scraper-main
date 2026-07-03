@@ -66,6 +66,7 @@ def make_celery(app_name: str = "mektep_scraper") -> Celery:
         task_routes={
             "webapp.tasks.run_scrape_task": {"queue": "scraping"},
             "webapp.tasks.generate_ai_text": {"queue": "ai"},
+            "webapp.tasks.run_export_task": {"queue": "exports"},
         },
         
         # Default queue
