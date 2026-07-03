@@ -6,11 +6,14 @@
     python build.py onefile    — сборка в один EXE (без установщика)
 
 Что делает:
-1. Копирует модули скрапера из корня проекта
+1. Копирует шаблоны отчетов из корня проекта
 2. Проверяет наличие иконки (скачивает при необходимости)
 3. Устанавливает PyInstaller (если не установлен)
 4. Запускает сборку через PyInstaller
 5. (folder) Собирает установщик через Inno Setup и генерирует latest.json
+
+Модули скрапера больше не копируются: они живут в пакете mektep_core
+в корне репозитория и подхватываются PyInstaller через pathex=['..'].
 """
 import hashlib
 import json
@@ -29,16 +32,6 @@ SPEC_ONEFILE = SCRIPT_DIR / "mektep_desktop_onefile.spec"
 INSTALLER_ISS = SCRIPT_DIR / "installer.iss"
 UPDATE_BASE_URL = "https://mektep-analyzer.kz/updates/"
 
-# Модули скрапера, которые живут в корне проекта и нужны десктопу
-SCRAPER_MODULES = [
-    "scrape_mektep.py",
-    "grade_table_signals.py",
-    "iin_utils.py",
-    "build_report.py",
-    "build_word_report.py",
-    "scraper_logger.py",
-]
-
 # Шаблоны отчетов из корня проекта
 TEMPLATE_FILES = [
     "Шаблон.xlsx",
@@ -53,25 +46,6 @@ def get_app_version() -> str:
     namespace: dict = {}
     exec(version_file.read_text(encoding="utf-8"), namespace)  # noqa: S102
     return str(namespace["APP_VERSION"])
-
-
-def copy_scraper_modules():
-    """Копирование модулей скрапера из корня проекта в mektep-desktop"""
-    all_ok = True
-    for module in SCRAPER_MODULES:
-        src = PROJECT_ROOT / module
-        dst = SCRIPT_DIR / module
-        if src.exists():
-            shutil.copy2(str(src), str(dst))
-            print(f"[OK] Скопирован: {module}")
-        else:
-            print(f"[!] Не найден в корне: {src}")
-            if dst.exists():
-                print(f"     (локальная копия уже есть)")
-            else:
-                print(f"     [ОШИБКА] Модуль отсутствует!")
-                all_ok = False
-    return all_ok
 
 
 def copy_templates():
@@ -209,13 +183,7 @@ def build(onefile: bool = False):
     print(f"  СБОРКА MEKTEP DESKTOP v{app_version} — {mode}")
     print("=" * 60 + "\n")
 
-    # 1. Копирование модулей скрапера из корня проекта
-    print("[*] Копирование модулей скрапера...")
-    if not copy_scraper_modules():
-        print("\n[ОШИБКА] Не все модули найдены. Сборка может завершиться с ошибкой.")
-    print()
-
-    # 1.5. Копирование шаблонов из корня проекта
+    # 1. Копирование шаблонов из корня проекта
     print("[*] Копирование шаблонов отчетов...")
     if not copy_templates():
         print("\n[!] Не все шаблоны найдены. Отчеты могут не создаваться.")

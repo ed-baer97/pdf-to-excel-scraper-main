@@ -53,16 +53,23 @@ pdf-to-excel-scraper-main/
 ├── wsgi.py                          # Корневой прокси → entrypoints/wsgi.py
 ├── run_production.py                # Корневой прокси → entrypoints/run_production.py
 ├── gunicorn_config.py               # Корневой прокси → entrypoints/gunicorn_config.py
-├── scrape_mektep.py                 # CLI-скрапер mektep.edu.kz (Playwright)
-├── scraper_logger.py                # Логгер этапов скрапинга (INIT/AUTH/... /COMPLETE)
-├── grade_table_signals.py           # Эвристики структуры видимой таблицы критериального оценивания
-├── build_report.py                  # Генератор Excel-отчёта из JSON по шаблону
-├── build_word_report.py             # Генератор Word-отчёта из Excel + шаблон .docx
-├── iin_utils.py                     # Нормализация казахстанского ИИН (12 цифр)
+├── mektep_core/                     # Общее ядро скрапера и отчётов (единственная копия кода)
+│   ├── scrape_mektep.py             # CLI-скрапер mektep.edu.kz (Playwright)
+│   ├── scraper_logger.py            # Логгер этапов скрапинга (INIT/AUTH/... /COMPLETE)
+│   ├── grade_table_signals.py       # Эвристики структуры видимой таблицы критериального оценивания
+│   ├── build_report.py              # Генератор Excel-отчёта из JSON по шаблону
+│   ├── build_word_report.py         # Генератор Word-отчёта из Excel + шаблон .docx
+│   └── iin_utils.py                 # Нормализация казахстанского ИИН (12 цифр)
+├── scrape_mektep.py                 # Шим совместимости → mektep_core.scrape_mektep
+├── scraper_logger.py                # Шим совместимости → mektep_core.scraper_logger
+├── grade_table_signals.py           # Шим совместимости → mektep_core.grade_table_signals
+├── build_report.py                  # Шим совместимости → mektep_core.build_report
+├── build_word_report.py             # Шим совместимости → mektep_core.build_word_report
+├── iin_utils.py                     # Шим совместимости → mektep_core.iin_utils
 ├── seed_test_data.py                # Наполнение БД тестовыми учителями/классами/оценками
 ├── requirements.txt                 # Prod-зависимости веба и скрапера
 ├── requirements-dev.txt             # Инструменты разработки (pytest и т.п.)
-├── pytest.ini                       # Конфиг pytest (pythonpath = mektep-desktop)
+├── pytest.ini                       # Конфиг pytest (pythonpath = mektep-desktop .)
 ├── env.example                      # Шаблон .env (SECRET_KEY, DATABASE_URL, REDIS_URL, ...)
 ├── Dockerfile                       # Сборка prod-образа (дубликат deploy/Dockerfile)
 ├── docker-compose.yml               # Docker-оркестрация (дубликат deploy/docker-compose.yml)
@@ -104,12 +111,6 @@ pdf-to-excel-scraper-main/
 │   ├── UPDATES.md                   # Публикация обновлений (Nginx /updates/, latest.json)
 │   ├── RELEASE.md                   # Чек-лист релиза десктопа
 │   ├── requirements.txt             # Зависимости десктопа (PyQt6, requests, packaging, ...)
-│   ├── scrape_mektep.py             # Копия скрапера (используется внутри EXE)
-│   ├── scraper_logger.py            # Копия логгера скрапера
-│   ├── grade_table_signals.py       # Копия эвристик таблицы критериев
-│   ├── build_report.py              # Копия генератора Excel
-│   ├── build_word_report.py         # Копия генератора Word
-│   ├── iin_utils.py                 # Копия ИИН-утилит
 │   ├── _download_logo.py            # Служебный скрипт загрузки логотипа
 │   ├── Шаблон.xlsx / .docx / _каз.docx # Копии шаблонов для сборки EXE
 │   ├── app/                         # UI-слой (widgets, dialogs, updater) + report_pipeline
@@ -165,16 +166,17 @@ pdf-to-excel-scraper-main/
 | [wsgi.py](wsgi.py) | Тонкий прокси: `from entrypoints.wsgi import app`; совместимость с WSGI-серверами, которые ищут `wsgi:app` в корне. |
 | [run_production.py](run_production.py) | Тонкий прокси: вызывает `entrypoints.run_production.main()` (авто-выбор Gunicorn/Waitress). |
 | [gunicorn_config.py](gunicorn_config.py) | Тонкий прокси: `from entrypoints.gunicorn_config import *` (для команд вида `gunicorn -c gunicorn_config.py`). |
-| [scrape_mektep.py](scrape_mektep.py) | Основной CLI-скрапер mektep.edu.kz на Playwright: авторизация, выбор языка/периода, сбор оценок, вызов построителей отчётов. |
-| [scraper_logger.py](scraper_logger.py) | Класс `ScraperLogger` с этапами (`INIT`, `BROWSER`, `AUTH`, `STUDENTS`, `EXCEL_REPORT`, ...) и хелперы `log_info/log_stage/...`. |
-| [grade_table_signals.py](grade_table_signals.py) | Эвристики распознавания структуры видимой таблицы критериального оценивания на `mektep.edu.kz` (заголовки СОР/СОЧ/ТЖБ/БЖБ, колонки четвертей). Копируется в десктоп при сборке. |
-| [build_report.py](build_report.py) | Сборка Excel-отчёта из `progress.json`-подобного JSON и [Шаблон.xlsx](Шаблон.xlsx): СОР, СОЧ, формативные, лист «Оценки». |
-| [build_word_report.py](build_word_report.py) | Сборка Word-отчёта из готового Excel и [Шаблон.docx](Шаблон.docx) / [Шаблон_каз.docx](Шаблон_каз.docx): таблицы анализа, уровни, цели. |
-| [iin_utils.py](iin_utils.py) | `normalize_kz_iin` и `format_iin_for_display` — нормализация и маскирование ИИН (12 цифр, показ `****1234`). |
+| [mektep_core/scrape_mektep.py](mektep_core/scrape_mektep.py) | Основной CLI-скрапер mektep.edu.kz на Playwright: авторизация, выбор языка/периода, сбор оценок, вызов построителей отчётов. |
+| [mektep_core/scraper_logger.py](mektep_core/scraper_logger.py) | Класс `ScraperLogger` с этапами (`INIT`, `BROWSER`, `AUTH`, `STUDENTS`, `EXCEL_REPORT`, ...) и хелперы `log_info/log_stage/...`. |
+| [mektep_core/grade_table_signals.py](mektep_core/grade_table_signals.py) | Эвристики распознавания структуры видимой таблицы критериального оценивания на `mektep.edu.kz` (заголовки СОР/СОЧ/ТЖБ/БЖБ, колонки четвертей). |
+| [mektep_core/build_report.py](mektep_core/build_report.py) | Сборка Excel-отчёта из `progress.json`-подобного JSON и [Шаблон.xlsx](Шаблон.xlsx): СОР, СОЧ, формативные, лист «Оценки». |
+| [mektep_core/build_word_report.py](mektep_core/build_word_report.py) | Сборка Word-отчёта из готового Excel и [Шаблон.docx](Шаблон.docx) / [Шаблон_каз.docx](Шаблон_каз.docx): таблицы анализа, уровни, цели. |
+| [mektep_core/iin_utils.py](mektep_core/iin_utils.py) | `normalize_kz_iin` и `format_iin_for_display` — нормализация и маскирование ИИН (12 цифр, показ `****1234`). |
+| `scrape_mektep.py`, `scraper_logger.py`, `grade_table_signals.py`, `build_report.py`, `build_word_report.py`, `iin_utils.py` (в корне) | Шимы совместимости: реэкспортируют одноимённые модули из `mektep_core/`, сохраняя старые импорты и команды запуска (`python scrape_mektep.py ...`). Код правится только в `mektep_core/`. |
 | [seed_test_data.py](seed_test_data.py) | Наполняет БД тестовыми учителями/классами/предметами/`GradeReport` для школы «Test». Запуск из корня: `python seed_test_data.py`. |
 | [requirements.txt](requirements.txt) | Production-зависимости: Flask, SQLAlchemy, Playwright, openpyxl, python-docx, gunicorn/waitress и т.п. |
 | [requirements-dev.txt](requirements-dev.txt) | Инструменты разработки (pytest и сопутствующее). |
-| [pytest.ini](pytest.ini) | `pythonpath = mektep-desktop`, `testpaths = tests`, `python_files = test_*.py`. |
+| [pytest.ini](pytest.ini) | `pythonpath = mektep-desktop .`, `testpaths = tests`, `python_files = test_*.py`. |
 | [env.example](env.example) | Пример `.env`: `SECRET_KEY`, `DATABASE_URL`, `REDIS_URL`, `USE_CELERY`, `DASHSCOPE_API_KEY`, Gunicorn/Waitress-переменные и др. |
 | [Dockerfile](Dockerfile) | Двухстадийная сборка `python:3.13-slim`; CMD `python run_production.py`. Дубликат [deploy/Dockerfile](deploy/Dockerfile). |
 | [docker-compose.yml](docker-compose.yml) | Сервисы `nginx`/`web`/`db`/`node-exporter`/`prometheus`/`grafana` + сеть `mektep-network`. Дубликат [deploy/docker-compose.yml](deploy/docker-compose.yml). |
@@ -341,7 +343,7 @@ Gettext-каталоги для двух локалей:
 | [mektep-desktop/RELEASE.md](mektep-desktop/RELEASE.md) | Чек-лист релиза десктопа (версии, сборка, публикация). |
 | [mektep-desktop/_download_logo.py](mektep-desktop/_download_logo.py) | Скачивает логотип EDUS и конвертирует его в `.ico`; вызывается из `build.py` при отсутствии иконки. |
 | [mektep-desktop/requirements.txt](mektep-desktop/requirements.txt) | Зависимости клиента: `PyQt6`, `playwright`, `openpyxl`, `python-docx`, `openai`, `PyJWT`, `requests`, `python-dotenv`, `packaging`. |
-| `scrape_mektep.py`, `scraper_logger.py`, `grade_table_signals.py`, `build_report.py`, `build_word_report.py`, `iin_utils.py` | Копии корневых модулей, автоматически синхронизируемые `build.py` перед сборкой EXE (в `.gitignore` десктопа). |
+| Модули скрапера | Копий больше нет: десктоп использует пакет [mektep_core/](mektep_core/) из корня репозитория (в dev — через `sys.path`, в EXE — через `pathex=['..']` в spec-файлах). |
 | `Шаблон.xlsx` / `Шаблон.docx` / `Шаблон_каз.docx` | Копии шаблонов отчётов (копируются `build.py` из корня). |
 
 #### `mektep-desktop/app/` — UI-слой
