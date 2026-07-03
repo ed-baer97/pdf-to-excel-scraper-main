@@ -28,6 +28,7 @@ wheels/
 .env
 api_key.txt
 .venv/
+.venv*/
 env/
 venv/
 ENV/
