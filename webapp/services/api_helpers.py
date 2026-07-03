@@ -98,6 +98,51 @@ def auto_create_class_and_subject(school_id: int, class_name: str, subject_name:
         db.session.flush()
 
 
+def build_my_school_payload(user) -> dict:
+    """Информация о школе пользователя для /api/schools/my (включая expected_iin учителя)."""
+    from ..models import Role
+    from .teacher_schools import (
+        get_allowed_school_names,
+        get_teacher_schools,
+        teacher_has_cross_school_allowed,
+    )
+
+    def _iin_fields(out: dict) -> dict:
+        if user.role == Role.TEACHER.value:
+            tiin = (getattr(user, "iin", None) or "").strip()
+            out["expected_iin"] = tiin if tiin else None
+            out["iin_missing"] = not bool(tiin)
+        else:
+            out["expected_iin"] = None
+            out["iin_missing"] = False
+        return out
+
+    school = db.session.get(School, user.school_id) if user.school_id else None
+    if not school:
+        return _iin_fields({
+            "success": True,
+            "school_id": None,
+            "school_name": None,
+            "allow_cross_school_reports": True,
+        })
+
+    payload = {
+        "success": True,
+        "school_id": school.id,
+        "school_name": school.name,
+        "allow_cross_school_reports": (
+            teacher_has_cross_school_allowed(user.id)
+            if user.role == Role.TEACHER.value
+            else school.allow_cross_school_reports
+        ),
+    }
+    if user.role == Role.TEACHER.value:
+        teacher_schools = get_teacher_schools(user.id)
+        payload["schools"] = [{"id": s.id, "name": s.name} for s in teacher_schools]
+        payload["allowed_school_names"] = get_allowed_school_names(user.id)
+    return _iin_fields(payload)
+
+
 def generate_jwt_token(user: User, expires_in: int = 2592000) -> str:
     """Generate JWT token for API client."""
     payload = {
