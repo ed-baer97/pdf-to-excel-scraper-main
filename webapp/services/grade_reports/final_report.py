@@ -7,9 +7,10 @@ from io import BytesIO
 from typing import Any, Callable
 
 from openpyxl import Workbook
-from openpyxl.chart import BarChart, Reference, Series
+from openpyxl.chart import BarChart, LineChart, Reference, Series
 from openpyxl.chart.axis import ChartLines, Scaling
 from openpyxl.chart.label import DataLabelList
+from openpyxl.chart.marker import Marker
 from openpyxl.chart.shapes import GraphicalProperties
 from openpyxl.drawing.colors import ColorChoice
 from openpyxl.drawing.line import LineProperties
@@ -18,23 +19,25 @@ from openpyxl.utils import get_column_letter
 
 from ...constants import kazakh_sort_key, normalize_subject_name
 from ...extensions import db
-from ...models import Class, School
+from ...models import Class, GradeReport, School
 from ..academic_year import available_academic_years, format_academic_year, resolve_academic_year
 from ..admin_dashboard import aggregate_class_metrics
 from ..year_grades import YEAR_UI_PERIOD
-from .excel.charts import chart_title_large, excel_chart_sheet_name
+from .excel.charts import apply_rect_table_borders, chart_title_large, excel_chart_sheet_name
 from .final_report_data import load_all_sections, load_sections_for_years
 from .payload import report_grades_payload
 from .periods import class_accordion_group, class_name_sort_key, parse_class_grade
 from .queries import get_period_reports
 
 _HEADER_FILL = PatternFill(start_color="0D6EFD", end_color="0D6EFD", fill_type="solid")
+_DYNAMICS_HEADER_FILL = PatternFill(start_color="C6E0B4", end_color="C6E0B4", fill_type="solid")
 _HEADER_FONT = Font(bold=True, color="FFFFFF", size=11)
 _THIN = Side(style="thin", color="CED4DA")
 _BORDER = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
 
 
 def _resolve_years(school_id: int, academic_year: int | None, years_back: int = 3) -> list[int]:
+    """Годы с данными (для имени файла и прочих листов)."""
     all_years = available_academic_years(school_id)
     anchor = resolve_academic_year(academic_year)
     if anchor in all_years:
@@ -43,6 +46,181 @@ def _resolve_years(school_id: int, academic_year: int | None, years_back: int = 
     else:
         picked = [anchor]
     return sorted(picked)
+
+
+def _dynamics_year_columns(anchor_year: int, years_back: int = 3) -> list[int]:
+    """Ровно N колонок учебных лет подряд, заканчивая anchor_year (для таблицы динамики)."""
+    n = max(1, int(years_back))
+    start = anchor_year - n + 1
+    return list(range(start, anchor_year + 1))
+
+
+def _year_has_grade_data(school_id: int, academic_year: int) -> bool:
+    return (
+        GradeReport.query.filter_by(school_id=school_id, academic_year=academic_year)
+        .limit(1)
+        .first()
+        is not None
+    )
+
+
+def _class_counts_by_period(
+    school_id: int,
+    academic_year: int,
+    period_number: int,
+) -> dict[str, int]:
+    """Численность по классам за период (макс. total_students по предметам класса)."""
+    reports = get_period_reports(
+        school_id, period_number, academic_year=academic_year
+    )
+    by_class: dict[str, int] = {}
+    for report in reports:
+        payload = report_grades_payload(report)
+        if not payload:
+            continue
+        students = payload.get("students") or []
+        total = int(payload.get("total_students") or len(students) or 0)
+        if total <= 0:
+            continue
+        by_class[report.class_name] = max(by_class.get(report.class_name, 0), total)
+    return by_class
+
+
+def _stage_breakdown(class_counts: dict[str, int]) -> dict[str, dict[str, int | float] | None]:
+    """Разбивка по ступеням: начальная (1–4), основная (5–9), средняя (10–11)."""
+    buckets: dict[str, list[int]] = {"primary": [], "basic": [], "secondary": []}
+    bucket_map = {"1-4": "primary", "5-9": "basic", "10-11": "secondary"}
+    for class_name, count in class_counts.items():
+        key = bucket_map.get(class_accordion_group(class_name))
+        if key:
+            buckets[key].append(count)
+
+    def _stage(items: list[int]) -> dict[str, int | float] | None:
+        if not items:
+            return None
+        return {
+            "students": sum(items),
+            "classes": len(items),
+            "avg_fill": round(sum(items) / len(items), 1),
+        }
+
+    return {
+        "primary": _stage(buckets["primary"]),
+        "basic": _stage(buckets["basic"]),
+        "secondary": _stage(buckets["secondary"]),
+    }
+
+
+def _section_total(
+    breakdown: dict[str, dict[str, int | float] | None],
+    metric: str,
+) -> int | float | None:
+    stages = [s for s in breakdown.values() if s]
+    if not stages:
+        return None
+    if metric == "students":
+        return sum(int(s["students"]) for s in stages)
+    if metric == "classes":
+        return sum(int(s["classes"]) for s in stages)
+    if metric == "avg_fill":
+        total_students = sum(int(s["students"]) for s in stages)
+        total_classes = sum(int(s["classes"]) for s in stages)
+        return round(total_students / total_classes, 1) if total_classes else None
+    return None
+
+
+def _cell_display(val: int | float | None, *, tr: Callable[[str], str], is_avg: bool = False) -> str | int | float:
+    if val is None:
+        return tr("final_report_no_data")
+    return val
+
+
+def _write_contingent_dynamics_sheet(
+    ws,
+    school_id: int,
+    anchor_year: int,
+    years_back: int,
+    tr: Callable[[str], str],
+) -> None:
+    """Первая вкладка: таблица динамики численности за 3 года (как в Word-шаблоне)."""
+    year_cols = _dynamics_year_columns(anchor_year, years_back)
+    last_col = 1 + len(year_cols)
+
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=last_col)
+    title_cell = ws.cell(row=1, column=1, value=tr("final_report_dynamics_title"))
+    title_cell.font = Font(bold=True, underline="single", size=12)
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 22
+
+    headers = [tr("final_report_col_parameters")] + [
+        format_academic_year(y) for y in year_cols
+    ]
+    for col, title in enumerate(headers, start=1):
+        cell = ws.cell(row=2, column=col, value=title)
+        cell.fill = _DYNAMICS_HEADER_FILL
+        cell.font = Font(bold=True, size=11)
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    ws.row_dimensions[2].height = 20
+
+    sections: list[tuple[str, str, int]] = [
+        (tr("final_report_students_begin"), "students", 1),
+        (tr("final_report_students_end"), "students", 4),
+        (tr("final_report_class_sets_begin"), "classes", 1),
+        (tr("final_report_avg_fill"), "avg_fill", 1),
+    ]
+    stage_keys = [
+        ("primary", tr("final_report_stage_primary")),
+        ("basic", tr("final_report_stage_basic")),
+        ("secondary", tr("final_report_stage_secondary")),
+    ]
+
+    row = 3
+    for section_label, metric, period_number in sections:
+        year_breakdowns: list[dict | None] = []
+        for yr in year_cols:
+            if not _year_has_grade_data(school_id, yr):
+                year_breakdowns.append(None)
+                continue
+            counts = _class_counts_by_period(school_id, yr, period_number)
+            year_breakdowns.append(_stage_breakdown(counts) if counts else None)
+
+        sec_cell = ws.cell(row=row, column=1, value=section_label)
+        sec_cell.font = Font(bold=True, size=11)
+        sec_cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+        for col_idx, bd in enumerate(year_breakdowns, start=2):
+            total = _section_total(bd, metric) if bd else None
+            cell = ws.cell(
+                row=row,
+                column=col_idx,
+                value=_cell_display(total, tr=tr, is_avg=(metric == "avg_fill")),
+            )
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            if isinstance(total, float) and metric == "avg_fill":
+                cell.number_format = "0.0"
+        row += 1
+
+        for stage_key, stage_label in stage_keys:
+            label_cell = ws.cell(row=row, column=1, value=f"■ {stage_label}")
+            label_cell.alignment = Alignment(horizontal="left", vertical="center", indent=2)
+            for col_idx, bd in enumerate(year_breakdowns, start=2):
+                stage = (bd or {}).get(stage_key) if bd else None
+                val = stage.get(metric) if stage else None
+                cell = ws.cell(
+                    row=row,
+                    column=col_idx,
+                    value=_cell_display(val, tr=tr, is_avg=(metric == "avg_fill")),
+                )
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+                if isinstance(val, float) and metric == "avg_fill":
+                    cell.number_format = "0.0"
+            row += 1
+
+    last_data_row = row - 1
+    apply_rect_table_borders(ws, 1, last_data_row, 1, last_col)
+
+    ws.column_dimensions["A"].width = 42
+    for col_i in range(2, last_col + 1):
+        ws.column_dimensions[get_column_letter(col_i)].width = 16
 
 
 def _active_class_names(school_id: int) -> set[str]:
@@ -72,10 +250,14 @@ def _class_students_map(
     school_id: int,
     class_name: str,
     academic_year: int,
+    period_number: int = YEAR_UI_PERIOD,
 ) -> dict[str, dict[str, dict]]:
-    """Ученики класса: предмет → оценка (за учебный год)."""
+    """Ученики класса: предмет → оценка за выбранный период."""
     reports = get_period_reports(
-        school_id, YEAR_UI_PERIOD, class_name=class_name, academic_year=academic_year
+        school_id,
+        period_number,
+        class_name=class_name,
+        academic_year=academic_year,
     )
     students: dict[str, dict[str, dict]] = {}
     for report in reports:
@@ -107,9 +289,10 @@ def _class_grade_summary(
     school_id: int,
     class_name: str,
     academic_year: int,
+    period_number: int = YEAR_UI_PERIOD,
 ) -> dict[str, Any]:
     """Сводка по классу: кол-во на 5/4/3/2, успеваемость, качество."""
-    students = _class_students_map(school_id, class_name, academic_year)
+    students = _class_students_map(school_id, class_name, academic_year, period_number)
     total = len(students)
     if total == 0:
         return {
@@ -183,38 +366,279 @@ def _parallel_summary(class_summaries: list[dict], bucket: str) -> dict[str, Any
     }
 
 
-def _enrollment_for_year(
+_GRADE_ROW_KEYS = (
+    "final_report_grade_row_5",
+    "final_report_grade_row_4",
+    "final_report_grade_row_3",
+    "final_report_grade_row_2",
+)
+_GRADE_CHART_COLORS = ("70AD47", "4472C4", "ED7D31", "C00000")
+_QUALITY_PERIODS = (1, 2, 3, 4, YEAR_UI_PERIOD)
+
+
+def _school_grade_distribution_2_11(
+    school_id: int,
+    academic_year: int,
+    period_number: int,
+    active_names: set[str],
+) -> dict[str, Any]:
+    """Сводка по школе (классы 2–11): распределение на 5/4/3/2 и проценты."""
+    count_5 = count_4 = one_3 = count_3 = count_2 = 0
+    for class_name in active_names:
+        grade_num = parse_class_grade(class_name)
+        if grade_num is None or grade_num < 2 or grade_num > 11:
+            continue
+        summary = _class_grade_summary(
+            school_id, class_name, academic_year, period_number
+        )
+        if summary["total"] <= 0:
+            continue
+        count_5 += summary["count_5"]
+        count_4 += summary["count_4"]
+        one_3 += summary["one_3"]
+        count_3 += summary["count_3"]
+        count_2 += summary["count_2"]
+    total = count_5 + count_4 + one_3 + count_3 + count_2
+    on_3 = one_3 + count_3
+    return {
+        "count_5": count_5,
+        "count_4": count_4,
+        "count_3": on_3,
+        "count_2": count_2,
+        "total": total,
+        "quality_percent": round((count_5 + count_4) / total * 100, 1) if total else None,
+        "success_percent": round((total - count_2) / total * 100, 1) if total else None,
+    }
+
+
+def _period_header_labels(tr: Callable[[str], str]) -> list[str]:
+    return [
+        tr("final_report_hdr_q1"),
+        tr("final_report_hdr_q2"),
+        tr("final_report_hdr_q3"),
+        tr("final_report_hdr_q4"),
+        tr("final_report_hdr_total"),
+    ]
+
+
+def _write_quality_stages_sheet(
+    ws,
     school_id: int,
     academic_year: int,
     active_names: set[str],
-) -> dict[str, Any]:
-    """Численность и наполняемость по ступеням."""
-    buckets = {"1-4": [], "5-9": [], "10-11": []}
-    for name in sorted(active_names, key=class_name_sort_key):
-        summary = _class_grade_summary(school_id, name, academic_year)
-        bucket = class_accordion_group(name)
-        if bucket in buckets and summary["total"] > 0:
-            buckets[bucket].append(summary["total"])
+    tr: Callable[[str], str],
+) -> None:
+    """Вкладка: показатели качества знаний (таблица + диаграммы 2–11 классы)."""
+    period_labels = _period_header_labels(tr)
+    last_col = 1 + len(period_labels)
+    distributions = [
+        _school_grade_distribution_2_11(school_id, academic_year, pn, active_names)
+        for pn in _QUALITY_PERIODS
+    ]
 
-    def bucket_stats(counts: list[int]) -> dict:
-        if not counts:
-            return {"classes": 0, "students": 0, "avg_fill": None}
-        return {
-            "classes": len(counts),
-            "students": sum(counts),
-            "avg_fill": round(sum(counts) / len(counts), 1),
-        }
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=last_col)
+    title_cell = ws.cell(row=1, column=1, value=tr("final_report_quality_title"))
+    title_cell.font = Font(bold=True, underline="single", size=12)
+    title_cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    ws.row_dimensions[1].height = 28
 
-    return {
-        "year": academic_year,
-        "primary": bucket_stats(buckets["1-4"]),
-        "basic": bucket_stats(buckets["5-9"]),
-        "secondary": bucket_stats(buckets["10-11"]),
-        "total_students": sum(
-            bucket_stats(buckets[k])["students"] for k in buckets
-        ),
-        "total_classes": sum(bucket_stats(buckets[k])["classes"] for k in buckets),
-    }
+    headers = [tr("final_report_col_indicator")] + period_labels
+    for col, title in enumerate(headers, start=1):
+        cell = ws.cell(row=2, column=col, value=title)
+        cell.fill = _DYNAMICS_HEADER_FILL
+        cell.font = Font(bold=True, size=11)
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    ws.row_dimensions[2].height = 22
+
+    metric_rows: list[tuple[str, str]] = [
+        (key, field)
+        for key, field in zip(
+            _GRADE_ROW_KEYS,
+            ("count_5", "count_4", "count_3", "count_2"),
+            strict=True,
+        )
+    ]
+    metric_rows += [
+        ("metrics_row_success", "success_percent"),
+        ("metrics_row_quality", "quality_percent"),
+    ]
+
+    row = 3
+    for label_key, field in metric_rows:
+        label_cell = ws.cell(row=row, column=1, value=tr(label_key))
+        label_cell.font = Font(bold=field.endswith("percent"), size=11)
+        label_cell.alignment = Alignment(horizontal="left", vertical="center")
+        for col_idx, dist in enumerate(distributions, start=2):
+            # Пустой период (нет данных) -> ячейка остаётся пустой, чтобы график
+            # не проваливался в ноль и на столбцах не висели нулевые подписи.
+            val = dist.get(field) if dist.get("total") else None
+            cell = ws.cell(row=row, column=col_idx, value=val)
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            if isinstance(val, float):
+                cell.number_format = "0.0"
+        row += 1
+
+    last_data_row = row - 1
+    apply_rect_table_borders(ws, 1, last_data_row, 1, last_col)
+
+    ws.column_dimensions["A"].width = 22
+    for col_i in range(2, last_col + 1):
+        ws.column_dimensions[get_column_letter(col_i)].width = 14
+
+    _add_quality_stages_charts(ws, tr, last_col=last_col, last_data_row=last_data_row)
+
+
+def _axis_line_sppr(color: str = "495057", w: int = 19050) -> GraphicalProperties:
+    """Жирная контрастная линия оси (как в качественных диаграммах charts.py)."""
+    return GraphicalProperties(ln=LineProperties(w=w, solidFill=ColorChoice(srgbClr=color)))
+
+
+def _major_gridlines(color: str = "DEE2E6", w: int = 6350) -> ChartLines:
+    return ChartLines(
+        spPr=GraphicalProperties(ln=LineProperties(w=w, solidFill=ColorChoice(srgbClr=color)))
+    )
+
+
+def _style_chart_axes(chart, *, y_title: str, y_min: float, y_max: float, y_unit: float) -> None:
+    """Единое качественное оформление осей: видимые оси, сетка, прозрачная область."""
+    chart.x_axis.axPos = "b"
+    chart.y_axis.axPos = "l"
+    chart.x_axis.delete = False
+    chart.y_axis.delete = False
+    chart.y_axis.title = y_title
+    chart.y_axis.scaling = Scaling(min=y_min, max=y_max)
+    chart.y_axis.majorUnit = y_unit
+    chart.y_axis.tickLblPos = "nextTo"
+    chart.y_axis.spPr = _axis_line_sppr()
+    chart.y_axis.majorGridlines = _major_gridlines()
+    chart.x_axis.lblAlgn = "ctr"
+    chart.x_axis.tickLblPos = "low"
+    chart.x_axis.spPr = _axis_line_sppr()
+    chart.plot_area.spPr = GraphicalProperties(
+        noFill=True, ln=LineProperties(noFill=True)
+    )
+
+
+def _add_quality_stages_charts(
+    ws,
+    tr: Callable[[str], str],
+    *,
+    last_col: int,
+    last_data_row: int,
+) -> None:
+    """Столбчатая (накопительная) и линейная диаграммы под таблицей."""
+    hdr_row = 2
+    grade_first_row = 3
+    grade_last_row = 6
+    pct_first_row = 7
+    pct_last_row = 8
+    chart_anchor_row = last_data_row + 3
+
+    cats = Reference(ws, min_col=2, min_row=hdr_row, max_col=last_col, max_row=hdr_row)
+
+    y_max = 0
+    for col in range(2, last_col + 1):
+        col_sum = sum(
+            int(ws.cell(row=r, column=col).value or 0)
+            for r in range(grade_first_row, grade_last_row + 1)
+            if isinstance(ws.cell(row=r, column=col).value, (int, float))
+        )
+        y_max = max(y_max, col_sum)
+    bar_y_max = max(100, int((y_max * 1.15) // 100 + 1) * 100)
+
+    bar = BarChart()
+    bar.type = "col"
+    bar.grouping = "stacked"
+    bar.overlap = 100
+    bar.varyColors = False
+    bar.style = 2
+    bar.title = chart_title_large(tr("final_report_chart_grades_2_11"))
+    bar.title.overlay = False
+    bar.gapWidth = 60
+    _style_chart_axes(
+        bar,
+        y_title=tr("final_report_chart_y_students"),
+        y_min=0,
+        y_max=bar_y_max,
+        y_unit=200 if bar_y_max > 1000 else 100,
+    )
+    bar.dLbls = DataLabelList(
+        showVal=True,
+        showSerName=False,
+        showCatName=False,
+        showLegendKey=False,
+        dLblPos="ctr",
+        numFmt="0;-0;;",
+    )
+    bar.dLbls.numFmt = "0;-0;;"
+    bar.dLbls.sourceLinked = False
+    bar.display_blanks = "gap"
+    bar.width = 24
+    bar.height = 14
+
+    for row_idx, color in zip(
+        range(grade_first_row, grade_last_row + 1),
+        _GRADE_CHART_COLORS,
+        strict=True,
+    ):
+        data = Reference(
+            ws, min_col=2, min_row=row_idx, max_col=last_col, max_row=row_idx
+        )
+        ser = Series(data, title=str(ws.cell(row=row_idx, column=1).value))
+        ser.graphicalProperties.solidFill = ColorChoice(srgbClr=color)
+        ser.graphicalProperties.line.noFill = True
+        bar.series.append(ser)
+    bar.set_categories(cats)
+    bar.legend.position = "r"
+    bar.legend.overlay = False
+    ws.add_chart(bar, f"A{chart_anchor_row}")
+
+    line_anchor_row = chart_anchor_row + 30
+    line = LineChart()
+    line.style = 2
+    line.title = chart_title_large(tr("final_report_chart_quality_2_11"))
+    line.title.overlay = False
+    _style_chart_axes(
+        line,
+        y_title=tr("final_report_chart_y_percent"),
+        y_min=50,
+        y_max=100,
+        y_unit=10,
+    )
+    line.dLbls = DataLabelList(
+        showVal=True,
+        showSerName=False,
+        showCatName=False,
+        showLegendKey=False,
+        dLblPos="t",
+    )
+    line.display_blanks = "span"
+    line.width = 24
+    line.height = 14
+
+    line_colors = ("7030A0", "00B0B9")
+    markers = ("circle", "square")
+    for row_idx, color, symbol in zip(
+        range(pct_first_row, pct_last_row + 1),
+        line_colors,
+        markers,
+        strict=True,
+    ):
+        data = Reference(
+            ws, min_col=2, min_row=row_idx, max_col=last_col, max_row=row_idx
+        )
+        ser = Series(data, title=str(ws.cell(row=row_idx, column=1).value))
+        ser.smooth = False
+        ser.graphicalProperties.line.solidFill = ColorChoice(srgbClr=color)
+        ser.graphicalProperties.line.width = 28575
+        ser.marker = Marker(symbol=symbol, size=7)
+        ser.marker.graphicalProperties.solidFill = ColorChoice(srgbClr=color)
+        ser.marker.graphicalProperties.line.solidFill = ColorChoice(srgbClr=color)
+        line.series.append(ser)
+    line.set_categories(cats)
+    line.legend.position = "r"
+    line.legend.overlay = False
+    ws.add_chart(line, f"A{line_anchor_row}")
 
 
 def _subject_quality_matrix(
@@ -321,9 +745,21 @@ def build_final_report_workbook(
     manual_by_year = load_sections_for_years(school_id, years)
 
     wb = Workbook()
-    # --- Сводка ---
-    ws_sum = wb.active
-    ws_sum.title = tr("final_report_sheet_summary")[:31]
+    year_cols = _dynamics_year_columns(anchor_year, years_back)
+
+    # --- Вкладка 1: динамика численности за 3 года ---
+    ws_dyn = wb.active
+    ws_dyn.title = tr("final_report_sheet_dynamics")[:31]
+    ws_dyn.sheet_view.showGridLines = True
+    _write_contingent_dynamics_sheet(ws_dyn, school_id, anchor_year, years_back, tr)
+
+    # --- Вкладка 2: показатели качества знаний (2–11 классы) ---
+    ws_qual = wb.create_sheet(title=tr("final_report_sheet_quality")[:31], index=1)
+    ws_qual.sheet_view.showGridLines = True
+    _write_quality_stages_sheet(ws_qual, school_id, anchor_year, active_names, tr)
+
+    # --- Сводка KPI ---
+    ws_sum = wb.create_sheet(title=tr("final_report_sheet_summary")[:31])
     ws_sum.cell(row=1, column=1, value=tr("final_report_title")).font = Font(bold=True, size=16)
     ws_sum.cell(row=2, column=1, value=school_name)
     ws_sum.cell(row=3, column=1, value=format_academic_year(anchor_year))
@@ -357,47 +793,6 @@ def build_final_report_workbook(
             number_cols={2, 3},
         )
         row += 1
-
-    # --- Численность ---
-    ws_enr = wb.create_sheet(title=tr("final_report_sheet_enrollment")[:31])
-    _write_header_row(
-        ws_enr,
-        1,
-        [
-            tr("academic_year_label"),
-            tr("final_report_col_total_students"),
-            tr("final_report_col_total_classes"),
-            tr("classes_1_4"),
-            tr("classes_5_9"),
-            tr("classes_10_11"),
-            tr("final_report_col_avg_fill"),
-        ],
-    )
-    er = 2
-    for yr in years:
-        enr = _enrollment_for_year(school_id, yr, active_names)
-        avg_vals = [
-            enr["primary"]["avg_fill"],
-            enr["basic"]["avg_fill"],
-            enr["secondary"]["avg_fill"],
-        ]
-        avg_vals = [v for v in avg_vals if v is not None]
-        avg_all = round(sum(avg_vals) / len(avg_vals), 1) if avg_vals else None
-        _write_data_row(
-            ws_enr,
-            er,
-            [
-                format_academic_year(yr),
-                enr["total_students"],
-                enr["total_classes"],
-                enr["primary"]["students"],
-                enr["basic"]["students"],
-                enr["secondary"]["students"],
-                avg_all,
-            ],
-            number_cols={7},
-        )
-        er += 1
 
     # --- Успеваемость по классам ---
     class_summaries = [
@@ -685,7 +1080,7 @@ def build_final_report_workbook(
             letter = get_column_letter(col)
             ws.column_dimensions[letter].width = 18
 
-    years_label = "_".join(str(y) for y in years)
+    years_label = "_".join(str(y) for y in year_cols)
     filename = f"Итоговый_отчёт_{years_label}.xlsx"
     output = BytesIO()
     wb.save(output)

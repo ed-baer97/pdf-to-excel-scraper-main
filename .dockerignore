@@ -1,0 +1,57 @@
+# Virtual environments
+.venv/
+.venv-*/
+venv/
+env/
+ENV/
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+*.egg
+
+# Build / dist
+build/
+dist/
+*.manifest
+*.spec.bak
+
+# Application runtime data
+instance/
+data/
+out/
+*.db
+*.log
+postgres-data/
+
+# Desktop build artifacts
+mektep-desktop/build/
+mektep-desktop/dist/
+mektep-desktop/.pyupdater/
+mektep-desktop/pyu-data/
+
+# IDE / OS
+.git/
+.gitignore
+.cursor/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Secrets and local config
+.env
+api_key.txt
+nginx/ssl/
+
+# Test / cache
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Updates (served via volume mount, not baked into image)
+updates/*
+!updates/.gitkeep

@@ -49,6 +49,18 @@ def configure_logging(app: Flask | None = None) -> None:
         else:
             use_json = bool(app.config.get("LOG_JSON", use_json))
 
+    if use_json:
+        try:
+            import pythonjsonlogger.json  # noqa: F401
+        except ImportError:
+            use_json = False
+            print(
+                "WARNING: python-json-logger not installed; "
+                "falling back to plain log format. "
+                "Install it with: pip install 'python-json-logger>=3.0,<4'",
+                file=sys.stderr,
+            )
+
     formatter_name = "json" if use_json else "plain"
 
     formatters: dict = {

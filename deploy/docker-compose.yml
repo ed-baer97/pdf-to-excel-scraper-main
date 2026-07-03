@@ -15,7 +15,10 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../updates:/var/www/mektep/updates:ro
+      # Uncomment for SSL:
+      # - ../nginx/ssl:/etc/nginx/ssl:ro
     depends_on:
       - web
     restart: unless-stopped
@@ -23,7 +26,9 @@ services:
       - mektep-network
 
   web:
-    build: .
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
     expose:
       - "5000"
     environment:
@@ -47,14 +52,20 @@ services:
         max-size: "10m"
         max-file: "3"
     volumes:
-      - ./data:/app/data
-      - ./instance:/app/instance
+      - ../data:/app/data
+      - ../instance:/app/instance
     depends_on:
       db:
         condition: service_healthy
     restart: unless-stopped
     networks:
       - mektep-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
 
   db:
     image: postgres:16-alpine
@@ -144,6 +155,47 @@ services:
     networks:
       - mektep-network
     restart: unless-stopped
+
+  # =============================================================================
+  # Async exports (optional): docker compose -f deploy/docker-compose.yml --profile async up
+  # =============================================================================
+  redis:
+    profiles: ["async"]
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks:
+      - mektep-network
+
+  worker:
+    profiles: ["async"]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: celery -A webapp.celery_app worker --loglevel=info --pool=solo
+    environment:
+      - FLASK_ENV=production
+      - SECRET_KEY=${SECRET_KEY}
+      - DATABASE_URL=postgresql://mektep:${POSTGRES_PASSWORD:-mektep123}@db:5432/mektep_db
+      - USE_CELERY=1
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - UPLOAD_ROOT=/app/data/uploads
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_JSON=${LOG_JSON:-1}
+      - SLOW_SQL_MS=${SLOW_SQL_MS:-500}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+    volumes:
+      - ../data:/app/data
+      - ../instance:/app/instance
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - mektep-network
 
 volumes:
   postgres-data:
