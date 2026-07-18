@@ -3,8 +3,7 @@
 import re
 
 # Актуальный релиз Mektep Analyzer Desktop (синхронизировать с mektep-desktop/version.py).
-DESKTOP_VERSION = "1.2.1"
-
+DESKTOP_VERSION = "1.2.2"
 # Минимальная версия десктопа для API (логин, загрузка отчётов).
 MIN_DESKTOP_VERSION = (1, 2, 1)
 
