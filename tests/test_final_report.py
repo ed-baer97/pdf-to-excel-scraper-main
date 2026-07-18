@@ -12,7 +12,10 @@ from webapp.config import TestingConfig
 from webapp.extensions import db
 from webapp.models import Class, FinalReportData, GradeReport, Role, School, User
 from webapp.services.grade_reports.final_report import build_final_report_workbook
-from webapp.services.grade_reports.final_report_data import save_section_data
+from webapp.services.grade_reports.final_report_data import (
+    load_all_sections,
+    save_section_data,
+)
 from webapp.translator import gettext
 
 
@@ -141,3 +144,53 @@ def test_final_report_data_roundtrip(app):
         assert row is not None
         data = json.loads(row.data_json)
         assert data.get("altyn_belgi") == 1
+
+
+def test_legacy_manual_sections_remain_readable_and_exported(app):
+    ctx = _seed_school(app)
+    legacy_data = {
+        "gia9": {"classes": [{"name": "9А", "students": 20}], "notes": "Архив"},
+        "gia11": {"classes": [{"name": "11А", "students": 15}], "notes": ""},
+        "ent": {
+            "periods": [
+                {"month": "Январь", "count": 10, "avg_score": 80.0, "max_score": 120},
+                {"month": "Май", "count": 10, "avg_score": 93.0, "max_score": 130},
+            ],
+            "forecast_avg": 96.7,
+            "recommendations": "Продолжить подготовку",
+        },
+    }
+
+    with app.app_context():
+        for section, data in legacy_data.items():
+            db.session.add(
+                FinalReportData(
+                    school_id=ctx["school_id"],
+                    academic_year=2025,
+                    section=section,
+                    data_json=json.dumps(data, ensure_ascii=False),
+                )
+            )
+        db.session.commit()
+
+        loaded = load_all_sections(ctx["school_id"], 2025)
+        assert loaded["gia9"]["notes"] == "Архив"
+        assert loaded["gia11"]["classes"][0]["name"] == "11А"
+        assert loaded["ent"]["forecast_avg"] == 96.7
+
+        # Legacy data is preserved for compatibility, not re-enabled for editing.
+        with pytest.raises(ValueError, match="invalid section"):
+            save_section_data(ctx["school_id"], 2025, "ent", {"forecast_avg": 100})
+
+        buf, _ = build_final_report_workbook(
+            ctx["school_id"],
+            academic_year=2025,
+            years_back=3,
+            tr=lambda key: gettext(key, "ru"),
+        )
+        wb = load_workbook(buf)
+        assert "ГИА-9" in wb.sheetnames
+        assert "ГИА-11" in wb.sheetnames
+        assert "ЕНТ" in wb.sheetnames
+        assert wb["ЕНТ"].cell(row=4, column=3).value == 80.0
+        wb.close()

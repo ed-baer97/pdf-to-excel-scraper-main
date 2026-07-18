@@ -9,7 +9,10 @@ from ...extensions import db
 from ...models import FinalReportData, FinalReportSection
 from ..academic_year import resolve_academic_year
 
-VALID_SECTIONS = {s.value for s in FinalReportSection}
+# Only awards remain editable in the admin UI. Legacy sections are read-only,
+# but must stay loadable because their string values are persisted in the DB.
+VALID_SECTIONS = {FinalReportSection.AWARDS.value}
+READABLE_SECTIONS = {section.value for section in FinalReportSection}
 
 
 def default_section_data(section: str) -> dict[str, Any]:
@@ -30,7 +33,7 @@ def load_section_data(
     section: str,
 ) -> dict[str, Any]:
     """Прочитать JSON раздела или вернуть шаблон по умолчанию."""
-    if section not in VALID_SECTIONS:
+    if section not in READABLE_SECTIONS:
         return {}
     year = resolve_academic_year(academic_year)
     row = FinalReportData.query.filter_by(
@@ -56,7 +59,7 @@ def load_all_sections(
     """Все разделы за учебный год."""
     return {
         section: load_section_data(school_id, academic_year, section)
-        for section in VALID_SECTIONS
+        for section in READABLE_SECTIONS
     }
 
 

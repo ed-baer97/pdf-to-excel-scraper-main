@@ -395,6 +395,10 @@ class GradeReport(db.Model):
 class FinalReportSection(str, Enum):
     """Разделы ручных данных итогового отчёта школы."""
 
+    # Persisted legacy values must remain readable so existing rows are not orphaned.
+    GIA9 = "gia9"
+    GIA11 = "gia11"
+    ENT = "ent"
     AWARDS = "awards"
 
 

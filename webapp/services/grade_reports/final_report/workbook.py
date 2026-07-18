@@ -20,7 +20,7 @@ from .data import (
     resolve_years,
 )
 from .dynamics_sheet import write_contingent_dynamics_sheet
-from .manual_sheets import write_awards_sheet
+from .manual_sheets import write_awards_sheet, write_ent_sheet, write_json_sheet
 from .quality_sheet import write_quality_stages_sheet
 from .summary_sheets import (
     write_classes_sheet,
@@ -76,6 +76,14 @@ def build_final_report_workbook(
 
     # --- Ручные данные итогового отчёта ---
     manual = manual_by_year.get(anchor_year, load_all_sections(school_id, anchor_year))
+    # Legacy sections are no longer editable, but existing persisted data must
+    # remain visible in exports. Do not add empty legacy sheets for new schools.
+    if manual.get("gia9"):
+        write_json_sheet(wb, "final_report_sheet_gia9", manual["gia9"], tr)
+    if manual.get("gia11"):
+        write_json_sheet(wb, "final_report_sheet_gia11", manual["gia11"], tr)
+    if manual.get("ent"):
+        write_ent_sheet(wb, manual["ent"], tr)
     write_awards_sheet(wb, manual.get("awards", {}), tr)
 
     # Auto column widths
