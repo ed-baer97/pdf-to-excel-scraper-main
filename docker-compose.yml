@@ -41,6 +41,7 @@ services:
     environment:
       - FLASK_ENV=production
       - SECRET_KEY=${SECRET_KEY}
+      - PASSWORD_ENC_KEY=${PASSWORD_ENC_KEY}
       - DATABASE_URL=postgresql://mektep:${POSTGRES_PASSWORD:-mektep123}@db:5432/mektep_db
       # Background jobs go to Celery worker (USE_CELERY=0 falls back to threads)
       - USE_CELERY=${USE_CELERY:-1}
@@ -202,6 +203,7 @@ services:
     environment:
       - FLASK_ENV=production
       - SECRET_KEY=${SECRET_KEY}
+      - PASSWORD_ENC_KEY=${PASSWORD_ENC_KEY}
       - DATABASE_URL=postgresql://mektep:${POSTGRES_PASSWORD:-mektep123}@db:5432/mektep_db
       - USE_CELERY=1
       - REDIS_URL=redis://redis:6379/0
