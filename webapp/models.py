@@ -395,15 +395,12 @@ class GradeReport(db.Model):
 class FinalReportSection(str, Enum):
     """Разделы ручных данных итогового отчёта школы."""
 
-    GIA9 = "gia9"
-    GIA11 = "gia11"
-    ENT = "ent"
     AWARDS = "awards"
 
 
 class FinalReportData(db.Model):
     """
-    Ручные данные итогового отчёта (ГИА, ЕНТ, аттестаты) — JSON по школе/году/разделу.
+    Ручные данные итогового отчёта — JSON по школе/году/разделу.
     """
 
     __tablename__ = "final_report_data"

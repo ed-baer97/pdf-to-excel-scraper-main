@@ -1,4 +1,4 @@
-"""Админ: ручной ввод данных итогового отчёта (ГИА, ЕНТ, аттестаты)."""
+"""Админ: ручной ввод данных итогового отчёта."""
 
 from __future__ import annotations
 
@@ -56,9 +56,9 @@ def final_report_input():
             )
         )
 
-    active_section = request.args.get("section") or "gia9"
+    active_section = request.args.get("section") or "awards"
     if active_section not in VALID_SECTIONS:
-        active_section = "gia9"
+        active_section = "awards"
 
     sections_data = load_all_sections(school_id, academic_year)
     return render_template(

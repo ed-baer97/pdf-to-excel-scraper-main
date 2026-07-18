@@ -19,41 +19,95 @@
 ## Чек-лист релиза
 
 ```
-[ ] APP_VERSION в mektep-desktop/version.py
-[ ] DESKTOP_VERSION в webapp/constants.py (ссылка на сайте)
+[ ] Чистая рабочая копия Git
+[ ] .\release.ps1 <version> (тесты, версии, сборка, публикация и проверка)
+[ ] Зафиксировать обновлённые version.py и webapp/constants.py
 [ ] MIN_DESKTOP_VERSION — только если нужно заблокировать старых клиентов
-[ ] python build.py на Windows (нужен Inno Setup 6)
-[ ] scp setup.exe + latest.json на сервер → ~/pdf-to-excel-scraper-main/updates/
-[ ] curl: latest.json и setup.exe отдают 200
 [ ] docker compose up -d --build web — только если меняли constants.py
 [ ] Проверка: скачивание с сайта + автообновление с предыдущей версии
 ```
 
 ---
 
-## Шаг 1. Версия в коде
+## Автоматический релиз одной командой
 
-**Обязательно** — `mektep-desktop/version.py`:
+Требования на Windows:
 
-```python
-APP_VERSION = "1.2.2"
+- Python и зависимости проекта;
+- Inno Setup 6;
+- OpenSSH Client (`ssh` и `scp`);
+- доступ по SSH к серверу.
+
+Один раз задайте адрес сервера в текущем окне PowerShell:
+
+```powershell
+$env:MEKTEP_DEPLOY_TARGET = "deploy@SERVER"
 ```
 
-**Рекомендуется** — `webapp/constants.py` (кнопка на главной):
+Для постоянной настройки добавьте пользовательскую переменную среды Windows
+`MEKTEP_DEPLOY_TARGET`. При нестандартном размещении также доступны:
 
-```python
-DESKTOP_VERSION = "1.2.2"
+```powershell
+$env:MEKTEP_REMOTE_UPDATES_PATH = "~/pdf-to-excel-scraper-main/updates"
+$env:MEKTEP_PUBLIC_UPDATES_URL = "https://mektep-analyzer.kz/updates"
+$env:MEKTEP_SSH_IDENTITY_FILE = "$HOME\.ssh\id_ed25519"
 ```
 
-**Опционально** — принудительное обновление при логине:
+Обычный релиз:
 
-```python
-MIN_DESKTOP_VERSION = (1, 2, 2)
+```powershell
+cd mektep-desktop
+.\release.ps1 1.2.2 -Notes "Исправлены ошибки выгрузки отчётов."
 ```
+
+Скрипт последовательно:
+
+1. синхронизирует `APP_VERSION` и `DESKTOP_VERSION`;
+2. запускает pytest;
+3. запускает PyInstaller и Inno Setup через `build.py`;
+4. проверяет SHA-256;
+5. загружает установщик под временным именем и атомарно переименовывает;
+6. публикует `latest.json` последним;
+7. проверяет манифест и установщик через публичный HTTPS-адрес.
+
+При ошибке до публикации манифеста изменения версий в исходниках будут отменены.
+После атомарной публикации версии сохраняются, даже если публичная проверка не
+прошла: в этом случае скрипт потребует немедленно проверить сервер вручную.
+
+Полезные варианты:
+
+```powershell
+# Только локальная сборка
+.\release.ps1 1.2.2 -BuildOnly
+
+# Принудительное обновление в манифесте
+.\release.ps1 1.2.2 -Mandatory
+
+# Одновременно поднять минимальную версию API
+.\release.ps1 1.2.2 -MinimumApiVersion 1.2.2
+
+# Нестандартный SSH-порт и ключ
+.\release.ps1 1.2.2 -SshPort 2222 -IdentityFile "$HOME\.ssh\mektep"
+```
+
+По умолчанию скрипт требует чистую рабочую копию Git. `-AllowDirty` разрешает
+релиз с локальными изменениями, а `-SkipTests` пропускает тесты; используйте эти
+параметры только осознанно.
+
+После успешного релиза зафиксируйте изменения версий в Git. Если изменился
+`MIN_DESKTOP_VERSION`, разверните webapp, чтобы новое ограничение начало действовать.
 
 ---
 
-## Шаг 2. Сборка (только Windows)
+## Ручной резервный процесс
+
+Если автоматический скрипт недоступен, обновите версии вручную:
+
+- `mektep-desktop/version.py` → `APP_VERSION`;
+- `webapp/constants.py` → `DESKTOP_VERSION`;
+- при необходимости `webapp/constants.py` → `MIN_DESKTOP_VERSION`.
+
+Затем выполните сборку:
 
 ```powershell
 cd mektep-desktop
@@ -62,16 +116,8 @@ python build.py
 
 Не используйте `python build.py onefile` — для автообновления нужен folder + Inno Setup.
 
-Результат в `dist/`:
-
-- `MektepDesktopSetup-<version>.exe`
-- `latest.json` (version, url, sha256 — sha256 считается автоматически)
-
-Перед публикацией можно дописать `notes` в `latest.json`.
-
----
-
-## Шаг 3. Публикация на сервер
+В `dist/` появятся установщик и `latest.json`. Загрузите установщик первым,
+убедитесь, что он доступен, и только после этого заменяйте `latest.json`.
 
 С Windows (подставьте свой хост и версию):
 
@@ -91,7 +137,7 @@ curl -s http://127.0.0.1/updates/latest.json
 
 ---
 
-## Шаг 4. Webapp (если меняли constants.py)
+## Webapp (если меняли constants.py)
 
 ```bash
 cd ~/pdf-to-excel-scraper-main

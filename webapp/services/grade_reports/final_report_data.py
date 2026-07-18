@@ -1,4 +1,4 @@
-"""Загрузка и сохранение ручных данных итогового отчёта (ГИА, ЕНТ, аттестаты)."""
+"""Загрузка и сохранение ручных данных итогового отчёта."""
 
 from __future__ import annotations
 
@@ -14,18 +14,6 @@ VALID_SECTIONS = {s.value for s in FinalReportSection}
 
 def default_section_data(section: str) -> dict[str, Any]:
     """Пустой шаблон JSON для раздела."""
-    if section == FinalReportSection.GIA9.value:
-        return {"classes": [], "notes": ""}
-    if section == FinalReportSection.GIA11.value:
-        return {"classes": [], "notes": ""}
-    if section == FinalReportSection.ENT.value:
-        return {
-            "periods": [],
-            "quality_levels": [],
-            "class_slices": [],
-            "forecast_avg": None,
-            "recommendations": "",
-        }
     if section == FinalReportSection.AWARDS.value:
         return {
             "altyn_belgi": 0,

@@ -90,16 +90,12 @@ def _seed_school(app) -> dict:
         save_section_data(
             school.id,
             2025,
-            "ent",
+            "awards",
             {
-                "periods": [
-                    {"month": "Январь", "count": 10, "avg_score": 80.0, "max_score": 120},
-                    {"month": "Май", "count": 10, "avg_score": 93.0, "max_score": 130},
-                ],
-                "quality_levels": [],
-                "class_slices": [],
-                "forecast_avg": 96.7,
-                "recommendations": "Test",
+                "altyn_belgi": 1,
+                "excellent_11": 2,
+                "excellent_9": 3,
+                "students": [{"name": "Алиев А.", "award": "altyn_belgi"}],
             },
         )
         return {"school_id": school.id}
@@ -132,7 +128,7 @@ def test_build_final_report_workbook_smoke(app):
         assert ws_q.cell(3, 5).value == 1
         assert len(ws_q._charts) == 2
         assert any("Сводка" in n for n in sheet_names)
-        assert any("ЕНТ" in n for n in sheet_names)
+        assert any("Аттестаты" in n for n in sheet_names)
         wb.close()
 
 
@@ -140,8 +136,8 @@ def test_final_report_data_roundtrip(app):
     ctx = _seed_school(app)
     with app.app_context():
         row = FinalReportData.query.filter_by(
-            school_id=ctx["school_id"], section="ent"
+            school_id=ctx["school_id"], section="awards"
         ).first()
         assert row is not None
         data = json.loads(row.data_json)
-        assert data.get("forecast_avg") == 96.7
+        assert data.get("altyn_belgi") == 1

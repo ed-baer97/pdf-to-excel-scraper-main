@@ -20,7 +20,7 @@ from .data import (
     resolve_years,
 )
 from .dynamics_sheet import write_contingent_dynamics_sheet
-from .manual_sheets import write_awards_sheet, write_ent_sheet, write_json_sheet
+from .manual_sheets import write_awards_sheet
 from .quality_sheet import write_quality_stages_sheet
 from .summary_sheets import (
     write_classes_sheet,
@@ -74,11 +74,8 @@ def build_final_report_workbook(
     write_subjects_and_problems_sheets(wb, school_id, anchor_year, active_names, tr)
     write_excellent_sheet(wb, school_id, anchor_year, active_names, tr)
 
-    # --- ГИА / ЕНТ / Аттестаты (ручной ввод) ---
+    # --- Ручные данные итогового отчёта ---
     manual = manual_by_year.get(anchor_year, load_all_sections(school_id, anchor_year))
-    write_json_sheet(wb, "final_report_sheet_gia9", manual.get("gia9", {}), tr)
-    write_json_sheet(wb, "final_report_sheet_gia11", manual.get("gia11", {}), tr)
-    write_ent_sheet(wb, manual.get("ent", {}), tr)
     write_awards_sheet(wb, manual.get("awards", {}), tr)
 
     # Auto column widths
