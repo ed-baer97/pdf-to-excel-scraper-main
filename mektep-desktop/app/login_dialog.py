@@ -69,53 +69,47 @@ class LoginDialog(QDialog):
     def init_ui(self):
         """Инициализация интерфейса"""
         self.setWindowTitle(self.translator.tr('login_title'))
-        self.setFixedSize(480, 660)
+        self.setFixedSize(480, 720)
         self.setModal(True)
-        
-        # Устанавливаем иконку окна
+
         from PyQt6.QtGui import QIcon
         icon_path = self._get_icon_path()
         if icon_path.exists():
             self.setWindowIcon(QIcon(str(icon_path)))
-        
-        # Основной layout
+
         main_layout = QVBoxLayout(self)
         main_layout.setSpacing(0)
         main_layout.setContentsMargins(0, 0, 0, 0)
-        
-        # Контейнер для кнопок языка
+
         lang_container = QWidget()
-        lang_container.setFixedHeight(50)
+        lang_container.setFixedHeight(48)
         lang_container_layout = QHBoxLayout(lang_container)
-        lang_container_layout.setContentsMargins(0, 10, 15, 10)
+        lang_container_layout.setContentsMargins(0, 8, 16, 8)
         lang_container_layout.addStretch()
-        
+
         self.ru_btn = QPushButton("РУ")
         self.ru_btn.setFixedSize(50, 32)
         self.ru_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.ru_btn.clicked.connect(lambda: self.switch_language('ru'))
         lang_container_layout.addWidget(self.ru_btn)
-        
+
         lang_container_layout.addSpacing(8)
-        
+
         self.kk_btn = QPushButton("ҚЗ")
         self.kk_btn.setFixedSize(50, 32)
         self.kk_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.kk_btn.clicked.connect(lambda: self.switch_language('kk'))
         lang_container_layout.addWidget(self.kk_btn)
-        
+
         main_layout.addWidget(lang_container)
-        
-        # Основной контент
+
         layout = QVBoxLayout()
-        layout.setSpacing(20)
-        layout.setContentsMargins(40, 10, 40, 40)
+        layout.setSpacing(12)
+        layout.setContentsMargins(36, 4, 36, 24)
         main_layout.addLayout(layout)
-        
-        # Обновить стили кнопок языка
+
         self.update_language_buttons()
-        
-        # Логотип / Заголовок
+
         logo_path = self._get_logo_path()
         if logo_path.exists():
             from PyQt6.QtGui import QPixmap
@@ -123,130 +117,88 @@ class LoginDialog(QDialog):
             pixmap = QPixmap(str(logo_path))
             logo_label.setPixmap(
                 pixmap.scaled(
-                    88,
-                    88,
+                    80,
+                    80,
                     Qt.AspectRatioMode.KeepAspectRatio,
                     Qt.TransformationMode.SmoothTransformation,
                 )
             )
             logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            logo_label.setStyleSheet("background: transparent; margin-bottom: 4px;")
+            logo_label.setStyleSheet("background: transparent;")
             layout.addWidget(logo_label)
 
         self.title_label = QLabel(self.translator.tr('app_name'))
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title_font = QFont("Segoe UI", 22, QFont.Weight.Bold)
-        self.title_label.setFont(title_font)
-        self.title_label.setStyleSheet("color: #0873ce; margin-bottom: 6px;")
+        self.title_label.setFont(QFont("Segoe UI", 22, QFont.Weight.Bold))
+        self.title_label.setStyleSheet("color: #0873ce;")
         layout.addWidget(self.title_label)
-        
+
         self.subtitle_label = QLabel(self.translator.tr('login_subtitle'))
         self.subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.subtitle_label.setStyleSheet("color: #6c757d; font-size: 13px;")
         layout.addWidget(self.subtitle_label)
-        
-        layout.addSpacing(20)
-        
-        # Карточка с формой
+
+        layout.addSpacing(8)
+
         card = QFrame()
         card.setObjectName("loginCard")
         card_layout = QVBoxLayout(card)
-        card_layout.setSpacing(0)
-        card_layout.setContentsMargins(35, 35, 35, 35)
-        
-        # Поле логина
-        username_label = QLabel(f"{self.translator.tr('username')}:")
-        username_label.setStyleSheet("font-weight: 600; color: #212529; font-size: 14px;")
-        card_layout.addWidget(username_label)
-        
-        card_layout.addSpacing(8)
-        
+        card_layout.setSpacing(10)
+        card_layout.setContentsMargins(28, 28, 28, 28)
+
+        self.username_label = QLabel(f"{self.translator.tr('username')}:")
+        self.username_label.setStyleSheet("font-weight: 600; color: #212529; font-size: 14px;")
+        card_layout.addWidget(self.username_label)
+
         self.username_input = QLineEdit()
         self.username_input.setPlaceholderText(self.translator.tr('username'))
-        self.username_input.setMinimumHeight(44)
+        self.username_input.setFixedHeight(44)
         self.username_input.returnPressed.connect(self.handle_login)
         card_layout.addWidget(self.username_input)
-        
-        card_layout.addSpacing(15)
-        
-        # Поле пароля
-        password_label = QLabel(f"{self.translator.tr('password')}:")
-        password_label.setStyleSheet("font-weight: 600; color: #212529; font-size: 14px;")
-        card_layout.addWidget(password_label)
-        
-        card_layout.addSpacing(8)
-        
+
+        self.password_label = QLabel(f"{self.translator.tr('password')}:")
+        self.password_label.setStyleSheet(
+            "font-weight: 600; color: #212529; font-size: 14px; margin-top: 6px;"
+        )
+        card_layout.addWidget(self.password_label)
+
         self.password_input = QLineEdit()
         self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.password_input.setPlaceholderText(self.translator.tr('password'))
-        self.password_input.setMinimumHeight(44)
+        self.password_input.setFixedHeight(44)
         self.password_input.returnPressed.connect(self.handle_login)
         card_layout.addWidget(self.password_input)
-        
-        card_layout.addSpacing(15)
-        
-        # Чекбокс "Запомнить меня"
+
         self.remember_checkbox = QCheckBox(self.translator.tr('remember_me'))
-        self.remember_checkbox.setStyleSheet("color: #495057;")
+        self.remember_checkbox.setMinimumHeight(28)
         card_layout.addWidget(self.remember_checkbox)
-        
-        card_layout.addSpacing(10)
-        
-        # Кнопка входа
+
+        card_layout.addSpacing(6)
+
         self.login_btn = QPushButton(self.translator.tr('login_button'))
-        self.login_btn.setMinimumHeight(45)
+        self.login_btn.setObjectName("loginBtn")
+        self.login_btn.setFixedHeight(46)
         self.login_btn.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
         self.login_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.login_btn.clicked.connect(self.handle_login)
         card_layout.addWidget(self.login_btn)
-        
-        card_layout.addSpacing(20)
-        
-        # Статус (с фиксированной высотой чтобы не прыгал интерфейс)
+
         self.status_label = QLabel("")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_label.setWordWrap(True)
-        self.status_label.setMinimumHeight(40)
+        self.status_label.setFixedHeight(36)
         self.status_label.setStyleSheet("color: #6c757d; font-size: 12px;")
         card_layout.addWidget(self.status_label)
-        
-        layout.addWidget(card)
-        layout.addStretch()
 
-        # Метка версии в самом низу диалога
+        layout.addWidget(card)
+        layout.addStretch(1)
+
         version_label = QLabel(f"v{_DESKTOP_VERSION}")
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        version_label.setStyleSheet("color: #adb5bd; font-size: 11px; margin-bottom: 8px;")
+        version_label.setStyleSheet("color: #adb5bd; font-size: 11px;")
         layout.addWidget(version_label)
-        
-        # region agent log layout
-        self._card_ref = card
-        from PyQt6.QtCore import QTimer as _QT
-        _QT.singleShot(300, self._log_layout_sizes)
-        # endregion
 
-        # Применение стилей
         self.apply_styles()
-    
-    def _log_layout_sizes(self):
-        # region agent log layout
-        import json, time as _t
-        _data = {
-            "dialog_h": self.height(), "dialog_w": self.width(),
-            "card_actual_h": self._card_ref.height(),
-            "card_sizeHint_h": self._card_ref.sizeHint().height(),
-            "card_minSizeHint_h": self._card_ref.minimumSizeHint().height(),
-            "username_input_h": self.username_input.height(),
-            "password_input_h": self.password_input.height(),
-            "login_btn_h": self.login_btn.height(),
-            "status_label_h": self.status_label.height(),
-            "remember_h": self.remember_checkbox.height(),
-        }
-        _p = {"sessionId":"2263ed","hypothesisId":"E,F,G","location":"login_dialog.py:_log_layout_sizes","message":"layout sizes POST-FIX","data":_data,"timestamp":int(_t.time()*1000)}
-        try:
-            with open("debug-2263ed.log","a",encoding="utf-8") as _f: _f.write(json.dumps(_p,ensure_ascii=False)+"\n")
-        except Exception: pass
-        # endregion
 
     def apply_styles(self):
         """Применение стилей к диалогу"""
@@ -254,59 +206,58 @@ class LoginDialog(QDialog):
             QDialog {
                 background-color: #f8f9fa;
             }
-            
+
             QFrame#loginCard {
                 background-color: white;
                 border-radius: 10px;
                 border: 1px solid #dee2e6;
             }
-            
+
             QLineEdit {
-                padding: 10px 12px;
+                padding: 0 12px;
                 border: 2px solid #ced4da;
                 border-radius: 6px;
                 background-color: white;
                 font-size: 14px;
                 color: #000000;
             }
-            
+
             QLineEdit:focus {
                 border: 2px solid #0873ce;
                 background-color: white;
-                outline: none;
             }
-            
+
             QLineEdit::placeholder {
                 color: #6c757d;
             }
-            
-            QPushButton#loginBtn, QPushButton {
+
+            QPushButton#loginBtn {
                 background-color: #0873ce;
                 color: white;
                 border: none;
                 border-radius: 6px;
-                padding: 12px;
                 font-size: 14px;
             }
-            
-            QPushButton:hover {
+
+            QPushButton#loginBtn:hover {
                 background-color: #0b5ed7;
             }
-            
-            QPushButton:pressed {
+
+            QPushButton#loginBtn:pressed {
                 background-color: #0a58ca;
             }
-            
-            QPushButton:disabled {
+
+            QPushButton#loginBtn:disabled {
                 background-color: #6c757d;
             }
-            
+
             QCheckBox {
+                color: #495057;
                 font-size: 14px;
-                spacing: 8px;
-                padding: 8px 0;
+                spacing: 10px;
+                min-height: 28px;
             }
-            
+
             QCheckBox::indicator {
                 width: 18px;
                 height: 18px;
@@ -314,16 +265,16 @@ class LoginDialog(QDialog):
                 border-radius: 4px;
                 background-color: white;
             }
-            
+
             QCheckBox::indicator:hover {
                 border-color: #0873ce;
             }
-            
+
             QCheckBox::indicator:checked {
                 background-color: #0873ce;
                 border-color: #0873ce;
             }
-            
+
             QCheckBox::indicator:checked:hover {
                 background-color: #0b5ed7;
                 border-color: #0b5ed7;
@@ -541,48 +492,16 @@ class LoginDialog(QDialog):
         self.settings.setValue("language", lang)
         self.translator.set_language(lang)
         
-        # Обновляем интерфейс
         self.setWindowTitle(self.translator.tr('login_title'))
         if hasattr(self, 'title_label'):
             self.title_label.setText(self.translator.tr('app_name'))
         self.subtitle_label.setText(self.translator.tr('login_subtitle'))
-
-        # region agent log
-        import json, time as _time
-        _all_labels = [(lbl.text(), lbl.objectName()) for lbl in self.findChildren(QLabel)]
-        _payload = {"sessionId":"2263ed","hypothesisId":"A,D","location":"login_dialog.py:switch_language","message":"switch_language called POST-FIX","data":{"new_lang":lang,"window_title":self.translator.tr('login_title'),"subtitle_text":self.subtitle_label.text(),"all_labels_found":_all_labels},"timestamp":int(_time.time()*1000)}
-        try:
-            with open("debug-2263ed.log","a",encoding="utf-8") as _f: _f.write(json.dumps(_payload,ensure_ascii=False)+"\n")
-        except Exception: pass
-        # endregion
-
-        # Обновляем метки
-        for label in self.findChildren(QLabel):
-            text = label.text()
-            # region agent log
-            _upd = {"sessionId":"2263ed","hypothesisId":"A,D","location":"login_dialog.py:switch_language_loop","message":"label checked in loop","data":{"text":text,"ends_with_colon":text.endswith(":"),"lang":lang},"timestamp":int(_time.time()*1000)}
-            try:
-                with open("debug-2263ed.log","a",encoding="utf-8") as _f: _f.write(json.dumps(_upd,ensure_ascii=False)+"\n")
-            except Exception: pass
-            # endregion
-            if text.endswith(":"):
-                key_text = text[:-1].strip()
-                if "Логин" in key_text or "Login" in key_text:
-                    label.setText(f"{self.translator.tr('username')}:")
-                elif "Пароль" in key_text or "Құпия сөз" in key_text or "Password" in key_text:
-                    label.setText(f"{self.translator.tr('password')}:")
-        
-        # Обновляем placeholder'ы
+        self.username_label.setText(f"{self.translator.tr('username')}:")
+        self.password_label.setText(f"{self.translator.tr('password')}:")
         self.username_input.setPlaceholderText(self.translator.tr('username'))
         self.password_input.setPlaceholderText(self.translator.tr('password'))
-        
-        # Обновляем чекбокс
         self.remember_checkbox.setText(self.translator.tr('remember_me'))
-        
-        # Обновляем кнопку входа
         self.login_btn.setText(self.translator.tr('login_button'))
-        
-        # Обновляем стили кнопок языка
         self.update_language_buttons()
     
     def update_language_buttons(self):
