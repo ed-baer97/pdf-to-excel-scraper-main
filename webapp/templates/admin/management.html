@@ -1,48 +1,15 @@
-{% extends "layout.html" %}
-{% block head_extra %}
+{% extends "admin/layout_admin.html" %}
+{% block admin_head_extra %}
 <style>
-  html {
-    scroll-behavior: smooth;
-  }
-  #managementTabContent {
-    scroll-margin-top: 1rem;
-  }
-  .accordion-primary .accordion-button {
-    font-weight: 600;
-  }
-  /* Обводка как у ячеек таблицы ниже (--bs-table-border-color) */
-  .accordion-primary .accordion-button.collapsed {
-    background-color: #fff;
-    color: #212529;
-    border: 1px solid var(--bs-table-border-color);
-    box-shadow: none;
-  }
-  .accordion-primary .accordion-button:not(.collapsed) {
-    background-color: var(--bs-primary);
-    color: #fff;
-    border: 1px solid var(--bs-table-border-color);
-  }
-  .accordion-primary .accordion-button:focus {
-    box-shadow: 0 0 0 0.2rem rgba(var(--bs-primary-rgb), 0.35);
-  }
-  .accordion-primary .accordion-button.collapsed:focus {
-    box-shadow: 0 0 0 0.2rem rgba(var(--bs-primary-rgb), 0.25);
-  }
+  html { scroll-behavior: smooth; }
+  #managementTabContent { scroll-margin-top: 1rem; }
 </style>
 {% endblock %}
 {% block content %}
-<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
-  <div class="rounded-3 bg-white shadow-sm border border-primary border-opacity-25 px-4 py-3 flex-grow-1">
-    <h1 class="h3 mb-0 fw-semibold text-primary d-flex align-items-center gap-2 flex-wrap">
-      <i class="bi bi-kanban fs-4" aria-hidden="true"></i>
-      <span>{{ _('management') }}</span>
-    </h1>
-    <p class="text-muted small mb-0 mt-1">{{ _('management_desc') }}</p>
-  </div>
-  <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline-secondary align-self-center">
-    <i class="bi bi-arrow-left"></i> {{ _('admin_panel') }}
-  </a>
-</div>
+{% set title = _('management') %}
+{% set icon = 'bi-kanban' %}
+{% set subtitle = _('management_desc') %}
+{% include "admin/_page_header.html" %}
 
   <div class="row mb-4">
     <div class="col-12">

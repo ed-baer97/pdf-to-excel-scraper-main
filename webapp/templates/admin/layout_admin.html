@@ -1,0 +1,140 @@
+{% extends "layout.html" %}
+{% block body_class %}admin-shell{% endblock %}
+{% block head_extra %}
+<link href="{{ url_for('static', filename='css/admin.css') }}" rel="stylesheet">
+{% block admin_head_extra %}{% endblock %}
+{% endblock %}
+{% block shell %}
+{% set ep = request.endpoint or '' %}
+<div class="admin-sidebar-backdrop" id="adminSidebarBackdrop"></div>
+<div class="admin-shell-wrap">
+  <aside class="admin-sidebar" id="adminSidebar">
+    <a class="brand" href="{{ url_for('admin.dashboard') }}">
+      <img src="{{ url_for('static', filename='img/logo-256.png') }}" alt="Mektep Analyzer">
+      <span>
+        <span class="brand-title">Mektep Analyzer</span><br>
+        <span class="brand-sub">{{ _('admin_panel') }}</span>
+      </span>
+    </a>
+    <nav class="admin-nav">
+      <a class="admin-nav-link {% if ep == 'admin.dashboard' %}active{% endif %}" href="{{ url_for('admin.dashboard') }}">
+        <i class="bi bi-speedometer2"></i><span>{{ _('dashboard') }}</span>
+      </a>
+      <a class="admin-nav-link {% if ep == 'admin.management' %}active{% endif %}" href="{{ url_for('admin.management') }}">
+        <i class="bi bi-kanban"></i><span>{{ _('management') }}</span>
+      </a>
+      <a class="admin-nav-link {% if ep and ep.startswith('admin.grades') %}active{% endif %}" href="{{ url_for('admin.grades_overview') }}">
+        <i class="bi bi-bar-chart-line"></i><span>{{ _('grades_overview') }}</span>
+      </a>
+      <a class="admin-nav-link {% if ep and ep.startswith('admin.criteria') %}active{% endif %}" href="{{ url_for('admin.criteria_overview') }}">
+        <i class="bi bi-clipboard-data"></i><span>{{ _('criteria_assessment') }}</span>
+      </a>
+      <a class="admin-nav-link {% if ep == 'admin.analytics_home' %}active{% endif %}" href="{{ url_for('admin.analytics_home') }}">
+        <i class="bi bi-graph-up-arrow"></i><span>{{ _('analytics_sor_soch') }}</span>
+      </a>
+      <a class="admin-nav-link {% if ep == 'admin.class_teacher_report' %}active{% endif %}" href="{{ url_for('admin.class_teacher_report') }}">
+        <i class="bi bi-people"></i><span>{{ _('class_teacher_report') }}</span>
+      </a>
+      <a class="admin-nav-link {% if ep == 'admin.class_metrics_charts' %}active{% endif %}" href="{{ url_for('admin.class_metrics_charts') }}">
+        <i class="bi bi-pie-chart"></i><span>{{ _('metrics_charts_title') }}</span>
+      </a>
+      <a class="admin-nav-link {% if ep == 'admin.final_report_input' %}active{% endif %}" href="{{ url_for('admin.final_report_input') }}">
+        <i class="bi bi-file-earmark-spreadsheet"></i><span>{{ _('final_report_input_title') }}</span>
+      </a>
+    </nav>
+  </aside>
+
+  <div class="admin-main">
+    <header class="admin-topbar">
+      <div class="d-flex align-items-center gap-2">
+        <button type="button" class="btn btn-outline-primary btn-sm admin-sidebar-toggle" id="adminSidebarToggle" aria-label="Menu">
+          <i class="bi bi-list"></i>
+        </button>
+        <div>
+          <div class="fw-semibold">{{ current_user.school.name if current_user.school else _('admin_panel') }}</div>
+          <div class="small text-muted">Mektep Analyzer</div>
+        </div>
+      </div>
+      <div class="d-flex gap-2 align-items-center flex-wrap justify-content-end">
+        {% if current_user.is_authenticated and current_user.role in ('school_admin', 'teacher') %}
+        <div class="dropdown">
+          <button class="btn btn-sm btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+            <i class="bi bi-calendar3" aria-hidden="true"></i>
+            {{ format_academic_year(active_academic_year) }}
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end">
+            {% for year in available_academic_years %}
+            <li>
+              <a class="dropdown-item {% if year == active_academic_year %}active{% endif %}"
+                 href="{{ request.path }}?academic_year={{ year }}{% if request.args.get('period_number') %}&period_number={{ request.args.get('period_number') }}{% endif %}">
+                {{ format_academic_year(year) }}
+                {% if year == current_academic_year_value %}
+                <span class="badge bg-success ms-1">{{ _('current') if _('current') != 'current' else 'текущий' }}</span>
+                {% endif %}
+              </a>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+        <div class="btn-group btn-group-sm">
+          <a href="{{ url_for('main.set_language', lang='ru') }}"
+             class="btn btn-sm {{ 'btn-primary' if get_locale() == 'ru' else 'btn-outline-primary' }}">РУ</a>
+          <a href="{{ url_for('main.set_language', lang='kk') }}"
+             class="btn btn-sm {{ 'btn-primary' if get_locale() == 'kk' else 'btn-outline-primary' }}">ҚЗ</a>
+        </div>
+        {% if current_user.is_authenticated %}
+        <span class="small text-muted">{{ current_user.username }}</span>
+        <form method="post" action="{{ url_for('auth.logout') }}" class="m-0">
+          <button class="btn btn-outline-secondary btn-sm">{{ _('logout') }}</button>
+        </form>
+        {% endif %}
+      </div>
+    </header>
+
+    {% if is_archive_academic_year %}
+    <div class="bg-warning-subtle border-bottom text-center small py-2">
+      <i class="bi bi-archive" aria-hidden="true"></i>
+      {{ _('archive_year_view') if _('archive_year_view') != 'archive_year_view' else 'Архив' }}
+      {{ format_academic_year(active_academic_year) }} —
+      {{ _('archive_readonly') if _('archive_readonly') != 'archive_readonly' else 'только просмотр' }}
+    </div>
+    {% endif %}
+
+    <main class="admin-content">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="alert alert-{{ category }}">{{ message }}</div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  (function () {
+    var sidebar = document.getElementById('adminSidebar');
+    var backdrop = document.getElementById('adminSidebarBackdrop');
+    var toggle = document.getElementById('adminSidebarToggle');
+    if (!sidebar || !toggle) return;
+    function closeSidebar() {
+      sidebar.classList.remove('open');
+      if (backdrop) backdrop.classList.remove('show');
+    }
+    function openSidebar() {
+      sidebar.classList.add('open');
+      if (backdrop) backdrop.classList.add('show');
+    }
+    toggle.addEventListener('click', function () {
+      if (sidebar.classList.contains('open')) closeSidebar();
+      else openSidebar();
+    });
+    if (backdrop) backdrop.addEventListener('click', closeSidebar);
+  })();
+</script>
+{% block admin_scripts %}{% endblock %}
+{% endblock %}

@@ -1,10 +1,81 @@
-{% extends "layout.html" %}
+{% extends "admin/layout_admin.html" %}
 {% block content %}
 <style>
-  /* Как карточки KPI на дашборде: белое «окно», рамка primary */
+  :root {
+    --mc-border: #e2e8f0;
+    --mc-head-bg: #f1f5f9;
+    --mc-head-text: #334155;
+    --mc-quality: #0873ce;
+    --mc-quality-soft: #e8f2fb;
+    --mc-success: #2fa23a;
+    --mc-success-soft: #e9f6ea;
+  }
+
+  .chart-card {
+    border: 1px solid var(--mc-border);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+
+  /* Шапка карточки: белая, с цветной точкой-акцентом вместо сплошного синего */
+  .chart-card .chart-card-header {
+    background: #fff;
+    border-bottom: 1px solid var(--mc-border);
+    padding: 0.85rem 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .chart-card .chart-card-title {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #1e293b;
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+  }
+
+  .chart-card .chart-card-title::before {
+    content: "";
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    background: linear-gradient(135deg, var(--mc-quality), #35a3f0);
+    flex-shrink: 0;
+  }
+
+  .chart-legend {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    font-size: 0.78rem;
+    color: #64748b;
+    font-weight: 500;
+  }
+
+  .chart-legend .legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .chart-legend .legend-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .chart-legend .legend-dot.dot-quality { background: var(--mc-quality); }
+  .chart-legend .legend-dot.dot-success { background: var(--mc-success); }
+
   .chart-card-body {
     height: auto;
-    padding: 1rem 1.25rem;
+    padding: 1rem 1.25rem 1.25rem;
   }
 
   .chart-canvas-wrap {
@@ -13,10 +84,9 @@
   }
 
   .metrics-table-window {
-    border-radius: var(--bs-border-radius-xl, 0.5rem);
+    border-radius: 12px;
     background: #fff;
-    box-shadow: var(--bs-box-shadow-sm);
-    border: 1px solid rgba(var(--bs-primary-rgb), 0.25);
+    border: 1px solid var(--mc-border);
     overflow: hidden;
   }
 
@@ -38,18 +108,31 @@
     --bs-table-bg: transparent;
   }
 
+  .metrics-table td,
+  .metrics-table tbody th,
+  .metrics-table thead th {
+    border-color: var(--mc-border);
+  }
+
   .metrics-table thead.metrics-table-head th {
-    background-color: var(--bs-primary);
-    color: #fff;
+    background-color: var(--mc-head-bg);
+    color: var(--mc-head-text);
     font-weight: 600;
     font-size: 0.8125rem;
-    border-color: rgba(255, 255, 255, 0.28);
     vertical-align: middle;
   }
 
+  .metrics-table tbody tr.row-quality th.row-label {
+    background-color: var(--mc-quality-soft);
+    color: var(--mc-quality);
+  }
+
+  .metrics-table tbody tr.row-success th.row-label {
+    background-color: var(--mc-success-soft);
+    color: var(--mc-success);
+  }
+
   .metrics-table tbody th.row-label {
-    background-color: rgba(var(--bs-primary-rgb), 0.08);
-    color: var(--bs-primary);
     font-weight: 600;
     font-size: 0.8125rem;
   }
@@ -60,8 +143,14 @@
     font-size: 0.8125rem;
   }
 
-  .metrics-table .col-total {
-    background-color: rgba(var(--bs-primary-rgb), 0.06);
+  .metrics-table tbody tr.row-quality .col-total {
+    background-color: var(--mc-quality-soft);
+    color: var(--mc-quality);
+  }
+
+  .metrics-table tbody tr.row-success .col-total {
+    background-color: var(--mc-success-soft);
+    color: var(--mc-success);
   }
 
   @media (max-width: 768px) {
@@ -130,56 +219,29 @@
           <i class="bi bi-file-earmark-excel"></i> {{ _('metrics_download_overall') }}
         </a>
       </div>
-      <div class="card shadow-sm mb-4">
-        <div class="card-header bg-primary text-white">
-          <h5 class="mb-0">{{ _('metrics_card_1_4') }}</h5>
+      {% set chart_groups = [
+        ('Group1to4', _('metrics_card_1_4'), _('metrics_empty_1_4')),
+        ('Group5to9', _('metrics_card_5_9'), _('metrics_empty_5_9')),
+        ('Group9to11', _('metrics_card_9_11'), _('metrics_empty_9_11')),
+        ('Group9', _('metrics_card_9'), _('metrics_empty_9')),
+        ('Group11', _('metrics_card_11'), _('metrics_empty_11')),
+      ] %}
+      {% for suffix, card_title, empty_text in chart_groups %}
+      <div class="card chart-card shadow-sm mb-4">
+        <div class="chart-card-header">
+          <h5 class="chart-card-title">{{ card_title }}</h5>
+          <div class="chart-legend">
+            <span class="legend-item"><span class="legend-dot dot-quality"></span>{{ metrics_i18n['chart_quality'] }}</span>
+            <span class="legend-item"><span class="legend-dot dot-success"></span>{{ metrics_i18n['chart_success'] }}</span>
+          </div>
         </div>
         <div class="card-body chart-card-body">
-          <div class="chart-canvas-wrap"><canvas id="chartGroup1to4"></canvas></div>
-          <div id="tableGroup1to4" class="mt-3"></div>
-          <div id="emptyGroup1to4" class="text-muted d-none">{{ _('metrics_empty_1_4') }}</div>
+          <div class="chart-canvas-wrap"><canvas id="chart{{ suffix }}"></canvas></div>
+          <div id="table{{ suffix }}" class="mt-3"></div>
+          <div id="empty{{ suffix }}" class="text-muted d-none">{{ empty_text }}</div>
         </div>
       </div>
-      <div class="card shadow-sm mb-4">
-        <div class="card-header bg-primary text-white">
-          <h5 class="mb-0">{{ _('metrics_card_5_9') }}</h5>
-        </div>
-        <div class="card-body chart-card-body">
-          <div class="chart-canvas-wrap"><canvas id="chartGroup5to9"></canvas></div>
-          <div id="tableGroup5to9" class="mt-3"></div>
-          <div id="emptyGroup5to9" class="text-muted d-none">{{ _('metrics_empty_5_9') }}</div>
-        </div>
-      </div>
-      <div class="card shadow-sm mb-4">
-        <div class="card-header bg-primary text-white">
-          <h5 class="mb-0">{{ _('metrics_card_9_11') }}</h5>
-        </div>
-        <div class="card-body chart-card-body">
-          <div class="chart-canvas-wrap"><canvas id="chartGroup9to11"></canvas></div>
-          <div id="tableGroup9to11" class="mt-3"></div>
-          <div id="emptyGroup9to11" class="text-muted d-none">{{ _('metrics_empty_9_11') }}</div>
-        </div>
-      </div>
-      <div class="card shadow-sm mb-4">
-        <div class="card-header bg-primary text-white">
-          <h5 class="mb-0">{{ _('metrics_card_9') }}</h5>
-        </div>
-        <div class="card-body chart-card-body">
-          <div class="chart-canvas-wrap"><canvas id="chartGroup9"></canvas></div>
-          <div id="tableGroup9" class="mt-3"></div>
-          <div id="emptyGroup9" class="text-muted d-none">{{ _('metrics_empty_9') }}</div>
-        </div>
-      </div>
-      <div class="card shadow-sm mb-4">
-        <div class="card-header bg-primary text-white">
-          <h5 class="mb-0">{{ _('metrics_card_11') }}</h5>
-        </div>
-        <div class="card-body chart-card-body">
-          <div class="chart-canvas-wrap"><canvas id="chartGroup11"></canvas></div>
-          <div id="tableGroup11" class="mt-3"></div>
-          <div id="emptyGroup11" class="text-muted d-none">{{ _('metrics_empty_11') }}</div>
-        </div>
-      </div>
+      {% endfor %}
     </div>
 
     <div class="tab-pane fade" id="parallel-pane" role="tabpanel" aria-labelledby="parallel-tab" tabindex="0">
@@ -201,7 +263,7 @@
 </div>
 {% endblock %}
 
-{% block scripts %}
+{% block admin_scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
 <script>
@@ -250,12 +312,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 </tr>
               </thead>
               <tbody>
-                <tr>
+                <tr class="row-quality">
                   <th class="row-label" scope="row">${METRICS_I18N.row_quality}</th>
                   ${qualityRow}
                   <td class="text-center fw-semibold col-total">${qualityTotal}</td>
                 </tr>
-                <tr>
+                <tr class="row-success">
                   <th class="row-label" scope="row">${METRICS_I18N.row_success}</th>
                   ${successRow}
                   <td class="text-center fw-semibold col-total">${successTotal}</td>
@@ -304,6 +366,20 @@ document.addEventListener('DOMContentLoaded', function () {
     const hideSomeTicks = chartLabels.length > 16;
 
     Chart.register(ChartDataLabels);
+
+    // Вертикальный градиент для столбцов
+    function makeGradient(ctx, area, colorTop, colorBottom) {
+      const gradient = ctx.createLinearGradient(0, area.bottom, 0, area.top);
+      gradient.addColorStop(0, colorBottom);
+      gradient.addColorStop(1, colorTop);
+      return gradient;
+    }
+
+    const QUALITY_TOP = 'rgba(53, 163, 240, 0.95)';
+    const QUALITY_BOTTOM = 'rgba(8, 115, 206, 0.95)';
+    const SUCCESS_TOP = 'rgba(94, 201, 104, 0.95)';
+    const SUCCESS_BOTTOM = 'rgba(38, 141, 47, 0.95)';
+
     const chart = new Chart(canvas, {
       type: 'bar',
       data: {
@@ -312,22 +388,41 @@ document.addEventListener('DOMContentLoaded', function () {
           {
             label: METRICS_I18N.chart_quality,
             data: chartQualityValues,
-            backgroundColor: 'rgba(13, 110, 253, 0.75)',
-            borderColor: 'rgba(13, 110, 253, 1)',
-            borderWidth: 1
+            backgroundColor: (context) => {
+              const { ctx, chartArea } = context.chart;
+              if (!chartArea) return QUALITY_BOTTOM;
+              return makeGradient(ctx, chartArea, QUALITY_TOP, QUALITY_BOTTOM);
+            },
+            hoverBackgroundColor: 'rgba(8, 115, 206, 1)',
+            borderWidth: 0,
+            borderRadius: 6,
+            borderSkipped: false,
+            maxBarThickness: 34,
+            categoryPercentage: 0.62,
+            barPercentage: 0.85
           },
           {
             label: METRICS_I18N.chart_success,
             data: chartSuccessValues,
-            backgroundColor: 'rgba(25, 135, 84, 0.75)',
-            borderColor: 'rgba(25, 135, 84, 1)',
-            borderWidth: 1
+            backgroundColor: (context) => {
+              const { ctx, chartArea } = context.chart;
+              if (!chartArea) return SUCCESS_BOTTOM;
+              return makeGradient(ctx, chartArea, SUCCESS_TOP, SUCCESS_BOTTOM);
+            },
+            hoverBackgroundColor: 'rgba(38, 141, 47, 1)',
+            borderWidth: 0,
+            borderRadius: 6,
+            borderSkipped: false,
+            maxBarThickness: 34,
+            categoryPercentage: 0.62,
+            barPercentage: 0.85
           }
         ]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        animation: { duration: 600, easing: 'easeOutQuart' },
         layout: {
           padding: {
             top: 28,
@@ -341,17 +436,27 @@ document.addEventListener('DOMContentLoaded', function () {
             beginAtZero: true,
             max: 100,
             grace: '12%',
+            border: { display: false },
+            grid: {
+              color: 'rgba(148, 163, 184, 0.18)',
+              drawTicks: false
+            },
             ticks: {
               callback: function(value) { return value + '%'; },
-              font: { size: window.innerWidth < 768 ? 10 : 12 }
+              color: '#94a3b8',
+              padding: 8,
+              font: { size: window.innerWidth < 768 ? 10 : 11 }
             }
           },
           x: {
+            border: { display: false },
+            grid: { display: false },
             ticks: {
               autoSkip: hideSomeTicks,
               maxRotation: manyBars || narrowScreen ? 50 : 0,
               minRotation: manyBars || narrowScreen ? 30 : 0,
-              font: { size: window.innerWidth < 768 ? 10 : 12 }
+              color: '#475569',
+              font: { size: window.innerWidth < 768 ? 10 : 12, weight: 500 }
             }
           }
         },
@@ -359,18 +464,28 @@ document.addEventListener('DOMContentLoaded', function () {
           datalabels: {
             anchor: 'end',
             align: 'end',
-            offset: 2,
-            color: '#212529',
-            font: { weight: 'bold', size: window.innerWidth < 768 ? 9 : 11 },
+            offset: 1,
+            color: '#64748b',
+            font: { weight: 600, size: window.innerWidth < 768 ? 9 : 10 },
             display: true,
             clamp: true,
             clip: false,
             formatter: function(value) { return value + '%'; }
           },
           tooltip: {
+            backgroundColor: '#1e293b',
+            titleColor: '#f1f5f9',
+            bodyColor: '#e2e8f0',
+            padding: 10,
+            cornerRadius: 8,
+            displayColors: true,
+            boxWidth: 8,
+            boxHeight: 8,
+            boxPadding: 4,
+            usePointStyle: true,
             callbacks: {
               label: function(context) {
-                return context.dataset.label + ': ' + context.parsed.y + '%';
+                return ' ' + context.dataset.label + ': ' + context.parsed.y + '%';
               }
             }
           },
@@ -420,14 +535,17 @@ document.addEventListener('DOMContentLoaded', function () {
       const canvasId = `chartParallel${cardSuffix}`;
       const tableId = `tableParallel${cardSuffix}`;
       const emptyId = `emptyParallel${cardSuffix}`;
-      const headerClass = 'bg-primary text-white';
 
       const card = document.createElement('div');
-      card.className = 'card shadow-sm mb-4';
+      card.className = 'card chart-card shadow-sm mb-4';
       const emptyText = METRICS_I18N.parallel_empty.replace(/\{grade\}/g, String(grade));
       card.innerHTML = `
-        <div class="card-header ${headerClass}">
-          <h5 class="mb-0">${grade} ${METRICS_I18N.class_word}</h5>
+        <div class="chart-card-header">
+          <h5 class="chart-card-title">${grade} ${METRICS_I18N.class_word}</h5>
+          <div class="chart-legend">
+            <span class="legend-item"><span class="legend-dot dot-quality"></span>${METRICS_I18N.chart_quality}</span>
+            <span class="legend-item"><span class="legend-dot dot-success"></span>${METRICS_I18N.chart_success}</span>
+          </div>
         </div>
         <div class="card-body chart-card-body">
           <div class="chart-canvas-wrap"><canvas id="${canvasId}"></canvas></div>

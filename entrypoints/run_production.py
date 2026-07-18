@@ -63,7 +63,7 @@ def run_waitress():
         port=port,
         threads=threads,
         url_scheme="http",
-        ident="Mektep Scraper",
+        ident="Mektep Analyzer",
     )
 
 

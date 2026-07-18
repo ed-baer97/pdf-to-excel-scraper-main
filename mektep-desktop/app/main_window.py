@@ -1,5 +1,5 @@
 """
-Main Window - главное окно приложения Mektep Desktop
+Main Window - главное окно приложения Mektep Analyzer
 """
 import sys
 from pathlib import Path
@@ -1030,7 +1030,7 @@ class MektepMainWindow(QMainWindow):
                 background: white;
                 color: #212529;
                 border: 1px solid #ced4da;
-                selection-background-color: #0d6efd;
+                selection-background-color: #0873ce;
                 selection-color: white;
                 outline: 0;
             }
@@ -1045,13 +1045,13 @@ class MektepMainWindow(QMainWindow):
                 color: #212529;
             }
             QComboBox QAbstractItemView::item:selected {
-                background: #0d6efd;
+                background: #0873ce;
                 color: white;
             }
             QPushButton {
-                background-color: #0d6efd;
+                background-color: #0873ce;
                 color: white;
-                border: 1px solid #0d6efd;
+                border: 1px solid #0873ce;
                 border-radius: 4px;
                 padding: 8px 16px;
                 font-weight: 500;

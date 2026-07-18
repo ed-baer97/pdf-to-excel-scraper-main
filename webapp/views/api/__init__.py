@@ -1,4 +1,4 @@
-"""REST API для Mektep Desktop (JWT-авторизация, отчёты, кабинет учителя).
+"""REST API для Mektep Analyzer Desktop (JWT-авторизация, отчёты, кабинет учителя).
 
 HTTP-слой разбит на тематические модули; бизнес-логика живёт в webapp/services
 (report_upload, teacher_cabinet, api_helpers).

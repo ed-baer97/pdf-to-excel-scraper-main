@@ -1,11 +1,10 @@
-{% extends "layout.html" %}
+{% extends "admin/layout_admin.html" %}
 {% block content %}
-  <div class="rounded-3 bg-white shadow-sm border border-primary border-opacity-25 px-4 py-3 mb-4">
-    <h3 class="mb-0 fw-semibold text-primary d-flex align-items-center gap-2 flex-wrap">
-      <i class="bi bi-building fs-4" aria-hidden="true"></i>
-      <span>{{ current_user.school.name if current_user.school else _('admin_panel') }}</span>
-    </h3>
-  </div>
+  {% set title = current_user.school.name if current_user.school else _('admin_panel') %}
+  {% set icon = 'bi-building' %}
+  {% set subtitle = _('app_brand') %}
+  {% set show_back = false %}
+  {% include "admin/_page_header.html" %}
 
   <div class="card border-0 shadow-sm mb-4">
     <div class="card-body">
@@ -29,91 +28,73 @@
       {% if school_metrics.has_data %}
       <div class="row g-3 mb-2">
         <div class="col-6 col-md-3">
-          <div class="border rounded-3 p-3 h-100 bg-primary bg-opacity-10">
-            <div class="small text-muted text-uppercase">{{ _('quality_label') }}, %</div>
-            <div class="fs-3 fw-semibold text-primary">{{ school_metrics.school_quality }}%</div>
+          <div class="admin-kpi-card kpi-blue">
+            <div class="kpi-label">{{ _('quality_label') }}, %</div>
+            <div class="kpi-value text-primary">{{ school_metrics.school_quality }}%</div>
           </div>
         </div>
         <div class="col-6 col-md-3">
-          <div class="border rounded-3 p-3 h-100 bg-primary bg-opacity-25">
-            <div class="small text-muted text-uppercase">{{ _('success_label') }}, %</div>
-            <div class="fs-3 fw-semibold text-primary">{{ school_metrics.school_success }}%</div>
+          <div class="admin-kpi-card kpi-blue">
+            <div class="kpi-label">{{ _('success_label') }}, %</div>
+            <div class="kpi-value text-primary">{{ school_metrics.school_success }}%</div>
           </div>
         </div>
         <div class="col-6 col-md-3">
-          <div class="border rounded-3 p-3 h-100">
-            <div class="small text-muted text-uppercase">{{ _('teachers') }}</div>
-            <div class="fs-3 fw-semibold">{{ teachers_count }}</div>
+          <div class="admin-kpi-card">
+            <div class="kpi-label">{{ _('teachers') }}</div>
+            <div class="kpi-value">{{ teachers_count }}</div>
           </div>
         </div>
         <div class="col-6 col-md-3">
-          <div class="border rounded-3 p-3 h-100">
-            <div class="small text-muted text-uppercase">{{ _('classes') }}</div>
-            <div class="fs-3 fw-semibold">{{ classes_count }}</div>
+          <div class="admin-kpi-card">
+            <div class="kpi-label">{{ _('classes') }}</div>
+            <div class="kpi-value">{{ classes_count }}</div>
             <div class="small text-muted mt-1">{{ _('school_kpi_classes_with_data') }}: {{ school_metrics.classes_with_data }}</div>
           </div>
         </div>
       </div>
       <div class="row g-3 mb-3">
         <div class="col-12 col-md-4">
-          <div class="border rounded-3 h-100 shadow-sm bg-white overflow-hidden">
-            <div class="px-3 py-2 border-bottom bg-primary small fw-semibold text-white">{{ _('classes_1_4') }}</div>
-            <div class="p-3">
-              <div class="row g-2">
-                <div class="col-6">
-                  <div class="border rounded-3 p-2 h-100 text-center bg-primary bg-opacity-10">
-                    <div class="small text-muted text-uppercase">{{ _('quality_label') }}</div>
-                    <div class="fs-5 fw-semibold text-primary mb-0">{% if school_metrics.parallel['1-4'].quality is not none %}{{ school_metrics.parallel['1-4'].quality }}%{% else %}<span class="text-muted">—</span>{% endif %}</div>
-                  </div>
-                </div>
-                <div class="col-6">
-                  <div class="border rounded-3 p-2 h-100 text-center bg-primary bg-opacity-25">
-                    <div class="small text-muted text-uppercase">{{ _('success_label') }}</div>
-                    <div class="fs-5 fw-semibold text-primary mb-0">{% if school_metrics.parallel['1-4'].success is not none %}{{ school_metrics.parallel['1-4'].success }}%{% else %}<span class="text-muted">—</span>{% endif %}</div>
-                  </div>
-                </div>
+          <div class="admin-parallel-card theme-blue">
+            <div class="parallel-head">{{ _('classes_1_4') }}</div>
+            <div class="parallel-body">
+              <div class="parallel-metric">
+                <span class="metric-label">{{ _('quality_label') }}</span>
+                <span class="metric-value">{% if school_metrics.parallel['1-4'].quality is not none %}{{ school_metrics.parallel['1-4'].quality }}%{% else %}—{% endif %}</span>
+              </div>
+              <div class="parallel-metric">
+                <span class="metric-label">{{ _('success_label') }}</span>
+                <span class="metric-value">{% if school_metrics.parallel['1-4'].success is not none %}{{ school_metrics.parallel['1-4'].success }}%{% else %}—{% endif %}</span>
               </div>
             </div>
           </div>
         </div>
         <div class="col-12 col-md-4">
-          <div class="border rounded-3 h-100 shadow-sm bg-white overflow-hidden">
-            <div class="px-3 py-2 border-bottom bg-primary small fw-semibold text-white">{{ _('classes_5_9') }}</div>
-            <div class="p-3">
-              <div class="row g-2">
-                <div class="col-6">
-                  <div class="border rounded-3 p-2 h-100 text-center bg-primary bg-opacity-10">
-                    <div class="small text-muted text-uppercase">{{ _('quality_label') }}</div>
-                    <div class="fs-5 fw-semibold text-primary mb-0">{% if school_metrics.parallel['5-9'].quality is not none %}{{ school_metrics.parallel['5-9'].quality }}%{% else %}<span class="text-muted">—</span>{% endif %}</div>
-                  </div>
-                </div>
-                <div class="col-6">
-                  <div class="border rounded-3 p-2 h-100 text-center bg-primary bg-opacity-25">
-                    <div class="small text-muted text-uppercase">{{ _('success_label') }}</div>
-                    <div class="fs-5 fw-semibold text-primary mb-0">{% if school_metrics.parallel['5-9'].success is not none %}{{ school_metrics.parallel['5-9'].success }}%{% else %}<span class="text-muted">—</span>{% endif %}</div>
-                  </div>
-                </div>
+          <div class="admin-parallel-card theme-blue">
+            <div class="parallel-head">{{ _('classes_5_9') }}</div>
+            <div class="parallel-body">
+              <div class="parallel-metric">
+                <span class="metric-label">{{ _('quality_label') }}</span>
+                <span class="metric-value">{% if school_metrics.parallel['5-9'].quality is not none %}{{ school_metrics.parallel['5-9'].quality }}%{% else %}—{% endif %}</span>
+              </div>
+              <div class="parallel-metric">
+                <span class="metric-label">{{ _('success_label') }}</span>
+                <span class="metric-value">{% if school_metrics.parallel['5-9'].success is not none %}{{ school_metrics.parallel['5-9'].success }}%{% else %}—{% endif %}</span>
               </div>
             </div>
           </div>
         </div>
         <div class="col-12 col-md-4">
-          <div class="border rounded-3 h-100 shadow-sm bg-white overflow-hidden">
-            <div class="px-3 py-2 border-bottom bg-primary small fw-semibold text-white">{{ _('classes_10_11') }}</div>
-            <div class="p-3">
-              <div class="row g-2">
-                <div class="col-6">
-                  <div class="border rounded-3 p-2 h-100 text-center bg-primary bg-opacity-10">
-                    <div class="small text-muted text-uppercase">{{ _('quality_label') }}</div>
-                    <div class="fs-5 fw-semibold text-primary mb-0">{% if school_metrics.parallel['10-11'].quality is not none %}{{ school_metrics.parallel['10-11'].quality }}%{% else %}<span class="text-muted">—</span>{% endif %}</div>
-                  </div>
-                </div>
-                <div class="col-6">
-                  <div class="border rounded-3 p-2 h-100 text-center bg-primary bg-opacity-25">
-                    <div class="small text-muted text-uppercase">{{ _('success_label') }}</div>
-                    <div class="fs-5 fw-semibold text-primary mb-0">{% if school_metrics.parallel['10-11'].success is not none %}{{ school_metrics.parallel['10-11'].success }}%{% else %}<span class="text-muted">—</span>{% endif %}</div>
-                  </div>
-                </div>
+          <div class="admin-parallel-card theme-blue">
+            <div class="parallel-head">{{ _('classes_10_11') }}</div>
+            <div class="parallel-body">
+              <div class="parallel-metric">
+                <span class="metric-label">{{ _('quality_label') }}</span>
+                <span class="metric-value">{% if school_metrics.parallel['10-11'].quality is not none %}{{ school_metrics.parallel['10-11'].quality }}%{% else %}—{% endif %}</span>
+              </div>
+              <div class="parallel-metric">
+                <span class="metric-label">{{ _('success_label') }}</span>
+                <span class="metric-value">{% if school_metrics.parallel['10-11'].success is not none %}{{ school_metrics.parallel['10-11'].success }}%{% else %}—{% endif %}</span>
               </div>
             </div>
           </div>
@@ -122,15 +103,15 @@
       {% else %}
       <div class="row g-3 mb-3">
         <div class="col-6 col-md-3">
-          <div class="border rounded-3 p-3 h-100">
-            <div class="small text-muted text-uppercase">{{ _('teachers') }}</div>
-            <div class="fs-3 fw-semibold">{{ teachers_count }}</div>
+          <div class="admin-kpi-card">
+            <div class="kpi-label">{{ _('teachers') }}</div>
+            <div class="kpi-value">{{ teachers_count }}</div>
           </div>
         </div>
         <div class="col-6 col-md-3">
-          <div class="border rounded-3 p-3 h-100">
-            <div class="small text-muted text-uppercase">{{ _('classes') }}</div>
-            <div class="fs-3 fw-semibold">{{ classes_count }}</div>
+          <div class="admin-kpi-card">
+            <div class="kpi-label">{{ _('classes') }}</div>
+            <div class="kpi-value">{{ classes_count }}</div>
           </div>
         </div>
       </div>
@@ -156,84 +137,66 @@
       {% if year_metrics.has_data %}
       <div class="row g-3 mb-2">
         <div class="col-6 col-md-3">
-          <div class="border rounded-3 p-3 h-100 bg-success bg-opacity-10">
-            <div class="small text-muted text-uppercase">{{ _('quality_label') }}, %</div>
-            <div class="fs-3 fw-semibold text-success">{{ year_metrics.school_quality }}%</div>
+          <div class="admin-kpi-card kpi-green">
+            <div class="kpi-label">{{ _('quality_label') }}, %</div>
+            <div class="kpi-value text-success">{{ year_metrics.school_quality }}%</div>
           </div>
         </div>
         <div class="col-6 col-md-3">
-          <div class="border rounded-3 p-3 h-100 bg-success bg-opacity-25">
-            <div class="small text-muted text-uppercase">{{ _('success_label') }}, %</div>
-            <div class="fs-3 fw-semibold text-success">{{ year_metrics.school_success }}%</div>
+          <div class="admin-kpi-card kpi-green">
+            <div class="kpi-label">{{ _('success_label') }}, %</div>
+            <div class="kpi-value text-success">{{ year_metrics.school_success }}%</div>
           </div>
         </div>
         <div class="col-6 col-md-3">
-          <div class="border rounded-3 p-3 h-100">
-            <div class="small text-muted text-uppercase">{{ _('school_kpi_classes_with_data') }}</div>
-            <div class="fs-3 fw-semibold">{{ year_metrics.classes_with_data }}</div>
+          <div class="admin-kpi-card">
+            <div class="kpi-label">{{ _('school_kpi_classes_with_data') }}</div>
+            <div class="kpi-value">{{ year_metrics.classes_with_data }}</div>
           </div>
         </div>
       </div>
       <div class="row g-3">
         <div class="col-12 col-md-4">
-          <div class="border rounded-3 h-100 shadow-sm bg-white overflow-hidden">
-            <div class="px-3 py-2 border-bottom bg-success small fw-semibold text-white">{{ _('classes_1_4') }}</div>
-            <div class="p-3">
-              <div class="row g-2">
-                <div class="col-6">
-                  <div class="border rounded-3 p-2 h-100 text-center bg-success bg-opacity-10">
-                    <div class="small text-muted text-uppercase">{{ _('quality_label') }}</div>
-                    <div class="fs-5 fw-semibold text-success mb-0">{% if year_metrics.parallel['1-4'].quality is not none %}{{ year_metrics.parallel['1-4'].quality }}%{% else %}<span class="text-muted">—</span>{% endif %}</div>
-                  </div>
-                </div>
-                <div class="col-6">
-                  <div class="border rounded-3 p-2 h-100 text-center bg-success bg-opacity-25">
-                    <div class="small text-muted text-uppercase">{{ _('success_label') }}</div>
-                    <div class="fs-5 fw-semibold text-success mb-0">{% if year_metrics.parallel['1-4'].success is not none %}{{ year_metrics.parallel['1-4'].success }}%{% else %}<span class="text-muted">—</span>{% endif %}</div>
-                  </div>
-                </div>
+          <div class="admin-parallel-card theme-green">
+            <div class="parallel-head">{{ _('classes_1_4') }}</div>
+            <div class="parallel-body">
+              <div class="parallel-metric">
+                <span class="metric-label">{{ _('quality_label') }}</span>
+                <span class="metric-value">{% if year_metrics.parallel['1-4'].quality is not none %}{{ year_metrics.parallel['1-4'].quality }}%{% else %}—{% endif %}</span>
+              </div>
+              <div class="parallel-metric">
+                <span class="metric-label">{{ _('success_label') }}</span>
+                <span class="metric-value">{% if year_metrics.parallel['1-4'].success is not none %}{{ year_metrics.parallel['1-4'].success }}%{% else %}—{% endif %}</span>
               </div>
             </div>
           </div>
         </div>
         <div class="col-12 col-md-4">
-          <div class="border rounded-3 h-100 shadow-sm bg-white overflow-hidden">
-            <div class="px-3 py-2 border-bottom bg-success small fw-semibold text-white">{{ _('classes_5_9') }}</div>
-            <div class="p-3">
-              <div class="row g-2">
-                <div class="col-6">
-                  <div class="border rounded-3 p-2 h-100 text-center bg-success bg-opacity-10">
-                    <div class="small text-muted text-uppercase">{{ _('quality_label') }}</div>
-                    <div class="fs-5 fw-semibold text-success mb-0">{% if year_metrics.parallel['5-9'].quality is not none %}{{ year_metrics.parallel['5-9'].quality }}%{% else %}<span class="text-muted">—</span>{% endif %}</div>
-                  </div>
-                </div>
-                <div class="col-6">
-                  <div class="border rounded-3 p-2 h-100 text-center bg-success bg-opacity-25">
-                    <div class="small text-muted text-uppercase">{{ _('success_label') }}</div>
-                    <div class="fs-5 fw-semibold text-success mb-0">{% if year_metrics.parallel['5-9'].success is not none %}{{ year_metrics.parallel['5-9'].success }}%{% else %}<span class="text-muted">—</span>{% endif %}</div>
-                  </div>
-                </div>
+          <div class="admin-parallel-card theme-green">
+            <div class="parallel-head">{{ _('classes_5_9') }}</div>
+            <div class="parallel-body">
+              <div class="parallel-metric">
+                <span class="metric-label">{{ _('quality_label') }}</span>
+                <span class="metric-value">{% if year_metrics.parallel['5-9'].quality is not none %}{{ year_metrics.parallel['5-9'].quality }}%{% else %}—{% endif %}</span>
+              </div>
+              <div class="parallel-metric">
+                <span class="metric-label">{{ _('success_label') }}</span>
+                <span class="metric-value">{% if year_metrics.parallel['5-9'].success is not none %}{{ year_metrics.parallel['5-9'].success }}%{% else %}—{% endif %}</span>
               </div>
             </div>
           </div>
         </div>
         <div class="col-12 col-md-4">
-          <div class="border rounded-3 h-100 shadow-sm bg-white overflow-hidden">
-            <div class="px-3 py-2 border-bottom bg-success small fw-semibold text-white">{{ _('classes_10_11') }}</div>
-            <div class="p-3">
-              <div class="row g-2">
-                <div class="col-6">
-                  <div class="border rounded-3 p-2 h-100 text-center bg-success bg-opacity-10">
-                    <div class="small text-muted text-uppercase">{{ _('quality_label') }}</div>
-                    <div class="fs-5 fw-semibold text-success mb-0">{% if year_metrics.parallel['10-11'].quality is not none %}{{ year_metrics.parallel['10-11'].quality }}%{% else %}<span class="text-muted">—</span>{% endif %}</div>
-                  </div>
-                </div>
-                <div class="col-6">
-                  <div class="border rounded-3 p-2 h-100 text-center bg-success bg-opacity-25">
-                    <div class="small text-muted text-uppercase">{{ _('success_label') }}</div>
-                    <div class="fs-5 fw-semibold text-success mb-0">{% if year_metrics.parallel['10-11'].success is not none %}{{ year_metrics.parallel['10-11'].success }}%{% else %}<span class="text-muted">—</span>{% endif %}</div>
-                  </div>
-                </div>
+          <div class="admin-parallel-card theme-green">
+            <div class="parallel-head">{{ _('classes_10_11') }}</div>
+            <div class="parallel-body">
+              <div class="parallel-metric">
+                <span class="metric-label">{{ _('quality_label') }}</span>
+                <span class="metric-value">{% if year_metrics.parallel['10-11'].quality is not none %}{{ year_metrics.parallel['10-11'].quality }}%{% else %}—{% endif %}</span>
+              </div>
+              <div class="parallel-metric">
+                <span class="metric-label">{{ _('success_label') }}</span>
+                <span class="metric-value">{% if year_metrics.parallel['10-11'].success is not none %}{{ year_metrics.parallel['10-11'].success }}%{% else %}—{% endif %}</span>
               </div>
             </div>
           </div>
@@ -246,84 +209,95 @@
       {% endif %}
     </div>
   </div>
-  
-  <!-- Навигация по разделам -->
-  <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-3 mb-4">
-    <div class="col">
-      <a href="{{ url_for('admin.grades_overview') }}" class="card shadow-sm text-decoration-none h-100">
-        <div class="card-body text-center">
-          <h4 class="text-primary"><i class="bi bi-bar-chart-line"></i></h4>
-          <h6>{{ _('grades_overview') }}</h6>
-          <small class="text-muted">{{ _('grades_overview_desc') }}</small>
-        </div>
-      </a>
-    </div>
-    <div class="col">
-      <a href="{{ url_for('admin.criteria_overview') }}" class="card shadow-sm text-decoration-none h-100">
-        <div class="card-body text-center">
-          <h4 class="text-primary"><i class="bi bi-clipboard-data"></i></h4>
-          <h6>{{ _('criteria_assessment') }}</h6>
-          <small class="text-muted">{{ _('criteria_assessment_desc') }}</small>
-        </div>
-      </a>
-    </div>
-    <div class="col">
-      <a href="{{ url_for('admin.analytics_home') }}" class="card shadow-sm text-decoration-none h-100">
-        <div class="card-body text-center">
-          <h4 class="text-primary"><i class="bi bi-graph-up-arrow"></i></h4>
-          <h6>{{ _('analytics_sor_soch') }}</h6>
-          <small class="text-muted">{{ _('analytics_sor_soch_desc') }}</small>
-        </div>
-      </a>
-    </div>
-    <div class="col">
-      <a href="{{ url_for('admin.class_teacher_report') }}" class="card shadow-sm text-decoration-none h-100">
-        <div class="card-body text-center">
-          <h4 class="text-primary"><i class="bi bi-people"></i></h4>
-          <h6>{{ _('class_teacher_report') }}</h6>
-          <small class="text-muted">{{ _('student_categories') }}</small>
-        </div>
-      </a>
-    </div>
-    <div class="col">
-      <a href="{{ url_for('admin.class_metrics_charts') }}" class="card shadow-sm text-decoration-none h-100">
-        <div class="card-body text-center">
-          <h4 class="text-primary"><i class="bi bi-gear"></i></h4>
-          <h6>Диаграммы по классам</h6>
-          <small class="text-muted">Качество и успеваемость</small>
-        </div>
-      </a>
-    </div>
-    <div class="col">
-      <a href="{{ url_for('admin.final_report_input') }}" class="card shadow-sm text-decoration-none h-100 border border-success border-opacity-25">
-        <div class="card-body text-center">
-          <h4 class="text-success"><i class="bi bi-file-earmark-spreadsheet"></i></h4>
-          <h6>{{ _('final_report_input_title') }}</h6>
-          <small class="text-muted">{{ _('final_report_input_nav_desc') }}</small>
-        </div>
-      </a>
-    </div>
-    <div class="col">
-      <button type="button" class="card shadow-sm text-decoration-none h-100 border border-success border-opacity-50 w-100 btn p-0 text-start"
-              data-async-export="final_report"
-              data-export-params='{"academic_year": {{ active_academic_year }}, "years_back": 3}'>
-        <div class="card-body text-center">
-          <h4 class="text-success"><i class="bi bi-download"></i></h4>
-          <h6>{{ _('final_report_export_btn') }}</h6>
-          <small class="text-muted">{{ _('final_report_export_desc') }}</small>
-        </div>
-      </button>
-    </div>
-    <div class="col">
-      <a href="{{ url_for('admin.management') }}" class="card shadow-sm text-decoration-none h-100 border border-primary border-opacity-25">
-        <div class="card-body text-center">
-          <h4 class="text-primary"><i class="bi bi-kanban"></i></h4>
-          <h6>{{ _('management') }}</h6>
-          <small class="text-muted">{{ _('management_desc') }}</small>
-        </div>
-      </a>
+
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-body admin-quick-actions">
+      <h4 class="mb-1">{{ _('quick_actions_title') }}</h4>
+      <p class="text-muted small mb-3">{{ _('quick_actions_hint') }}</p>
+      <div class="d-flex flex-wrap gap-2">
+        <a href="{{ url_for('admin.management') }}" class="btn btn-primary">
+          <i class="bi bi-person-plus"></i> {{ _('management') }}
+        </a>
+        <a href="{{ url_for('admin.final_report_input') }}" class="btn btn-success">
+          <i class="bi bi-file-earmark-spreadsheet"></i> {{ _('final_report_input_title') }}
+        </a>
+        <button type="button" class="btn btn-outline-success"
+                data-async-export="final_report"
+                data-export-params='{"academic_year": {{ active_academic_year }}, "years_back": 3}'>
+          <i class="bi bi-download"></i> {{ _('final_report_export_btn') }}
+        </button>
+        <a href="{{ url_for('admin.class_metrics_charts') }}" class="btn btn-outline-primary">
+          <i class="bi bi-pie-chart"></i> {{ _('metrics_charts_title') }}
+        </a>
+      </div>
     </div>
   </div>
 
+  <div class="mb-2">
+    <h4 class="mb-1">{{ _('sections_title') }}</h4>
+    <p class="text-muted small">{{ _('sections_hint') }}</p>
+  </div>
+  <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-3 mb-4">
+    <div class="col">
+      <a href="{{ url_for('admin.grades_overview') }}" class="admin-nav-card">
+        <div class="nav-icon"><i class="bi bi-bar-chart-line"></i></div>
+        <h6>{{ _('grades_overview') }}</h6>
+        <small class="text-muted">{{ _('grades_overview_desc') }}</small>
+      </a>
+    </div>
+    <div class="col">
+      <a href="{{ url_for('admin.criteria_overview') }}" class="admin-nav-card">
+        <div class="nav-icon"><i class="bi bi-clipboard-data"></i></div>
+        <h6>{{ _('criteria_assessment') }}</h6>
+        <small class="text-muted">{{ _('criteria_assessment_desc') }}</small>
+      </a>
+    </div>
+    <div class="col">
+      <a href="{{ url_for('admin.analytics_home') }}" class="admin-nav-card">
+        <div class="nav-icon"><i class="bi bi-graph-up-arrow"></i></div>
+        <h6>{{ _('analytics_sor_soch') }}</h6>
+        <small class="text-muted">{{ _('analytics_sor_soch_desc') }}</small>
+      </a>
+    </div>
+    <div class="col">
+      <a href="{{ url_for('admin.class_teacher_report') }}" class="admin-nav-card">
+        <div class="nav-icon"><i class="bi bi-people"></i></div>
+        <h6>{{ _('class_teacher_report') }}</h6>
+        <small class="text-muted">{{ _('student_categories') }}</small>
+      </a>
+    </div>
+    <div class="col">
+      <a href="{{ url_for('admin.class_metrics_charts') }}" class="admin-nav-card">
+        <div class="nav-icon"><i class="bi bi-pie-chart"></i></div>
+        <h6>{{ _('metrics_charts_title') }}</h6>
+        <small class="text-muted">{{ _('metrics_charts_desc') }}</small>
+      </a>
+    </div>
+    <div class="col">
+      <a href="{{ url_for('admin.final_report_input') }}" class="admin-nav-card nav-green">
+        <div class="nav-icon"><i class="bi bi-file-earmark-spreadsheet"></i></div>
+        <h6>{{ _('final_report_input_title') }}</h6>
+        <small class="text-muted">{{ _('final_report_input_nav_desc') }}</small>
+      </a>
+    </div>
+    <div class="col">
+      <button type="button" class="admin-nav-card nav-green w-100 border-0"
+              data-async-export="final_report"
+              data-export-params='{"academic_year": {{ active_academic_year }}, "years_back": 3}'>
+        <div class="nav-icon"><i class="bi bi-download"></i></div>
+        <h6>{{ _('final_report_export_btn') }}</h6>
+        <small class="text-muted">{{ _('final_report_export_desc') }}</small>
+      </button>
+    </div>
+    <div class="col">
+      <a href="{{ url_for('admin.management') }}" class="admin-nav-card">
+        <div class="nav-icon"><i class="bi bi-kanban"></i></div>
+        <h6>{{ _('management') }}</h6>
+        <small class="text-muted">{{ _('management_desc') }}</small>
+      </a>
+    </div>
+  </div>
+{% endblock %}
+{% block admin_scripts %}
   <script src="{{ url_for('static', filename='js/admin_async_export.js') }}"></script>
 {% endblock %}

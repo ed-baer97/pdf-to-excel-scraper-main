@@ -1,6 +1,22 @@
-{% extends "layout.html" %}
-{% block head_extra %}
+{% extends "admin/layout_admin.html" %}
+{% block admin_head_extra %}
 <style>
+  /* Палитра таблицы: нейтральная основа + семантические цвета оценок */
+  :root {
+    --gt-border: #e2e8f0;
+    --gt-head-bg: #f1f5f9;
+    --gt-head-text: #334155;
+    --gt-zebra: #f8fafc;
+    --gt-hover: #eef6fd;
+    --gt-5: #2fa23a;
+    --gt-5-bg: #e9f6ea;
+    --gt-4: #0873ce;
+    --gt-4-bg: #e8f2fb;
+    --gt-3: #b45309;
+    --gt-3-bg: #fdf3e3;
+    --gt-2: #c0392b;
+    --gt-2-bg: #fdecea;
+  }
   .sticky-col {
     position: sticky;
     z-index: 2;
@@ -9,53 +25,26 @@
     left: 0;
     width: 30px;
   }
+  #gradesTable td {
+    white-space: nowrap;
+    vertical-align: middle;
+    border-color: var(--gt-border) !important;
+  }
   #gradesTable tbody td.sticky-col,
   #gradesTable tfoot td.sticky-col {
     font-weight: 600;
     font-size: 0.8125rem;
-    box-shadow: inset -1px 0 0 rgba(var(--bs-primary-rgb), 0.18);
+    background-color: #fff;
+    box-shadow: inset -1px 0 0 var(--gt-border);
   }
   #gradesTable tbody td.sticky-col:first-child {
-    background-color: rgba(var(--bs-primary-rgb), 0.08);
-    color: #495057;
+    color: #94a3b8;
   }
-  #gradesTable tbody td.sticky-col[style*="left: 30px"] {
-    background-color: rgba(var(--bs-primary-rgb), 0.06);
-    color: #212529;
+  #gradesTable tbody tr:nth-child(even) > td {
+    background-color: var(--gt-zebra);
   }
-  #gradesTable tbody tr:nth-child(even) td.sticky-col:first-child {
-    background-color: rgba(var(--bs-primary-rgb), 0.11);
-  }
-  #gradesTable tbody tr:nth-child(even) td.sticky-col[style*="left: 30px"] {
-    background-color: rgba(var(--bs-primary-rgb), 0.09);
-  }
-  #gradesTable td {
-    white-space: nowrap;
-    vertical-align: middle;
-    border-color: rgba(var(--bs-primary-rgb), 0.14) !important;
-  }
-  #gradesTable tbody tr:nth-child(even) > td:not(.sticky-col):not(.bg-count-5):not(.bg-count-4):not(.bg-count-3):not(.bg-count-2):not(.border-highlight) {
-    background-color: rgba(var(--bs-primary-rgb), 0.035);
-  }
-  #gradesTable.table-hover tbody tr:hover > td:not(.border-highlight):not(.sticky-col):not(.bg-count-5):not(.bg-count-4):not(.bg-count-3):not(.bg-count-2) {
-    background-color: rgba(var(--bs-primary-rgb), 0.1) !important;
-  }
-  #gradesTable.table-hover tbody tr:hover > td.sticky-col:first-child {
-    background-color: rgba(var(--bs-primary-rgb), 0.2) !important;
-    color: #343a40 !important;
-  }
-  #gradesTable.table-hover tbody tr:hover > td.sticky-col[style*="left: 30px"] {
-    background-color: rgba(var(--bs-primary-rgb), 0.18) !important;
-    color: #212529 !important;
-  }
-  #gradesTable.table-hover tbody tr:hover > td.bg-count-5,
-  #gradesTable.table-hover tbody tr:hover > td.bg-count-4,
-  #gradesTable.table-hover tbody tr:hover > td.bg-count-3,
-  #gradesTable.table-hover tbody tr:hover > td.bg-count-2 {
-    background-color: rgba(var(--bs-primary-rgb), 0.16) !important;
-  }
-  #gradesTable.table-hover tbody tr:hover > td.border-highlight {
-    background-color: rgba(var(--bs-primary-rgb), 0.18) !important;
+  #gradesTable.table-hover tbody tr:hover > td {
+    background-color: var(--gt-hover) !important;
   }
   #gradesTable th.subject-col {
     white-space: normal;
@@ -83,136 +72,103 @@
   .student-delete-btn {
     padding: 0.1rem 0.35rem;
     line-height: 1;
+    border-color: transparent;
+    color: #94a3b8;
+  }
+  .subject-delete-btn:hover,
+  .student-delete-btn:hover {
+    color: var(--bs-danger);
+    background-color: rgba(var(--bs-danger-rgb), 0.08);
+    border-color: transparent;
   }
   #gradesTable tbody td.sticky-col .student-name-cell {
     min-width: 0;
   }
-  /* Пограничный % — мягкая светло-зелёная подсветка */
+  /* Значение оценки в ячейке — семантический цвет */
+  .grade-val-5 { color: var(--gt-5); }
+  .grade-val-4 { color: var(--gt-4); }
+  .grade-val-3 { color: var(--gt-3); }
+  .grade-val-2 { color: var(--gt-2); }
+  /* Пограничный % — мягкая янтарная подсветка (зона внимания) */
   .border-highlight {
-    background-color: rgba(var(--bs-success-rgb), 0.12) !important;
-    border: 1px solid rgba(var(--bs-success-rgb), 0.35) !important;
+    background-color: var(--gt-3-bg) !important;
+    box-shadow: inset 0 0 0 1px rgba(180, 83, 9, 0.25);
   }
   .grade-pct-border {
-    color: var(--bs-success);
+    color: var(--gt-3);
     font-weight: 600;
   }
-  /* Счётчики 5/4/3/2: единый primary-фон, без зелёно-сине-жёлтой сетки */
-  #gradesTable tbody td.bg-count-5,
-  #gradesTable tbody td.bg-count-4,
-  #gradesTable tbody td.bg-count-3,
-  #gradesTable tbody td.bg-count-2 {
-    background-color: rgba(var(--bs-primary-rgb), 0.09) !important;
-    color: #212529 !important;
-    font-weight: 600;
-    border-left: 1px solid rgba(var(--bs-primary-rgb), 0.22) !important;
-  }
+  /* Счётчики 5/4/3/2 в строках — мягкий цвет по оценке */
+  #gradesTable tbody td.bg-count-5 { background-color: var(--gt-5-bg) !important; color: var(--gt-5) !important; }
+  #gradesTable tbody td.bg-count-4 { background-color: var(--gt-4-bg) !important; color: var(--gt-4) !important; }
+  #gradesTable tbody td.bg-count-3 { background-color: var(--gt-3-bg) !important; color: var(--gt-3) !important; }
+  #gradesTable tbody td.bg-count-2 { background-color: var(--gt-2-bg) !important; color: var(--gt-2) !important; }
   .col-count {
     min-width: 35px !important;
     max-width: 50px !important;
     width: 40px !important;
   }
   .grades-table-panel {
-    border-radius: var(--bs-border-radius-xl, 0.5rem);
+    border-radius: 12px;
     background: #fff;
-    box-shadow: var(--bs-box-shadow-sm);
-    border: 1px solid rgba(var(--bs-primary-rgb), 0.25);
+    border: 1px solid var(--gt-border);
     overflow: hidden;
   }
   .grades-table-panel .table-responsive {
     margin-bottom: 0;
   }
-  /* Шапка: №, ФИО, предметы — приглушённый фон (не яркий primary) */
+  /* Шапка: спокойный серо-голубой фон, тёмный текст */
   #gradesTable thead.grades-table-head th {
-    background-color: color-mix(in srgb, var(--bs-primary) 11%, #ffffff 89%);
-    color: #2c4a66;
+    background-color: var(--gt-head-bg);
+    color: var(--gt-head-text);
     font-weight: 600;
     font-size: 0.8125rem;
-    border-color: rgba(var(--bs-primary-rgb), 0.2);
+    border-color: var(--gt-border);
     vertical-align: middle;
   }
   #gradesTable thead.grades-table-head .sticky-col {
-    background-color: color-mix(in srgb, var(--bs-primary) 13%, #f8fafc 87%) !important;
-    color: #2c4a66 !important;
+    background-color: var(--gt-head-bg) !important;
     z-index: 4;
   }
-  #gradesTable thead.grades-table-head th.subject-col {
-    color: #2c4a66 !important;
-  }
-  .grades-table-panel thead .subject-delete-btn:hover {
-    background-color: rgba(var(--bs-danger-rgb), 0.08);
-  }
-  /* Столбцы 5 / 4 / 3 / 2 — градация primary от тёмного к светлому */
+  /* Заголовки столбцов 5/4/3/2 — цветной текст на мягком фоне */
   #gradesTable thead.grades-table-head th.col-count {
-    color: #fff !important;
-    border-color: rgba(255, 255, 255, 0.28) !important;
     font-weight: 700;
-    box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.18);
+    text-align: center;
   }
-  #gradesTable thead.grades-table-head th.col-count.bg-count-5 {
-    background-color: color-mix(in srgb, var(--bs-primary) 88%, #000 12%) !important;
-  }
-  #gradesTable thead.grades-table-head th.col-count.bg-count-4 {
-    background-color: color-mix(in srgb, var(--bs-primary) 94%, #000 6%) !important;
-  }
-  #gradesTable thead.grades-table-head th.col-count.bg-count-3 {
-    background-color: color-mix(in srgb, var(--bs-primary) 76%, #fff 24%) !important;
-  }
-  /* «2» — светлее, чем «3»; белый текст как у остальных col-count */
-  #gradesTable thead.grades-table-head th.col-count.bg-count-2 {
-    background-color: color-mix(in srgb, var(--bs-primary) 52%, #ffffff 48%) !important;
-    color: rgba(252, 252, 252, 1) !important;
-    border-color: rgba(255, 255, 255, 0.28) !important;
-    box-shadow: inset 1px 0 0 0 rgba(13, 110, 253, 0.12);
-  }
+  #gradesTable thead.grades-table-head th.col-count.bg-count-5 { background-color: var(--gt-5-bg) !important; color: var(--gt-5) !important; }
+  #gradesTable thead.grades-table-head th.col-count.bg-count-4 { background-color: var(--gt-4-bg) !important; color: var(--gt-4) !important; }
+  #gradesTable thead.grades-table-head th.col-count.bg-count-3 { background-color: var(--gt-3-bg) !important; color: var(--gt-3) !important; }
+  #gradesTable thead.grades-table-head th.col-count.bg-count-2 { background-color: var(--gt-2-bg) !important; color: var(--gt-2) !important; }
+  /* Итоги */
   #gradesTable tfoot {
-    border-top: 2px solid rgba(var(--bs-primary-rgb), 0.3);
+    border-top: 2px solid var(--gt-border);
   }
   #gradesTable tfoot tr td {
-    background-color: rgba(var(--bs-primary-rgb), 0.05);
-    color: #212529;
-    border-color: rgba(var(--bs-primary-rgb), 0.12) !important;
+    background-color: #fbfcfe;
+    color: #334155;
+    border-color: var(--gt-border) !important;
   }
   #gradesTable tfoot td.sticky-col {
-    background-color: rgba(var(--bs-primary-rgb), 0.11) !important;
-    color: #343a40 !important;
-    font-weight: 600;
     z-index: 2;
   }
-  /* Липкие ячейки строк «Кол-во 5/4/3» — те же оттенки, что у заголовков столбцов */
-  #gradesTable tfoot tr.bg-count-5 td.sticky-col {
-    background-color: color-mix(in srgb, var(--bs-primary) 88%, #000 12%) !important;
-    color: #fff !important;
-    font-weight: 700;
-    box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.2);
-  }
-  #gradesTable tfoot tr.bg-count-4 td.sticky-col {
-    background-color: color-mix(in srgb, var(--bs-primary) 94%, #000 6%) !important;
-    color: #fff !important;
-    font-weight: 700;
-    box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.2);
-  }
-  #gradesTable tfoot tr.bg-count-3 td.sticky-col {
-    background-color: color-mix(in srgb, var(--bs-primary) 76%, #fff 24%) !important;
-    color: #fff !important;
-    font-weight: 700;
-    box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.22);
-  }
+  #gradesTable tfoot tr.bg-count-5 td { background-color: var(--gt-5-bg); color: var(--gt-5); }
+  #gradesTable tfoot tr.bg-count-4 td { background-color: var(--gt-4-bg); color: var(--gt-4); }
+  #gradesTable tfoot tr.bg-count-3 td { background-color: var(--gt-3-bg); color: var(--gt-3); }
+  #gradesTable tfoot tr.bg-count-2 td { background-color: var(--gt-2-bg); color: var(--gt-2); }
+  #gradesTable tfoot tr.bg-count-5 td.sticky-col,
+  #gradesTable tfoot tr.bg-count-4 td.sticky-col,
+  #gradesTable tfoot tr.bg-count-3 td.sticky-col,
   #gradesTable tfoot tr.bg-count-2 td.sticky-col {
-    background-color: color-mix(in srgb, var(--bs-primary) 52%, #ffffff 48%) !important;
-    color: #fff !important;
-    font-weight: 700;
-    box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.22);
+    background-color: inherit !important;
+    color: inherit !important;
   }
-  #gradesTable tfoot tr.table-success td,
+  #gradesTable tfoot tr.table-success td {
+    background-color: var(--gt-5-bg) !important;
+    color: var(--gt-5) !important;
+  }
   #gradesTable tfoot tr.table-info td {
-    background-color: rgba(var(--bs-primary-rgb), 0.07) !important;
-    color: #212529 !important;
-  }
-  #gradesTable tfoot tr.table-success td.sticky-col,
-  #gradesTable tfoot tr.table-info td.sticky-col {
-    background-color: rgba(var(--bs-primary-rgb), 0.12) !important;
-    color: var(--bs-primary) !important;
-    font-weight: 700;
+    background-color: var(--gt-4-bg) !important;
+    color: var(--gt-4) !important;
   }
 </style>
 {% endblock %}
@@ -248,31 +204,31 @@
 
   <div class="row g-3 mb-4">
     <div class="col-6 col-md-3">
-      <div class="border rounded-3 p-3 h-100 shadow-sm border-primary border-opacity-25">
-        <div class="small text-muted text-uppercase">{{ _('total_students') }}</div>
-        <div class="fs-3 fw-semibold text-primary">{{ summary.total_students }}</div>
+      <div class="admin-kpi-card">
+        <div class="kpi-label">{{ _('total_students') }}</div>
+        <div class="kpi-value">{{ summary.total_students }}</div>
       </div>
     </div>
     <div class="col-6 col-md-3">
-      <div class="border rounded-3 p-3 h-100 bg-primary bg-opacity-10 shadow-sm border-primary border-opacity-25">
-        <div class="small text-muted text-uppercase">{{ _('quality_label') }}</div>
-        <div class="fs-3 fw-semibold text-primary">{{ summary.quality_percent }}%</div>
+      <div class="admin-kpi-card kpi-blue">
+        <div class="kpi-label">{{ _('quality_label') }}</div>
+        <div class="kpi-value text-primary">{{ summary.quality_percent }}%</div>
       </div>
     </div>
     <div class="col-6 col-md-3">
-      <div class="border rounded-3 p-3 h-100 bg-primary bg-opacity-25 shadow-sm border-primary border-opacity-25">
-        <div class="small text-muted text-uppercase">{{ _('success_label') }}</div>
-        <div class="fs-3 fw-semibold text-primary">{{ summary.success_percent }}%</div>
+      <div class="admin-kpi-card kpi-blue">
+        <div class="kpi-label">{{ _('success_label') }}</div>
+        <div class="kpi-value text-primary">{{ summary.success_percent }}%</div>
       </div>
     </div>
     <div class="col-6 col-md-3">
-      <div class="border rounded-3 p-3 h-100 shadow-sm border-primary border-opacity-25">
-        <div class="small text-muted text-uppercase mb-2">{{ _('distribution') }}</div>
+      <div class="admin-kpi-card">
+        <div class="kpi-label mb-2">{{ _('distribution') }}</div>
         <div class="d-flex justify-content-between small gap-1 flex-wrap">
-          <span class="text-success fw-semibold">5: {{ summary.grades_count['5'] }}</span>
-          <span class="text-primary fw-semibold">4: {{ summary.grades_count['4'] }}</span>
-          <span class="text-warning fw-semibold">3: {{ summary.grades_count['3'] }}</span>
-          <span class="text-danger fw-semibold">2: {{ summary.grades_count['2'] }}</span>
+          <span class="grade-val-5 fw-semibold">5: {{ summary.grades_count['5'] }}</span>
+          <span class="grade-val-4 fw-semibold">4: {{ summary.grades_count['4'] }}</span>
+          <span class="grade-val-3 fw-semibold">3: {{ summary.grades_count['3'] }}</span>
+          <span class="grade-val-2 fw-semibold">2: {{ summary.grades_count['2'] }}</span>
         </div>
       </div>
     </div>
@@ -336,12 +292,12 @@
                     {% set is_border = pct is not none and ((pct >= 37 and pct <= 39) or (pct >= 61 and pct <= 64) or (pct >= 82 and pct <= 84)) %}
                     <td class="text-center {% if is_border %}border-highlight{% endif %}">
                       {% if grd %}
-                        <strong>{{ grd }}</strong>
+                        <strong class="grade-val-{{ grd }}">{{ grd }}</strong>
                         {% if pct %}
                           <br><small class="{% if is_border %}grade-pct-border{% else %}text-muted{% endif %}">{{ pct }}%</small>
                         {% endif %}
                       {% else %}
-                        —
+                        <span class="text-muted">—</span>
                       {% endif %}
                     </td>
                   {% endfor %}

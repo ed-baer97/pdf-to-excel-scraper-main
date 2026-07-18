@@ -1,11 +1,10 @@
-{% extends "layout.html" %}
+{% extends "admin/layout_admin.html" %}
 {% block content %}
-<div class="container-fluid py-3">
-  <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-    <div>
-      <h2 class="mb-0">{{ _('analytics') }}</h2>
-      <p class="text-muted mb-0">{{ _('analytics_desc') }}</p>
-    </div>
+{% set title = _('analytics') %}
+{% set icon = 'bi-graph-up-arrow' %}
+{% set subtitle = _('analytics_desc') %}
+{% include "admin/_page_header.html" %}
+<div class="d-flex justify-content-end mb-3">
     <a href="{{ url_for('admin.download_analytics_excel', period_number=period_number) }}"
        id="downloadExcelBtn"
        class="btn btn-success"
@@ -14,7 +13,7 @@
        title="Shift+click — синхронная загрузка">
       <i class="bi bi-file-earmark-excel"></i> {{ _('download_excel') }}
     </a>
-  </div>
+</div>
 
   <!-- Фильтр по периоду -->
   <div class="card shadow-sm mb-4">
@@ -30,7 +29,7 @@
           </select>
         </div>
         <div class="col-md-3">
-          <label class="form-label">Параллель классов</label>
+          <label class="form-label">{{ _('class_parallel_label') }}</label>
           <ul class="nav nav-pills">
             <li class="nav-item">
               <button type="submit" name="segment" value="" class="nav-link {% if not segment %}active{% endif %}">1–11</button>
@@ -352,7 +351,6 @@
     </div>
 
   </div>
-</div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {

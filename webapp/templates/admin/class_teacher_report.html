@@ -1,4 +1,4 @@
-{% extends "layout.html" %}
+{% extends "admin/layout_admin.html" %}
 {% block content %}
 <style>
     .nav-tabs { border-bottom: 2px solid #dee2e6; }
@@ -49,7 +49,7 @@
           </select>
         </div>
         <div class="col-md-4">
-          <label class="form-label">Параллель классов</label>
+          <label class="form-label">{{ _('class_parallel_label') }}</label>
           <ul class="nav nav-pills">
             <li class="nav-item">
               <button type="submit" name="segment" value="" class="nav-link {% if not segment %}active{% endif %}">1–11</button>

@@ -1,5 +1,5 @@
 """
-API Client для связи с сервером Mektep Scraper
+API Client для связи с сервером Mektep Analyzer
 
 HTTP клиент для авторизации, проверки подключения,
 загрузки/получения отчётов и аналитики.
@@ -45,7 +45,7 @@ class MektepAPIClient:
         self.user_data: Optional[Dict] = None
         self.session = requests.Session()
         self.session.headers.update({
-            "User-Agent": f"Mektep-Desktop/{_DESKTOP_VERSION}",
+            "User-Agent": f"Mektep-Analyzer/{_DESKTOP_VERSION}",
             "X-Desktop-Version": _DESKTOP_VERSION,
             "Content-Type": "application/json"
         })

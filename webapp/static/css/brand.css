@@ -1,0 +1,117 @@
+:root {
+  --ma-blue: #0873ce;
+  --ma-blue-rgb: 8, 115, 206;
+  --ma-green: #2fa23a;
+  --ma-green-rgb: 47, 162, 58;
+  --ma-bg: #f5f7fa;
+  --ma-card: #ffffff;
+  --ma-text: #1f2937;
+  --ma-muted: #6b7280;
+  --ma-border: #e5e7eb;
+  --ma-radius: 14px;
+  --ma-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+
+  --bs-primary: #0873ce;
+  --bs-primary-rgb: 8, 115, 206;
+  --bs-success: #2fa23a;
+  --bs-success-rgb: 47, 162, 58;
+  --bs-body-bg: #f5f7fa;
+  --bs-body-color: #1f2937;
+  --bs-link-color: #0873ce;
+  --bs-link-hover-color: #065a9f;
+}
+
+body {
+  background: var(--ma-bg);
+  color: var(--ma-text);
+}
+
+.navbar.ma-navbar {
+  background: linear-gradient(90deg, #0873ce 0%, #0b84e8 55%, #2fa23a 160%) !important;
+  box-shadow: 0 2px 12px rgba(8, 115, 206, 0.18);
+}
+
+.navbar .navbar-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.navbar .brand-logo {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.95);
+  padding: 2px;
+}
+
+.ma-card,
+.card.shadow-sm,
+.card.border-0.shadow-sm {
+  border-radius: var(--ma-radius);
+  border-color: var(--ma-border);
+  box-shadow: var(--ma-shadow);
+  background: var(--ma-card);
+}
+
+.hero-card {
+  border: 0 !important;
+  background: linear-gradient(135deg, #0873ce 0%, #1c8ef0 55%, #2fa23a 140%) !important;
+  color: #fff !important;
+}
+
+.quick-step {
+  border: 1px solid var(--ma-border);
+  border-radius: 0.85rem;
+  padding: 0.9rem 1rem;
+  background: #fff;
+  height: 100%;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.quick-step:hover {
+  box-shadow: var(--ma-shadow);
+  transform: translateY(-1px);
+}
+
+.quick-step .step-number {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 115, 206, 0.12);
+  color: var(--ma-blue);
+  font-weight: 700;
+  margin-right: 0.5rem;
+}
+
+.btn-primary {
+  --bs-btn-bg: var(--ma-blue);
+  --bs-btn-border-color: var(--ma-blue);
+  --bs-btn-hover-bg: #065a9f;
+  --bs-btn-hover-border-color: #065a9f;
+  --bs-btn-active-bg: #055089;
+  --bs-btn-active-border-color: #055089;
+}
+
+.btn-success {
+  --bs-btn-bg: var(--ma-green);
+  --bs-btn-border-color: var(--ma-green);
+  --bs-btn-hover-bg: #248a2f;
+  --bs-btn-hover-border-color: #248a2f;
+}
+
+/* Не переопределяем .bg-primary/.bg-success через !important —
+   иначе ломаются Bootstrap bg-opacity-* и текст становится нечитаемым. */
+.text-primary {
+  color: var(--ma-blue) !important;
+}
+
+.text-success {
+  color: var(--ma-green) !important;
+}

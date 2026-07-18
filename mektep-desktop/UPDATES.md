@@ -1,4 +1,4 @@
-# Публикация обновлений Mektep Desktop
+# Публикация обновлений Mektep Analyzer
 
 Полный чек-лист релиза: [RELEASE.md](RELEASE.md).
 

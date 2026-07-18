@@ -1,4 +1,4 @@
-# Mektep Scraper
+# Mektep Analyzer
 
 Приложение для автоматического сбора данных с [mektep.edu.kz](https://mektep.edu.kz) и формирования отчётов (Excel/Word), с веб-платформой для школ и десктоп-клиентом для учителей.
 

@@ -1,44 +1,18 @@
 {% extends "layout.html" %}
-{% block head_extra %}
-<style>
-  .hero-card {
-    border: 0;
-    background: linear-gradient(135deg, #0d6efd 0%, #3f8cff 100%);
-    color: #fff;
-  }
-  .quick-step {
-    border: 1px solid #e9ecef;
-    border-radius: .75rem;
-    padding: .9rem 1rem;
-    background: #fff;
-    height: 100%;
-  }
-  .quick-step .step-number {
-    width: 1.75rem;
-    height: 1.75rem;
-    border-radius: 50%;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: #e7f1ff;
-    color: #0d6efd;
-    font-weight: 700;
-    margin-right: .5rem;
-  }
-</style>
-{% endblock %}
 {% block content %}
 {% set is_kk = get_locale() == 'kk' %}
 <div class="row">
   <div class="col-lg-8">
     <div class="card shadow-sm hero-card mb-4">
       <div class="card-body">
-        <h2 class="h4 mb-2">
-          <i class="bi bi-mortarboard-fill"></i>
-          {{ "Mektep Desktop мугалімдерге арналған" if is_kk else "Mektep Desktop для учителей" }}
-        </h2>
+        <div class="d-flex align-items-center gap-3 mb-2">
+          <img src="{{ url_for('static', filename='img/logo-256.png') }}" alt="Mektep Analyzer" width="56" height="56" class="rounded-3 bg-white p-1">
+          <h2 class="h4 mb-0">
+            {{ "Mektep Analyzer мұғалімдерге арналған" if is_kk else "Mektep Analyzer для учителей" }}
+          </h2>
+        </div>
         <p class="mb-3">
-          {{ "Басты әрекеттер бір экранда: жүктеу, жылдам бастау және әкімшілерге кіру. Мугалімдер тек десктоп қолданбасы арқылы жұмыс істейді." if is_kk else "Всё основное на одном экране: скачивание, быстрый старт и вход для администраторов. Учителя работают только через десктопное приложение." }}
+          {{ "Басты әрекеттер бір экранда: жүктеу, жылдам бастау және әкімшілерге кіру. Мұғалімдер тек десктоп қолданбасы арқылы жұмыс істейді." if is_kk else "Всё основное на одном экране: скачивание, быстрый старт и вход для администраторов. Учителя работают только через десктопное приложение." }}
         </p>
         <div class="row g-2 small">
           <div class="col-md-6">
@@ -102,11 +76,10 @@
   </div>
 
   <div class="col-lg-4">
-    <!-- Вход для админов и супер админов -->
     <div class="card shadow-sm mb-4">
       <div class="card-body">
         <h5 class="mb-3"><i class="bi bi-box-arrow-in-right"></i> {{ "Әкімшілерге кіру" if is_kk else "Вход для администраторов" }}</h5>
-        <p class="text-muted small">{{ "Тек мектеп әкімшілері мен супер-әкімшілер үшін. Мугалімдер десктоп қолданбасы арқылы кіреді." if is_kk else "Только для админов школ и супер-админов. Учителя входят через десктопное приложение." }}</p>
+        <p class="text-muted small">{{ "Тек мектеп әкімшілері мен супер-әкімшілер үшін. Мұғалімдер десктоп қолданбасы арқылы кіреді." if is_kk else "Только для админов школ и супер-админов. Учителя входят через десктопное приложение." }}</p>
         <form method="post" action="{{ url_for('auth.login_post') }}">
           <div class="mb-3">
             <label class="form-label">{{ "Логин" if is_kk else "Логин" }}</label>
@@ -121,10 +94,9 @@
       </div>
     </div>
 
-    <!-- Скачивание десктопной версии -->
     <div class="card shadow-sm">
       <div class="card-body">
-        <h5 class="mb-3"><i class="bi bi-download"></i> {{ "Mektep Desktop жүктеу" if is_kk else "Скачать Mektep Desktop" }}</h5>
+        <h5 class="mb-3"><i class="bi bi-download"></i> {{ "Mektep Analyzer жүктеу" if is_kk else "Скачать Mektep Analyzer" }}</h5>
         {% if download_url %}
           <a href="{{ download_url }}" class="btn btn-success w-100 mb-2" rel="noopener noreferrer">
             <i class="bi bi-download"></i> {{ "Қолданбаны жүктеу" if is_kk else "Скачать приложение" }}

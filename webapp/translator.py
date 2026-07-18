@@ -54,6 +54,7 @@ TRANSLATIONS = {
 
         # Admin Dashboard
         'admin_panel': 'Панель управления',
+        'app_brand': 'Mektep Analyzer',
         'grades_overview': 'Обзор оценок',
         'grades_overview_desc': 'Сводные таблицы по классам',
         'analytics_sor_soch': 'Аналитика СОР/СОЧ',
@@ -62,6 +63,13 @@ TRANSLATIONS = {
         'student_categories': 'Категории учеников',
         'management': 'Управление',
         'management_desc': 'Учителя, классы, предметы',
+        'metrics_charts_title': 'Диаграммы по классам',
+        'metrics_charts_desc': 'Качество и успеваемость',
+        'quick_actions_title': 'Быстрые действия',
+        'quick_actions_hint': 'Частые операции администратора школы',
+        'sections_title': 'Разделы',
+        'sections_hint': 'Аналитика, отчёты и управление школой',
+        'class_parallel_label': 'Параллель классов',
         'criteria_assessment': 'Критериальное оценивание',
         'criteria_assessment_desc': 'Детализация ФО, СОР, СОЧ и итоговых оценок по предметам',
         'criteria_download_excel_all': 'Скачать Excel (все классы)',
@@ -467,6 +475,7 @@ TRANSLATIONS = {
 
         # Admin Dashboard
         'admin_panel': 'Басқару панелі',
+        'app_brand': 'Mektep Analyzer',
         'grades_overview': 'Бағаларға шолу',
         'grades_overview_desc': 'Сыныптар бойынша жиынтық кестелер',
         'analytics_sor_soch': 'БЖБ/ТЖБ аналитикасы',
@@ -475,6 +484,13 @@ TRANSLATIONS = {
         'student_categories': 'Оқушылар санаттары',
         'management': 'Басқару',
         'management_desc': 'Мұғалімдер, сыныптар, пәндер',
+        'metrics_charts_title': 'Сыныптар бойынша диаграммалар',
+        'metrics_charts_desc': 'Сапа және оқу сәттілігі',
+        'quick_actions_title': 'Жылдам әрекеттер',
+        'quick_actions_hint': 'Мектеп әкімшісінің жиі операциялары',
+        'sections_title': 'Бөлімдер',
+        'sections_hint': 'Аналитика, есептер және мектепті басқару',
+        'class_parallel_label': 'Сынып параллелі',
         'criteria_assessment': 'Критериалды бағалау',
         'criteria_assessment_desc': 'Пәндер бойынша ФО, ББЖ, ТЖБ және қорытынды бағалар',
         'criteria_download_excel_all': 'Excel жүктеу (барлық сынып)',

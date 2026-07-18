@@ -1,0 +1,16 @@
+<div class="admin-page-header d-flex flex-wrap justify-content-between align-items-start gap-3">
+  <div>
+    <h1>
+      {% if icon %}<i class="bi {{ icon }}" aria-hidden="true"></i>{% endif %}
+      <span>{{ title }}</span>
+    </h1>
+    {% if subtitle %}
+    <p class="text-muted small mb-0 mt-1">{{ subtitle }}</p>
+    {% endif %}
+  </div>
+  {% if show_back|default(true) %}
+  <a href="{{ back_url or url_for('admin.dashboard') }}" class="btn btn-outline-secondary align-self-center">
+    <i class="bi bi-arrow-left"></i> {{ back_label or _('admin_panel') }}
+  </a>
+  {% endif %}
+</div>

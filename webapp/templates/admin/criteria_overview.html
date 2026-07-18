@@ -1,5 +1,5 @@
-{% extends "layout.html" %}
-{% block head_extra %}
+{% extends "admin/layout_admin.html" %}
+{% block admin_head_extra %}
 <style>
   .accordion-primary .accordion-button { font-weight: 600; }
   .accordion-primary .accordion-button.collapsed {
@@ -120,6 +120,6 @@
 </div>
 {% endblock %}
 
-{% block scripts %}
+{% block admin_scripts %}
 <script src="{{ url_for('static', filename='js/admin_async_export.js') }}"></script>
 {% endblock %}

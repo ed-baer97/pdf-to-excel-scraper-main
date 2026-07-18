@@ -20,7 +20,7 @@ class Translator(QObject):
         self.translations = {
             'ru': {
                 # Общие
-                'app_name': 'Mektep Desktop',
+                'app_name': 'Mektep Analyzer',
                 'yes': 'Да',
                 'no': 'Нет',
                 'ok': 'ОК',
@@ -38,8 +38,8 @@ class Translator(QObject):
                 'success': 'Успех',
                 
                 # Login Dialog
-                'login_title': 'Mektep Desktop - Вход',
-                'login_subtitle': 'Платформа для создания отчетов',
+                'login_title': 'Mektep Analyzer - Вход',
+                'login_subtitle': 'Аналитика и отчёты для школы',
                 'login_description': 'Войдите в систему, используя учетные данные веб-платформы',
                 'username': 'Логин',
                 'password': 'Пароль',
@@ -55,13 +55,13 @@ class Translator(QObject):
                 'update_required': 'Требуется обновление',
                 'update_required_title': 'Обновите приложение',
                 'update_required_msg': (
-                    'Ваша версия Mektep Desktop устарела.\n\n'
+                    'Ваша версия Mektep Analyzer устарела.\n\n'
                     'Минимальная версия: {}\n\n'
                     'Пожалуйста, скачайте и установите новую версию приложения.'
                 ),
                 
                 # Main Window
-                'main_window_title': 'Mektep Desktop - {}',
+                'main_window_title': 'Mektep Analyzer - {}',
                 'user': 'Пользователь',
                 'settings': 'Настройки',
                 'history': 'История',
@@ -193,7 +193,7 @@ class Translator(QObject):
             },
             'kk': {
                 # Общие
-                'app_name': 'Mektep Desktop',
+                'app_name': 'Mektep Analyzer',
                 'yes': 'Иә',
                 'no': 'Жоқ',
                 'ok': 'Жарайды',
@@ -211,8 +211,8 @@ class Translator(QObject):
                 'success': 'Сәтті',
                 
                 # Login Dialog
-                'login_title': 'Mektep Desktop - Кіру',
-                'login_subtitle': 'Есептер жасау платформасы',
+                'login_title': 'Mektep Analyzer - Кіру',
+                'login_subtitle': 'Мектепке арналған аналитика және есептер',
                 'login_description': 'Веб-платформа тіркелгі деректерін пайдаланып жүйеге кіріңіз',
                 'username': 'Логин',
                 'password': 'Құпия сөз',
@@ -228,13 +228,13 @@ class Translator(QObject):
                 'update_required': 'Жаңарту қажет',
                 'update_required_title': 'Қолданбаны жаңартыңыз',
                 'update_required_msg': (
-                    'Mektep Desktop нұсқасы ескірген.\n\n'
+                    'Mektep Analyzer нұсқасы ескірген.\n\n'
                     'Ең төменгі нұсқа: {}\n\n'
                     'Жаңа нұсқаны жүктеп, орнатыңыз.'
                 ),
                 
                 # Main Window
-                'main_window_title': 'Mektep Desktop - {}',
+                'main_window_title': 'Mektep Analyzer - {}',
                 'user': 'Пайдаланушы',
                 'settings': 'Баптаулар',
                 'history': 'Тарих',

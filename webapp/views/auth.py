@@ -23,7 +23,7 @@ def login_post():
 
     # Учителя входят только через десктопное приложение
     if u.role == "teacher":
-        flash("Учителя входят только через десктопное приложение. Скачайте Mektep Desktop и войдите там.", "warning")
+        flash("Учителя входят только через десктопное приложение. Скачайте Mektep Analyzer и войдите там.", "warning")
         return redirect(url_for("main.index"))
 
     # School access toggle (superadmin can open/close school).

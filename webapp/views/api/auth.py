@@ -62,7 +62,7 @@ def api_login():
         return jsonify({
             "error": (
                 f"Версия приложения устарела (у вас: {desktop_ver_str or 'не указана'}, "
-                f"требуется: {min_ver_str}). Пожалуйста, обновите Mektep Desktop."
+                f"требуется: {min_ver_str}). Пожалуйста, обновите Mektep Analyzer."
             ),
             "update_required": True,
             "min_version": min_ver_str,

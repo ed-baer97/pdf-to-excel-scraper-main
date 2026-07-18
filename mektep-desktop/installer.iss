@@ -1,13 +1,14 @@
-; Inno Setup script for Mektep Desktop
+; Inno Setup script for Mektep Analyzer
+; Visible product name is Mektep Analyzer; install path/exe stay "Mektep Desktop" for upgrades.
 ; Version is passed at build time: ISCC /DAppVersion=1.2.2 installer.iss
 
 #ifndef AppVersion
   #define AppVersion "1.2.1"
 #endif
 
-#define AppName "Mektep Desktop"
+#define AppName "Mektep Analyzer"
 #define AppExe "Mektep Desktop.exe"
-#define AppPublisher "Mektep"
+#define AppPublisher "Mektep Analyzer"
 
 [Setup]
 ; AppId must stay the same across all releases for in-place upgrades

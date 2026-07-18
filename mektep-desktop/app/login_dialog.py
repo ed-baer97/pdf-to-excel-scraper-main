@@ -69,7 +69,7 @@ class LoginDialog(QDialog):
     def init_ui(self):
         """Инициализация интерфейса"""
         self.setWindowTitle(self.translator.tr('login_title'))
-        self.setFixedSize(480, 600)
+        self.setFixedSize(480, 660)
         self.setModal(True)
         
         # Устанавливаем иконку окна
@@ -116,12 +116,29 @@ class LoginDialog(QDialog):
         self.update_language_buttons()
         
         # Логотип / Заголовок
-        title_label = QLabel(self.translator.tr('app_name'))
-        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title_font = QFont("Segoe UI", 24, QFont.Weight.Bold)
-        title_label.setFont(title_font)
-        title_label.setStyleSheet("color: #0d6efd; margin-bottom: 10px;")
-        layout.addWidget(title_label)
+        logo_path = self._get_logo_path()
+        if logo_path.exists():
+            from PyQt6.QtGui import QPixmap
+            logo_label = QLabel()
+            pixmap = QPixmap(str(logo_path))
+            logo_label.setPixmap(
+                pixmap.scaled(
+                    88,
+                    88,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
+            logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            logo_label.setStyleSheet("background: transparent; margin-bottom: 4px;")
+            layout.addWidget(logo_label)
+
+        self.title_label = QLabel(self.translator.tr('app_name'))
+        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_font = QFont("Segoe UI", 22, QFont.Weight.Bold)
+        self.title_label.setFont(title_font)
+        self.title_label.setStyleSheet("color: #0873ce; margin-bottom: 6px;")
+        layout.addWidget(self.title_label)
         
         self.subtitle_label = QLabel(self.translator.tr('login_subtitle'))
         self.subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -254,7 +271,7 @@ class LoginDialog(QDialog):
             }
             
             QLineEdit:focus {
-                border: 2px solid #0d6efd;
+                border: 2px solid #0873ce;
                 background-color: white;
                 outline: none;
             }
@@ -264,7 +281,7 @@ class LoginDialog(QDialog):
             }
             
             QPushButton#loginBtn, QPushButton {
-                background-color: #0d6efd;
+                background-color: #0873ce;
                 color: white;
                 border: none;
                 border-radius: 6px;
@@ -299,12 +316,12 @@ class LoginDialog(QDialog):
             }
             
             QCheckBox::indicator:hover {
-                border-color: #0d6efd;
+                border-color: #0873ce;
             }
             
             QCheckBox::indicator:checked {
-                background-color: #0d6efd;
-                border-color: #0d6efd;
+                background-color: #0873ce;
+                border-color: #0873ce;
             }
             
             QCheckBox::indicator:checked:hover {
@@ -348,7 +365,7 @@ class LoginDialog(QDialog):
         # Показываем статус
         auto_msg = "Автоматический вход..." if self.translator.get_language() == 'ru' else "Автоматты кіру..."
         self.status_label.setText(f"🔄 {auto_msg}")
-        self.status_label.setStyleSheet("color: #0d6efd; font-size: 12px;")
+        self.status_label.setStyleSheet("color: #0873ce; font-size: 12px;")
         self.login_btn.setEnabled(False)
         
         # Запускаем восстановление токена в потоке
@@ -409,7 +426,7 @@ class LoginDialog(QDialog):
         self.login_btn.setEnabled(False)
         self.login_btn.setText(self.translator.tr('logging_in'))
         self.status_label.setText(f"🔄 {self.translator.tr('logging_in')}")
-        self.status_label.setStyleSheet("color: #0d6efd; font-size: 12px;")
+        self.status_label.setStyleSheet("color: #0873ce; font-size: 12px;")
         
         # Небольшая задержка для UI
         QTimer.singleShot(100, lambda: self.perform_login(username, password))
@@ -499,6 +516,17 @@ class LoginDialog(QDialog):
         else:
             base = Path(__file__).resolve().parent.parent
         return base / "resources" / "icons" / "app_icon.ico"
+
+    @staticmethod
+    def _get_logo_path() -> 'Path':
+        """Путь к PNG-логотипу приложения"""
+        import sys
+        from pathlib import Path
+        if getattr(sys, 'frozen', False):
+            base = Path(sys._MEIPASS)
+        else:
+            base = Path(__file__).resolve().parent.parent
+        return base / "resources" / "img" / "logo_edus_logo_white.png"
     
     def is_authenticated(self) -> bool:
         """Проверка успешной авторизации"""
@@ -515,6 +543,8 @@ class LoginDialog(QDialog):
         
         # Обновляем интерфейс
         self.setWindowTitle(self.translator.tr('login_title'))
+        if hasattr(self, 'title_label'):
+            self.title_label.setText(self.translator.tr('app_name'))
         self.subtitle_label.setText(self.translator.tr('login_subtitle'))
 
         # region agent log
@@ -562,7 +592,7 @@ class LoginDialog(QDialog):
         # Стиль для активной кнопки
         active_style = """
             QPushButton {
-                background-color: #0d6efd;
+                background-color: #0873ce;
                 color: white;
                 border: none;
                 border-radius: 4px;
@@ -580,8 +610,8 @@ class LoginDialog(QDialog):
         inactive_style = """
             QPushButton {
                 background-color: white;
-                color: #0d6efd;
-                border: 2px solid #0d6efd;
+                color: #0873ce;
+                border: 2px solid #0873ce;
                 border-radius: 4px;
                 font-weight: bold;
                 font-size: 12px;
