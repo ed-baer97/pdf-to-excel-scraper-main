@@ -29,6 +29,7 @@ from ..services.grade_reports.excel import (
     build_class_teacher_workbook,
     build_grades_class_workbook,
 )
+from ..services.grade_reports.excel.summary_vedomost import export_class_summary_vedomost
 from ..services.grade_reports.payload import report_grades_payload
 from ..services.grade_reports.periods import parse_ui_period_number, ui_period_display_name
 from ..services.academic_year import resolve_academic_year
@@ -224,6 +225,14 @@ def execute_export_job(job_id: int) -> None:
                 subjects_list,
                 students_list,
                 subject_stats,
+            )
+
+        elif kind == "summary_vedomost":
+            class_name = params.get("class_name") or ""
+            output, filename = export_class_summary_vedomost(
+                school_id,
+                class_name,
+                academic_year,
             )
 
         elif kind == "class_teacher":

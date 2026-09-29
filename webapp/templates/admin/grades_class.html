@@ -190,6 +190,13 @@
     <a href="{{ url_for('admin.grades_overview', period_number=period_number) }}" class="btn btn-outline-secondary btn-sm">
       <i class="bi bi-arrow-left"></i> {{ _('grades_overview') }}
     </a>
+    <a href="{{ url_for('admin.download_summary_vedomost', class_name=class_name) }}"
+       class="btn btn-outline-success btn-sm"
+       data-async-export="summary_vedomost"
+       data-export-params='{"class_name": {{ class_name|tojson }}}'
+       title="{{ _('summary_vedomost_hint') }}">
+      <i class="bi bi-file-earmark-spreadsheet"></i> {{ _('summary_vedomost_download') }}
+    </a>
     {% if students %}
     <a href="{{ url_for('admin.download_grades_class_excel', class_name=class_name, period_number=period_number) }}"
        class="btn btn-success btn-sm"

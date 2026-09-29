@@ -183,6 +183,8 @@ TRANSLATIONS = {
         # Class Teacher Report
         'class_teacher_full_report': 'Отчет классных руководителей',
         'download_excel': 'Скачать Excel',
+        'summary_vedomost_download': 'Сводная ведомость',
+        'summary_vedomost_hint': 'Ведомость успеваемости за учебный год',
         'on_5': 'на 5',
         'on_4': 'на 4',
         'with_one_4': 'С одной 4',
@@ -604,6 +606,8 @@ TRANSLATIONS = {
         # Class Teacher Report
         'class_teacher_full_report': 'Сынып жетекшілерінің есебі',
         'download_excel': 'Excel жүктеу',
+        'summary_vedomost_download': 'Жинақ тізімдемесі',
+        'summary_vedomost_hint': 'Оқу жылы бойынша жинақ тізімдемесі',
         'on_5': '5-ке',
         'on_4': '4-ке',
         'with_one_4': 'Бір 4-пен',

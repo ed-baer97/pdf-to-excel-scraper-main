@@ -58,12 +58,14 @@ from ...services.grade_reports.payload import (
 )
 from ...services.grade_reports.student_edits import delete_student_from_class_reports
 from ...services.grade_reports.class_teacher import build_class_teacher_categories_data
+from ...services.academic_year import resolve_academic_year
 from ...services.grade_reports.excel import (
     build_analytics_workbook,
     build_class_metrics_charts_workbook,
     build_class_teacher_workbook,
     build_grades_class_workbook,
 )
+from ...services.grade_reports.excel.summary_vedomost import export_class_summary_vedomost
 from ...services.criteria_grades import (
     build_criteria_period_zip,
     build_criteria_subject_summary,
@@ -834,6 +836,23 @@ def download_grades_class_excel(class_name: str):
     return send_file(
         output,
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
+@bp.get("/grades/class/<class_name>/download-vedomost")
+@admin_required
+def download_summary_vedomost(class_name: str):
+    """Сводная ведомость класса за учебный год по бланку жинақ тізімдемесі."""
+    output, filename = export_class_summary_vedomost(
+        current_user.school_id,
+        class_name,
+        resolve_academic_year(request.args.get("academic_year")),
+    )
+    return send_file(
+        output,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         as_attachment=True,
         download_name=filename,
     )

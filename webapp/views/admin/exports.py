@@ -65,6 +65,7 @@ def create_export():
         "analytics",
         "criteria_zip",
         "grades_class",
+        "summary_vedomost",
         "class_teacher",
         "metrics_charts",
         "final_report",
