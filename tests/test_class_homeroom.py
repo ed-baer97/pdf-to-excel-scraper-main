@@ -150,6 +150,87 @@ def test_explicit_assignment_overrides_promotion(app):
         assert class_teacher_user(school.id, "5Е", current - 1).id == teacher.id
 
 
+def _past_report(school_id: int, teacher_id: int, class_name: str, year: int) -> None:
+    db.session.add(
+        GradeReport(
+            teacher_id=teacher_id,
+            school_id=school_id,
+            class_name=class_name,
+            subject_name="Математика",
+            period_type="quarter",
+            period_number=1,
+            academic_year=year,
+            grades_json="{}",
+        )
+    )
+
+
+def test_teacher_already_assigned_to_next_grade_stays_there(app):
+    """5Д и 6Д уже указаны в программе — в 7Д этого человека не переносим."""
+    with app.app_context():
+        current = current_academic_year()
+        previous = current - 1
+        school, teacher = _school_with_teacher("Лицей ручного перевода")
+        db.session.add(Class(school_id=school.id, name="5Д", class_teacher_id=teacher.id))
+        db.session.add(Class(school_id=school.id, name="6Д", class_teacher_id=teacher.id))
+        _past_report(school.id, teacher.id, "5Д", previous)
+        _past_report(school.id, teacher.id, "6Д", previous)
+        db.session.commit()
+
+        prepare_class_teachers(school.id, current)
+
+        assert class_teacher_user(school.id, "5Д", previous).id == teacher.id
+        assert class_teacher_user(school.id, "6Д", current).id == teacher.id
+        assert class_teacher_user(school.id, "7Д", current) is None
+        assert [c.name for c in managed_classes(school.id, teacher.id, current)] == ["6Д"]
+
+
+def test_vacated_previous_class_is_not_promoted_twice(app):
+    """С 5Д классного сняли и поставили на 6Д — он остаётся на 6Д."""
+    with app.app_context():
+        current = current_academic_year()
+        previous = current - 1
+        school, teacher = _school_with_teacher("Лицей освобождённого класса")
+        db.session.add(Class(school_id=school.id, name="5Д"))
+        db.session.add(Class(school_id=school.id, name="6Д", class_teacher_id=teacher.id))
+        _past_report(school.id, teacher.id, "5Д", previous)
+        db.session.commit()
+
+        prepare_class_teachers(school.id, current)
+
+        assert class_teacher_user(school.id, "5Д", previous).id == teacher.id
+        assert class_teacher_user(school.id, "6Д", current).id == teacher.id
+        assert class_teacher_user(school.id, "7Д", current) is None
+
+
+def test_neighbouring_teachers_each_move_one_grade(app):
+    with app.app_context():
+        current = current_academic_year()
+        previous = current - 1
+        school, fifth = _school_with_teacher("Лицей двух параллелей")
+        sixth = User(
+            username=f"ct-sixth-{school.id}",
+            full_name="Классный Шестого",
+            role=Role.TEACHER.value,
+            school_id=school.id,
+            is_active=True,
+        )
+        sixth.set_password("secret123")
+        db.session.add(sixth)
+        db.session.flush()
+        db.session.add(Class(school_id=school.id, name="5Д", class_teacher_id=fifth.id))
+        db.session.add(Class(school_id=school.id, name="6Д", class_teacher_id=sixth.id))
+        _past_report(school.id, fifth.id, "5Д", previous)
+        _past_report(school.id, sixth.id, "6Д", previous)
+        db.session.commit()
+
+        prepare_class_teachers(school.id, current)
+
+        assert class_teacher_user(school.id, "6Д", current).id == fifth.id
+        assert class_teacher_user(school.id, "7Д", current).id == sixth.id
+        assert class_teacher_user(school.id, "8Д", current) is None
+
+
 def test_same_year_assignment_is_not_shifted_without_archive(app):
     with app.app_context():
         current = current_academic_year()

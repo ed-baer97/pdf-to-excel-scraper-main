@@ -62,7 +62,24 @@ class HomeroomIndex:
         previous = shift_class_name(class_name, -1)
         if previous is None:
             return None
-        return self.teacher_id(previous, year - 1, seen)
+        candidate = self.teacher_id(previous, year - 1, seen)
+        if candidate is None:
+            return None
+        # Уже стоит на параллели этого года — не переносить его ещё на класс выше.
+        placed = self.explicit_class_ids(candidate, year)
+        if placed:
+            current_cls = self.by_name.get(folded)
+            if current_cls is None or current_cls.id not in placed:
+                return None
+        return candidate
+
+    def explicit_class_ids(self, teacher_id: int, year: int) -> set[int]:
+        """Классы, куда учитель явно назначен в этом учебном году."""
+        return {
+            class_id
+            for (class_id, row_year), row_teacher in self.explicit.items()
+            if row_year == year and row_teacher == teacher_id
+        }
 
 
 def initial_snapshot_year(school_id: int) -> int:
@@ -86,8 +103,40 @@ def initial_snapshot_year(school_id: int) -> int:
     return current
 
 
+def _class_grade(name: str) -> int | None:
+    match = _CLASS_NAME_RE.match(str(name or "").strip())
+    return int(match.group(1)) if match else None
+
+
+def _archive_names(school_id: int, year: int) -> set[str]:
+    rows = (
+        db.session.query(GradeReport.class_name)
+        .filter(
+            GradeReport.school_id == school_id,
+            GradeReport.academic_year == year,
+        )
+        .distinct()
+        .all()
+    )
+    return {str(name).casefold() for (name,) in rows if name}
+
+
+def _remember_assignment(
+    pending: dict[tuple[int, int], int | None],
+    class_id: int,
+    year: int,
+    teacher_id: int | None,
+) -> None:
+    pending.setdefault((class_id, year), teacher_id)
+
+
 def ensure_legacy_anchors(school_id: int) -> None:
-    """Один раз зафиксировать текущие class_teacher_id как назначения года-снимка."""
+    """Зафиксировать уже введённых классных, не сдвигая их второй раз.
+
+    Если в программе учитель уже стоит и на 5Д, и на 6Д (или 5Д освободили,
+    а его поставили на 6Д), прошлый год остаётся 5Д, текущий — 6Д.
+    В 7Д он при этом не попадает.
+    """
     linked = (
         db.session.query(ClassTeacherYear.id)
         .join(Class, Class.id == ClassTeacherYear.class_id)
@@ -98,16 +147,76 @@ def ensure_legacy_anchors(school_id: int) -> None:
     if linked is not None:
         return
 
-    year = initial_snapshot_year(school_id)
+    current = current_academic_year()
+    snapshot = initial_snapshot_year(school_id)
     classes = Class.query.filter_by(school_id=school_id).all()
+    by_name = {cls.name.casefold(): cls for cls in classes}
+    pending: dict[tuple[int, int], int | None] = {}
+
+    if snapshot == current:
+        for cls in classes:
+            if cls.class_teacher_id:
+                _remember_assignment(pending, cls.id, current, cls.class_teacher_id)
+        _flush_assignments(pending)
+        return
+
+    archive_names = _archive_names(school_id, snapshot)
+    by_teacher: dict[int, list[Class]] = {}
     for cls in classes:
-        if not cls.class_teacher_id:
+        if cls.class_teacher_id:
+            by_teacher.setdefault(cls.class_teacher_id, []).append(cls)
+
+    for teacher_id, owned in by_teacher.items():
+        owned_names = {cls.name.casefold(): cls for cls in owned}
+        lowest = min(owned, key=lambda cls: (_class_grade(cls.name) or 999, cls.name.casefold()))
+        one_up_name = shift_class_name(lowest.name, 1)
+        one_up = owned_names.get(one_up_name.casefold()) if one_up_name else None
+        if one_up is not None:
+            # Уже переведён на следующую параллель: 5Д остаётся в архиве, 6Д — в этом году.
+            _remember_assignment(pending, lowest.id, snapshot, teacher_id)
+            _remember_assignment(pending, one_up.id, current, teacher_id)
+            for cls in owned:
+                if cls.id not in (lowest.id, one_up.id):
+                    _remember_assignment(pending, cls.id, snapshot, teacher_id)
             continue
+
+        if len(owned) == 1:
+            cls = owned[0]
+            lower_name = shift_class_name(cls.name, -1)
+            lower = by_name.get(lower_name.casefold()) if lower_name else None
+            # 5Д освободили и этого человека уже поставили на 6Д.
+            vacated = lower is not None and not lower.class_teacher_id
+            # Класс переименовали: в архиве есть 5Д, а строки «6Д» в прошлом году не было.
+            renamed = (
+                lower is None
+                and lower_name is not None
+                and lower_name.casefold() in archive_names
+                and cls.name.casefold() not in archive_names
+            )
+            if vacated or renamed:
+                if lower is None and lower_name is not None:
+                    lower = Class(school_id=school_id, name=lower_name)
+                    db.session.add(lower)
+                    db.session.flush()
+                    by_name[lower.name.casefold()] = lower
+                if lower is not None:
+                    _remember_assignment(pending, lower.id, snapshot, teacher_id)
+                    _remember_assignment(pending, cls.id, current, teacher_id)
+                    continue
+
+        for cls in owned:
+            _remember_assignment(pending, cls.id, snapshot, teacher_id)
+
+    _flush_assignments(pending)
+
+
+def _flush_assignments(pending: dict[tuple[int, int], int | None]) -> None:
+    for (class_id, year), teacher_id in pending.items():
         db.session.add(
             ClassTeacherYear(
-                class_id=cls.id,
+                class_id=class_id,
                 academic_year=year,
-                teacher_id=cls.class_teacher_id,
+                teacher_id=teacher_id,
             )
         )
     db.session.flush()
