@@ -1,9 +1,10 @@
 """Классный руководитель по учебным годам и автоперевод параллели.
 
-В архиве прошлого года руководитель остаётся у своего класса (5Е).
-В следующем учебном году тот же человек автоматически становится
-классным руководителем следующей параллели (6Е). 11 класс выпускной:
-дальше перевод не идёт.
+В архиве прошлого года руководитель остаётся у своего класса.
+В новом году он переходит на следующую параллель: 2Е→3Е, 5Е→6Е, 10Б→11Б.
+Исключения: с 4 и 11 классов руководитель дальше не переходит и на следующий
+год остаётся без класса. 1 и 5 классы автопереводом не заполняются —
+их назначают вручную. Архив при этом не меняется.
 """
 
 from __future__ import annotations
@@ -16,6 +17,10 @@ from ..models import Class, ClassTeacherYear, GradeReport, User
 from .academic_year import current_academic_year
 
 MAX_CLASS_GRADE = 11
+# С этих параллелей руководитель на следующий год не переходит.
+TERMINAL_GRADES = frozenset({4, 11})
+# Эти параллели не заполняются переводом с прошлого класса.
+MANUAL_ENTRY_GRADES = frozenset({1, 5})
 _CLASS_NAME_RE = re.compile(r"^(\d+)(.*)$", re.DOTALL)
 
 
@@ -60,7 +65,10 @@ class HomeroomIndex:
             return None
 
         previous = shift_class_name(class_name, -1)
-        if previous is None:
+        # 4→5 и 11→дальше не выводятся. 1 и 5 назначают вручную.
+        if previous is None or homeroom_next_class(previous) is None:
+            return None
+        if homeroom_next_class(previous).casefold() != folded:
             return None
         candidate = self.teacher_id(previous, year - 1, seen)
         if candidate is None:
@@ -106,6 +114,16 @@ def initial_snapshot_year(school_id: int) -> int:
 def _class_grade(name: str) -> int | None:
     match = _CLASS_NAME_RE.match(str(name or "").strip())
     return int(match.group(1)) if match else None
+
+
+def homeroom_next_class(name: str) -> str | None:
+    """Куда переходит классный. None для 4 и 11 и для входа в 1 и 5."""
+    if _class_grade(name) in TERMINAL_GRADES:
+        return None
+    nxt = shift_class_name(name, 1)
+    if nxt is None or _class_grade(nxt) in MANUAL_ENTRY_GRADES:
+        return None
+    return nxt
 
 
 def _archive_names(school_id: int, year: int) -> set[str]:
@@ -249,7 +267,7 @@ def ensure_promoted_classes(school_id: int, year: int, index: HomeroomIndex) -> 
     created = False
     known = set(index.by_name)
     for cls in list(index.by_name.values()):
-        nxt = shift_class_name(cls.name, 1)
+        nxt = homeroom_next_class(cls.name)
         if not nxt or nxt.casefold() in known:
             continue
         if not index.teacher_id(cls.name, year - 1):

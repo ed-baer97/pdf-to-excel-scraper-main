@@ -12,6 +12,7 @@ from webapp.services.academic_year import current_academic_year
 from webapp.services.class_homeroom import (
     assign_class_teacher,
     class_teacher_user,
+    homeroom_next_class,
     managed_classes,
     prepare_class_teachers,
     shift_class_name,
@@ -25,6 +26,12 @@ def test_shift_class_name_keeps_letter_and_stops_after_11():
     assert shift_class_name("11А", 1) is None
     assert shift_class_name("1А", -1) is None
     assert shift_class_name("класс", 1) is None
+    assert homeroom_next_class("3А") == "4А"
+    assert homeroom_next_class("4А") is None
+    assert homeroom_next_class("5Е") == "6Е"
+    assert homeroom_next_class("10Б") == "11Б"
+    assert homeroom_next_class("11А") is None
+    assert homeroom_next_class("1А") == "2А"
 
 
 @pytest.fixture
@@ -229,6 +236,107 @@ def test_neighbouring_teachers_each_move_one_grade(app):
         assert class_teacher_user(school.id, "6Д", current).id == fifth.id
         assert class_teacher_user(school.id, "7Д", current).id == sixth.id
         assert class_teacher_user(school.id, "8Д", current) is None
+
+
+def test_fourth_grade_teacher_does_not_move_to_fifth(app):
+    """Классный 4 класса в архиве остаётся на 4, в новом году класса нет. 5 назначают вручную."""
+    with app.app_context():
+        current = current_academic_year()
+        previous = current - 1
+        school, teacher = _school_with_teacher("Лицей четвёртых")
+        db.session.add(Class(school_id=school.id, name="4Е", class_teacher_id=teacher.id))
+        _past_report(school.id, teacher.id, "4Е", previous)
+        db.session.commit()
+
+        prepare_class_teachers(school.id, current)
+
+        assert class_teacher_user(school.id, "4Е", previous).id == teacher.id
+        assert class_teacher_user(school.id, "4Е", current) is None
+        assert class_teacher_user(school.id, "5Е", current) is None
+        assert class_teacher_user(school.id, "5Е", current + 1) is None
+        assert managed_classes(school.id, teacher.id, current) == []
+        assert [c.name for c in managed_classes(school.id, teacher.id, previous)] == ["4Е"]
+
+
+def test_third_grade_moves_to_fourth_and_stops(app):
+    with app.app_context():
+        current = current_academic_year()
+        previous = current - 1
+        school, teacher = _school_with_teacher("Лицей третьих")
+        db.session.add(Class(school_id=school.id, name="3Д", class_teacher_id=teacher.id))
+        _past_report(school.id, teacher.id, "3Д", previous)
+        db.session.commit()
+
+        prepare_class_teachers(school.id, current)
+
+        assert class_teacher_user(school.id, "3Д", previous).id == teacher.id
+        assert class_teacher_user(school.id, "4Д", current).id == teacher.id
+        assert class_teacher_user(school.id, "5Д", current) is None
+        assert class_teacher_user(school.id, "5Д", current + 1) is None
+        assert managed_classes(school.id, teacher.id, current + 1) == []
+
+
+def test_first_grade_moves_to_second_and_fifth_is_manual(app):
+    with app.app_context():
+        current = current_academic_year()
+        previous = current - 1
+        school, first = _school_with_teacher("Лицей первых")
+        fifth = User(
+            username=f"ct-fifth-{school.id}",
+            full_name="Классный Пятого",
+            role=Role.TEACHER.value,
+            school_id=school.id,
+            is_active=True,
+        )
+        fifth.set_password("secret123")
+        db.session.add(fifth)
+        db.session.flush()
+        db.session.add(Class(school_id=school.id, name="1А", class_teacher_id=first.id))
+        db.session.add(Class(school_id=school.id, name="5А", class_teacher_id=fifth.id))
+        _past_report(school.id, first.id, "1А", previous)
+        _past_report(school.id, fifth.id, "5А", previous)
+        db.session.commit()
+
+        prepare_class_teachers(school.id, current)
+
+        assert class_teacher_user(school.id, "1А", previous).id == first.id
+        assert class_teacher_user(school.id, "1А", current) is None
+        assert class_teacher_user(school.id, "2А", current).id == first.id
+        assert class_teacher_user(school.id, "5А", previous).id == fifth.id
+        assert class_teacher_user(school.id, "5А", current) is None
+        assert class_teacher_user(school.id, "6А", current).id == fifth.id
+
+
+def test_manual_fifth_grade_assignment_stays(app):
+    with app.app_context():
+        current = current_academic_year()
+        previous = current - 1
+        school, teacher = _school_with_teacher("Лицей ручной пятёрки")
+        other = User(
+            username=f"ct-manual-{school.id}",
+            full_name="Назначенный на 5",
+            role=Role.TEACHER.value,
+            school_id=school.id,
+            is_active=True,
+        )
+        other.set_password("secret123")
+        db.session.add(other)
+        db.session.flush()
+        fourth = Class(school_id=school.id, name="4Б", class_teacher_id=teacher.id)
+        fifth = Class(school_id=school.id, name="5Б")
+        db.session.add(fourth)
+        db.session.add(fifth)
+        _past_report(school.id, teacher.id, "4Б", previous)
+        db.session.commit()
+
+        prepare_class_teachers(school.id, current)
+        assign_class_teacher(fifth, other.id, current)
+        db.session.commit()
+
+        assert class_teacher_user(school.id, "4Б", previous).id == teacher.id
+        assert class_teacher_user(school.id, "5Б", current).id == other.id
+        assert managed_classes(school.id, teacher.id, current) == []
+        assert class_teacher_user(school.id, "6Б", current + 1).id == other.id
 
 
 def test_same_year_assignment_is_not_shifted_without_archive(app):
