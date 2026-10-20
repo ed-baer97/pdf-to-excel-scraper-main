@@ -244,9 +244,10 @@
                         {% for cls in classes_by_accordion['1-4'] %}
                         <tr>
                           <td><strong>{{ cls.name }}</strong></td>
-                          <td>{% if cls.class_teacher %}{{ cls.class_teacher.full_name or cls.class_teacher.username }}{% else %}<span class="text-muted">{{ _('not_assigned') }}</span>{% endif %}</td>
+                          {% set ct = class_teacher_by_id.get(cls.id) %}
+                          <td>{% if ct %}{{ ct.full_name or ct.username }}{% else %}<span class="text-muted">{{ _('not_assigned') }}</span>{% endif %}</td>
                           <td>
-                            <button class="btn btn-sm btn-outline-primary" onclick='editClassModal({{ cls.id }}, {{ cls.name|tojson }}, {{ cls.class_teacher_id or "null" }})'><i class="bi bi-pencil"></i></button>
+                            <button class="btn btn-sm btn-outline-primary" onclick='editClassModal({{ cls.id }}, {{ cls.name|tojson }}, {{ ct.id if ct else "null" }})'><i class="bi bi-pencil"></i></button>
                             <button type="button" class="btn btn-sm btn-outline-danger" onclick='confirmDeleteClass({{ cls.id }}, {{ cls.name|tojson }})'><i class="bi bi-trash"></i></button>
                           </td>
                         </tr>
@@ -272,9 +273,10 @@
                         {% for cls in classes_by_accordion['5-9'] %}
                         <tr>
                           <td><strong>{{ cls.name }}</strong></td>
-                          <td>{% if cls.class_teacher %}{{ cls.class_teacher.full_name or cls.class_teacher.username }}{% else %}<span class="text-muted">{{ _('not_assigned') }}</span>{% endif %}</td>
+                          {% set ct = class_teacher_by_id.get(cls.id) %}
+                          <td>{% if ct %}{{ ct.full_name or ct.username }}{% else %}<span class="text-muted">{{ _('not_assigned') }}</span>{% endif %}</td>
                           <td>
-                            <button class="btn btn-sm btn-outline-primary" onclick='editClassModal({{ cls.id }}, {{ cls.name|tojson }}, {{ cls.class_teacher_id or "null" }})'><i class="bi bi-pencil"></i></button>
+                            <button class="btn btn-sm btn-outline-primary" onclick='editClassModal({{ cls.id }}, {{ cls.name|tojson }}, {{ ct.id if ct else "null" }})'><i class="bi bi-pencil"></i></button>
                             <button type="button" class="btn btn-sm btn-outline-danger" onclick='confirmDeleteClass({{ cls.id }}, {{ cls.name|tojson }})'><i class="bi bi-trash"></i></button>
                           </td>
                         </tr>
@@ -300,9 +302,10 @@
                         {% for cls in classes_by_accordion['10-11'] %}
                         <tr>
                           <td><strong>{{ cls.name }}</strong></td>
-                          <td>{% if cls.class_teacher %}{{ cls.class_teacher.full_name or cls.class_teacher.username }}{% else %}<span class="text-muted">{{ _('not_assigned') }}</span>{% endif %}</td>
+                          {% set ct = class_teacher_by_id.get(cls.id) %}
+                          <td>{% if ct %}{{ ct.full_name or ct.username }}{% else %}<span class="text-muted">{{ _('not_assigned') }}</span>{% endif %}</td>
                           <td>
-                            <button class="btn btn-sm btn-outline-primary" onclick='editClassModal({{ cls.id }}, {{ cls.name|tojson }}, {{ cls.class_teacher_id or "null" }})'><i class="bi bi-pencil"></i></button>
+                            <button class="btn btn-sm btn-outline-primary" onclick='editClassModal({{ cls.id }}, {{ cls.name|tojson }}, {{ ct.id if ct else "null" }})'><i class="bi bi-pencil"></i></button>
                             <button type="button" class="btn btn-sm btn-outline-danger" onclick='confirmDeleteClass({{ cls.id }}, {{ cls.name|tojson }})'><i class="bi bi-trash"></i></button>
                           </td>
                         </tr>

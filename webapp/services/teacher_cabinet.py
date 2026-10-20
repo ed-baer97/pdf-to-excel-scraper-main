@@ -6,6 +6,7 @@ from ..constants import kazakh_sort_key, normalize_subject_name
 from ..extensions import db
 from ..models import Class, Subject, TeacherClass, TeacherSubject
 from .academic_year import resolve_academic_year
+from .class_homeroom import managed_classes
 from .api_helpers import get_period_reports_api
 from .class_grades_matrix import (
     build_class_grades_matrix,
@@ -45,10 +46,7 @@ def teacher_subjects_overview(user) -> dict:
                 "classes": classes_list,
             })
 
-    managed = Class.query.filter_by(
-        class_teacher_id=user.id,
-        school_id=user.school_id,
-    ).all()
+    managed = managed_classes(user.school_id, user.id, resolve_academic_year())
     return {
         "subjects": subjects_data,
         "managed_classes": [c.name for c in managed],
@@ -117,15 +115,12 @@ def class_teacher_report_payload(user, period_number: int, academic_year: int | 
     """Отчёт классрука: категоризация учеников. None — учитель не классрук."""
     academic_year = resolve_academic_year(academic_year)
 
-    managed_classes = Class.query.filter_by(
-        class_teacher_id=user.id,
-        school_id=user.school_id,
-    ).all()
-    if not managed_classes:
+    owned_classes = managed_classes(user.school_id, user.id, academic_year)
+    if not owned_classes:
         return None
 
     result_classes = []
-    for cls_obj in managed_classes:
+    for cls_obj in owned_classes:
         cls_name = cls_obj.name
         matrix = build_class_grades_matrix(
             user.school_id, cls_name, period_number, academic_year=academic_year

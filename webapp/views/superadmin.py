@@ -8,7 +8,9 @@ from ..extensions import db
 from ..models import Role, School, User, Class, GradeReport, ReportFile, TeacherSubject, TeacherClass, Subject
 from ..security import decrypt_password, encrypt_password
 from ..constants import kazakh_sort_key
+from ..services.academic_year import resolve_academic_year
 from ..services.auth_guards import superadmin_required
+from ..services.class_homeroom import class_teacher_map, prepare_class_teachers
 
 bp = Blueprint("superadmin", __name__, url_prefix="/superadmin")
 
@@ -253,6 +255,9 @@ def school_detail(school_id: int):
     teachers = User.query.filter_by(
         role=Role.TEACHER.value, school_id=school_id
     ).all()
+    year = resolve_academic_year()
+    index = prepare_class_teachers(school_id, year)
+    class_teacher_by_id = class_teacher_map(school_id, year, index)
     classes = Class.query.filter_by(school_id=school_id).all()
     admins.sort(key=lambda u: kazakh_sort_key(u.full_name or u.username))
     teachers.sort(key=lambda u: kazakh_sort_key(u.full_name or u.username))
@@ -272,6 +277,7 @@ def school_detail(school_id: int):
         admins=admins,
         teachers=teachers,
         classes=classes,
+        class_teacher_by_id=class_teacher_by_id,
         subjects=subjects,
     )
 

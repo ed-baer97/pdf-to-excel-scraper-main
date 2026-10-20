@@ -216,6 +216,30 @@ class Class(db.Model):
         return f"<Class {self.name}>"
 
 
+class ClassTeacherYear(db.Model):
+    """Классный руководитель класса в конкретном учебном году.
+
+    Пустой teacher_id — явное «без классного» на этот год (автоперевод не подставляется).
+    """
+
+    __tablename__ = "class_teacher_years"
+
+    id = db.Column(db.Integer, primary_key=True)
+    class_id = db.Column(db.Integer, db.ForeignKey("classes.id"), nullable=False, index=True)
+    academic_year = db.Column(db.SmallInteger, nullable=False, index=True)
+    teacher_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    __table_args__ = (
+        db.UniqueConstraint("class_id", "academic_year", name="uq_class_teacher_year"),
+    )
+
+    class_obj = db.relationship("Class", backref="teacher_years")
+    teacher = db.relationship("User", foreign_keys=[teacher_id])
+
+    def __repr__(self):
+        return f"<ClassTeacherYear class={self.class_id} year={self.academic_year} teacher={self.teacher_id}>"
+
+
 class SubjectNameAlias(db.Model):
     """Словарь: казахское/альтернативное название предмета → канон на русском (по школе)."""
 

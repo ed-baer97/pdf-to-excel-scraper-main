@@ -60,9 +60,17 @@ def student_class_summary_category(grades: dict) -> str | None:
     return "troishnik"
 
 
-def teacher_accordion_group(teacher, classes: list) -> str:
-    """Return bucket for class teacher accordion grouping."""
-    teacher_classes = [c for c in classes if c.class_teacher_id == teacher.id]
+def teacher_accordion_group(teacher, classes: list, teacher_by_class_id: dict | None = None) -> str:
+    """Return bucket for class teacher accordion grouping.
+
+    teacher_by_class_id: класс → id классного руководителя в выбранном учебном году.
+    """
+    if teacher_by_class_id is None:
+        teacher_classes = [c for c in classes if c.class_teacher_id == teacher.id]
+    else:
+        teacher_classes = [
+            c for c in classes if teacher_by_class_id.get(c.id) == teacher.id
+        ]
     if not teacher_classes:
         return "no_leadership"
     grades = [

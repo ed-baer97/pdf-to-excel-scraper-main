@@ -5,7 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 from ...constants import kazakh_sort_key
-from ...models import Class
+from ...models import Class, User
+from ..academic_year import resolve_academic_year
+from ..class_homeroom import prepare_class_teachers
 from .analytics import _segment_matches
 from .periods import parse_class_grade
 from .queries import get_period_reports
@@ -272,13 +274,28 @@ def build_class_teacher_categories_data(
     class_filter = (class_filter or "").strip().lower()
     class_teacher_filter = (class_teacher_filter or "").strip().lower()
     student_filter = (student_filter or "").strip().lower()
+    year = resolve_academic_year(academic_year)
+    index = prepare_class_teachers(school_id, year)
 
     all_reports = get_period_reports(
-        school_id, period_number, academic_year=academic_year
+        school_id, period_number, academic_year=year
     )
-    active_class_names = {
-        row.name
-        for row in Class.query.filter_by(school_id=school_id).with_entities(Class.name).all()
+    school_classes = Class.query.filter_by(school_id=school_id).all()
+    active_class_names = {row.name for row in school_classes}
+    teacher_id_by_name: dict[str, int] = {}
+    for cls in school_classes:
+        teacher_id = index.teacher_id(cls.name, year)
+        if teacher_id:
+            teacher_id_by_name[cls.name] = teacher_id
+            teacher_id_by_name[cls.name.casefold()] = teacher_id
+    teacher_users = (
+        User.query.filter(User.id.in_(set(teacher_id_by_name.values()))).all()
+        if teacher_id_by_name
+        else []
+    )
+    teacher_name_by_id = {
+        user.id: (user.full_name or user.username or "")
+        for user in teacher_users
     }
     all_reports = [r for r in all_reports if r.class_name in active_class_names]
 
@@ -305,12 +322,10 @@ def build_class_teacher_categories_data(
         if class_filter and cls_name.strip().lower() != class_filter:
             continue
 
-        cls_obj = Class.query.filter_by(school_id=school_id, name=cls_name).first()
-        class_teacher_name = ""
-        if cls_obj and cls_obj.class_teacher:
-            class_teacher_name = (
-                cls_obj.class_teacher.full_name or cls_obj.class_teacher.username
-            )
+        teacher_id = teacher_id_by_name.get(cls_name) or teacher_id_by_name.get(
+            cls_name.casefold()
+        )
+        class_teacher_name = teacher_name_by_id.get(teacher_id, "") if teacher_id else ""
 
         if (
             class_teacher_filter
@@ -322,7 +337,7 @@ def build_class_teacher_categories_data(
             school_id,
             cls_name,
             period_number,
-            academic_year=academic_year,
+            academic_year=year,
         )
         if matrix["empty"]:
             continue

@@ -168,9 +168,10 @@
                   {% for c in classes %}
                     <tr>
                       <td><strong>{{ c.name }}</strong></td>
+                      {% set ct = class_teacher_by_id.get(c.id) %}
                       <td>
-                        {% if c.class_teacher %}
-                          {{ c.class_teacher.full_name or c.class_teacher.username }}
+                        {% if ct %}
+                          {{ ct.full_name or ct.username }}
                         {% else %}
                           <span class="text-muted">—</span>
                         {% endif %}

@@ -439,18 +439,18 @@ def export_class_summary_vedomost(
 ) -> tuple[BytesIO, str]:
     """Ведомость класса из GradeReport за учебный год."""
     from ....extensions import db
-    from ....models import Class, GradeReport, School
+    from ....models import GradeReport, School
     from ...academic_year import resolve_academic_year
 
     year = resolve_academic_year(academic_year)
     school = db.session.get(School, school_id)
     school_name = school.name if school else ""
-    school_class = Class.query.filter_by(school_id=school_id, name=class_name).first()
+    from ...class_homeroom import class_teacher_user
+
+    teacher_user = class_teacher_user(school_id, class_name, year)
     teacher = ""
-    if school_class is not None and school_class.class_teacher is not None:
-        teacher = (
-            school_class.class_teacher.full_name or school_class.class_teacher.username or ""
-        ).strip()
+    if teacher_user is not None:
+        teacher = (teacher_user.full_name or teacher_user.username or "").strip()
     reports = GradeReport.query.filter_by(
         school_id=school_id,
         class_name=class_name,

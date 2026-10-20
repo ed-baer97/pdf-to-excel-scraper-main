@@ -34,6 +34,13 @@ from ...models import (
     SubjectNameAlias,
     TeacherSchool,
 )
+from ...services.academic_year import resolve_academic_year
+from ...services.class_homeroom import (
+    assign_class_teacher,
+    class_teacher_map,
+    clear_homeroom_teacher,
+    prepare_class_teachers,
+)
 from ...services.teacher_schools import (
     ensure_membership,
     find_teacher_by_iin,
@@ -123,6 +130,12 @@ def _redirect_back(fallback_url: str):
 
 def _management_list_context(school_id: int) -> dict:
     """Teachers/classes lists and accordion buckets for the management page."""
+    year = resolve_academic_year()
+    index = prepare_class_teachers(school_id, year)
+    class_teacher_by_id = class_teacher_map(school_id, year, index)
+    teacher_by_class_id = {
+        class_id: user.id for class_id, user in class_teacher_by_id.items()
+    }
     teachers = teachers_for_school(school_id)
     classes = Class.query.filter_by(school_id=school_id).all()
     teachers.sort(key=lambda t: kazakh_sort_key(t.full_name or t.username))
@@ -134,7 +147,7 @@ def _management_list_context(school_id: int) -> dict:
         "no_leadership": [],
     }
     for t in teachers:
-        group = teacher_accordion_group(t, classes)
+        group = teacher_accordion_group(t, classes, teacher_by_class_id)
         teachers_by_accordion[group].append(t)
     classes_by_accordion = {
         "1-4": [],
@@ -155,6 +168,7 @@ def _management_list_context(school_id: int) -> dict:
         "classes": classes,
         "teachers_by_accordion": teachers_by_accordion,
         "classes_by_accordion": classes_by_accordion,
+        "class_teacher_by_id": class_teacher_by_id,
         "subject_aliases": subject_aliases,
     }
 
@@ -680,7 +694,7 @@ def delete_teacher(user_id: int):
     for ts in teacher_subjects:
         TeacherClass.query.filter_by(teacher_subject_id=ts.id).delete()
     TeacherSubject.query.filter_by(teacher_id=u.id).delete()
-    Class.query.filter_by(class_teacher_id=u.id).update({"class_teacher_id": None})
+    clear_homeroom_teacher(u.id, current_user.school_id)
     TeacherSchool.query.filter_by(teacher_id=u.id).delete()
     db.session.delete(u)
     db.session.commit()
@@ -707,9 +721,10 @@ def create_class():
         flash(f'Класс "{name}" уже существует.', "danger")
         return _redirect_back(url_for("admin.management") + "#classes-tab")
     cls = Class(name=name, school_id=current_user.school_id)
-    if class_teacher_id:
-        cls.class_teacher_id = int(class_teacher_id)
     db.session.add(cls)
+    db.session.flush()
+    if class_teacher_id:
+        assign_class_teacher(cls, int(class_teacher_id), resolve_academic_year())
     db.session.commit()
     flash(f'Класс "{name}" создан.', "success")
     return _redirect_back(url_for("admin.management") + "#classes-tab")
@@ -732,7 +747,11 @@ def edit_class(class_id: int):
             return _redirect_back(url_for("admin.management") + "#classes-tab")
         cls.name = name
     class_teacher_id = request.form.get("class_teacher_id")
-    cls.class_teacher_id = int(class_teacher_id) if class_teacher_id else None
+    assign_class_teacher(
+        cls,
+        int(class_teacher_id) if class_teacher_id else None,
+        resolve_academic_year(),
+    )
     db.session.commit()
     flash(f'Класс "{cls.name}" обновлён.', "success")
     return _redirect_back(url_for("admin.management") + "#classes-tab")

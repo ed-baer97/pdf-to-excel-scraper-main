@@ -188,7 +188,6 @@ def backfill_memberships_from_users() -> int:
 def remove_teacher_from_school(teacher_id: int, school_id: int) -> None:
     """Удаляет учителя из школы: членство и данные, привязанные к этой школе."""
     from ..models import (
-        Class,
         GradeReport,
         ReportFile,
         TeacherClass,
@@ -213,10 +212,9 @@ def remove_teacher_from_school(teacher_id: int, school_id: int) -> None:
         TeacherSubject.subject_id.in_(school_subject_ids),
     ).delete(synchronize_session=False)
 
-    Class.query.filter_by(
-        school_id=school_id,
-        class_teacher_id=teacher_id,
-    ).update({"class_teacher_id": None})
+    from .class_homeroom import clear_homeroom_teacher
+
+    clear_homeroom_teacher(teacher_id, school_id)
 
     GradeReport.query.filter_by(teacher_id=teacher_id, school_id=school_id).delete()
     ReportFile.query.filter_by(teacher_id=teacher_id, school_id=school_id).delete()
