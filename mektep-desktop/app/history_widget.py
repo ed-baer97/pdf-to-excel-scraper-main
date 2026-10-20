@@ -14,6 +14,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QSettings
 
+from .academic_year import academic_year_choices, format_academic_year
+from .period_ui import remember_academic_year, saved_academic_year
 from .reports_manager import ReportsManager
 from .translator import get_translator
 
@@ -64,6 +66,29 @@ class HistoryWidget(QWidget):
         # Фильтры
         filter_layout = QHBoxLayout()
         
+        year_label = "Год:" if self.translator.get_language() == 'ru' else "Жыл:"
+        filter_layout.addWidget(QLabel(year_label))
+        self.year_filter = QComboBox()
+        all_text = "Все" if self.translator.get_language() == 'ru' else "Барлығы"
+        self.year_filter.addItem(all_text, None)
+        known_years = []
+        try:
+            for report in self.reports_manager.get_reports():
+                if report.get("academic_year"):
+                    known_years.append(int(report["academic_year"]))
+        except Exception:
+            known_years = []
+        for year in academic_year_choices(known_years):
+            self.year_filter.addItem(format_academic_year(year), year)
+        saved = saved_academic_year()
+        saved_index = self.year_filter.findData(saved)
+        if saved_index >= 0:
+            self.year_filter.setCurrentIndex(saved_index)
+        self.year_filter.currentIndexChanged.connect(self._on_year_filter_changed)
+        filter_layout.addWidget(self.year_filter)
+
+        filter_layout.addSpacing(20)
+
         # Фильтр по периоду
         quarter_label = "Четверть:" if self.translator.get_language() == 'ru' else "Тоқсан:"
         filter_layout.addWidget(QLabel(quarter_label))
@@ -249,6 +274,12 @@ class HistoryWidget(QWidget):
         self.stats_label = QLabel()
         layout.addWidget(self.stats_label)
     
+    def _on_year_filter_changed(self, _idx):
+        year = self.year_filter.currentData()
+        if year is not None:
+            remember_academic_year(int(year))
+        self.apply_filters()
+
     def refresh(self):
         """Обновить список отчетов"""
         self.apply_filters()
@@ -258,6 +289,10 @@ class HistoryWidget(QWidget):
         """Применить фильтры к списку"""
         filters = {}
         
+        year = self.year_filter.currentData()
+        if year is not None:
+            filters["academic_year"] = int(year)
+
         # Фильтр по периоду
         period_code = self.period_filter.currentData()
         if period_code:

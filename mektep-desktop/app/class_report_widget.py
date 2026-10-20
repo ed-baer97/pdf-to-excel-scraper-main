@@ -20,7 +20,12 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFont
 
 from .loading_overlay import LoadingOverlay, ApiWorker
-from .period_ui import period_combo_items_grades_view
+from .period_ui import (
+    combo_academic_year,
+    period_combo_items_grades_view,
+    populate_academic_year_combo,
+    remember_academic_year,
+)
 from .sort_utils import kazakh_sort_key
 from .translator import get_translator
 
@@ -55,6 +60,13 @@ class ClassReportWidget(QWidget):
 
         # --- Фильтры ---
         filter_bar = QHBoxLayout()
+        filter_bar.addWidget(QLabel(self.tr.tr('academic_year_label')))
+        self.year_combo = QComboBox()
+        populate_academic_year_combo(self.year_combo)
+        self.year_combo.currentIndexChanged.connect(self._on_year_changed)
+        filter_bar.addWidget(self.year_combo)
+
+        filter_bar.addSpacing(15)
         filter_bar.addWidget(QLabel(self.tr.tr('period')))
         self.period_combo = QComboBox()
         for label, *_ in period_combo_items_grades_view(self.tr):
@@ -120,6 +132,10 @@ class ClassReportWidget(QWidget):
         super().resizeEvent(event)
         self.loading_overlay.setGeometry(self.rect())
 
+    def _on_year_changed(self, _idx):
+        remember_academic_year(combo_academic_year(self.year_combo))
+        self.load_data()
+
     # ------------------------------------------------------------------
     def load_data(self):
         if not self.api_client or not self.api_client.is_authenticated():
@@ -134,7 +150,8 @@ class ClassReportWidget(QWidget):
 
         self._worker = ApiWorker(
             self.api_client.get_class_teacher_report,
-            period_number=period_number
+            period_number=period_number,
+            academic_year=combo_academic_year(self.year_combo),
         )
         self._worker.finished.connect(self._on_data_loaded)
         self._worker.start()

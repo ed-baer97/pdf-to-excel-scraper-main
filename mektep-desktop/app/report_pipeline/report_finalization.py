@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
+from ..academic_year import current_academic_year, reports_period_dir
 from ..debug_log import dbg_log
 from .period_map import PERIOD_MAP
 from .report_utils import (
@@ -36,6 +37,7 @@ class ReportFinalizer:
         output_dir: Path,
         temp_dir: Path,
         api_client: Optional["MektepAPIClient"],
+        academic_year: int | None = None,
     ):
         """Сохраняет параметры периода, языка, путей и API-клиента для последующей финализации."""
         self.period_code = period_code
@@ -43,9 +45,15 @@ class ReportFinalizer:
         self.output_dir = Path(output_dir)
         self.temp_dir = Path(temp_dir)
         self.api_client = api_client
+        self.academic_year = int(academic_year or current_academic_year())
         self._scraped_org_name: Optional[str] = None
         self._org_upload_allowed = True
         self._server_school_name: Optional[str] = None
+
+    def _upload_report(self, **kwargs):
+        """Загрузка на сервер с учебным годом этой финализации."""
+        kwargs.setdefault("academic_year", self.academic_year)
+        return self.api_client.upload_report(**kwargs)
 
     def finalize_reports(self) -> List[Dict[str, Any]]:
         """
@@ -75,7 +83,9 @@ class ReportFinalizer:
         else:
             safe_teacher_name = "Неизвестный учитель"
 
-        final_reports_dir = self.output_dir / safe_teacher_name / period_name
+        final_reports_dir = reports_period_dir(
+            self.output_dir, safe_teacher_name, period_name, self.academic_year
+        )
         final_reports_dir.mkdir(parents=True, exist_ok=True)
 
         self._scraped_org_name = None
@@ -226,6 +236,7 @@ class ReportFinalizer:
             "class_name": class_name,
             "subject": subject_name,
             "period_code": self.period_code,
+            "academic_year": self.academic_year,
             "lang": self.lang,
             "org_name": self._scraped_org_name,
             "excel_path": str(final_excel.absolute()) if final_excel else None,
@@ -310,7 +321,7 @@ class ReportFinalizer:
                     report_data["upload_skip_reason"] = "no_grade_table"
                     return report_data
 
-                upload_result = self.api_client.upload_report(
+                upload_result = self._upload_report(
                     class_name=class_name,
                     subject_name=subject_name,
                     period_type=period_type,
@@ -336,7 +347,7 @@ class ReportFinalizer:
                 if upload_result.get("needs_auth"):
                     refresh_result = self.api_client.refresh_token()
                     if refresh_result.get("success"):
-                        upload_result = self.api_client.upload_report(
+                        upload_result = self._upload_report(
                             class_name=class_name,
                             subject_name=subject_name,
                             period_type=period_type,
@@ -443,6 +454,7 @@ class ReportFinalizer:
                     "class_name": class_name,
                     "subject": subject,
                     "period_code": self.period_code,
+            "academic_year": self.academic_year,
                     "lang": self.lang,
                     "excel_path": str(final_excel.absolute()) if final_excel else None,
                     "word_path": str(final_word.absolute()) if final_word else None,
@@ -480,6 +492,7 @@ class ReportFinalizer:
             "class_name": class_name,
             "subject": subject_name,
             "period_code": self.period_code,
+            "academic_year": self.academic_year,
             "lang": self.lang,
             "org_name": self._scraped_org_name,
             "excel_path": None,
@@ -517,7 +530,7 @@ class ReportFinalizer:
                 report_data["upload_skip_reason"] = "period_skip"
                 return report_data
 
-            upload_result = self.api_client.upload_report(
+            upload_result = self._upload_report(
                 class_name=class_name,
                 subject_name=subject_name,
                 period_type=period_type,

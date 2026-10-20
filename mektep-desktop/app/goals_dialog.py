@@ -341,12 +341,15 @@ class GoalsDialog(QDialog):
         for q_list in self.quarter_lists.values():
             q_list.clear()
         
-        reports = self.reports_manager.get_reports()
+        from .period_ui import saved_academic_year
+
+        year_filter = {"academic_year": saved_academic_year()}
+        reports = self.reports_manager.get_reports(year_filter)
         initial_count = len(reports)
         # Fallback: если по текущему username пусто (рассинхрон сессии),
         # показываем локальные отчёты без фильтра по пользователю.
         if not reports:
-            reports = self.reports_manager.get_reports(include_all_users=True)
+            reports = self.reports_manager.get_reports(year_filter, include_all_users=True)
         fallback_used = initial_count == 0
         skipped_periods = []
         routing_samples = []

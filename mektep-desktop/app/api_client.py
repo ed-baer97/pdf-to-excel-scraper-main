@@ -557,6 +557,7 @@ class MektepAPIClient:
         analytics_data: Optional[Dict] = None,
         org_name: Optional[str] = None,
         has_quarter_grade_header: bool = False,
+        academic_year: Optional[int] = None,
     ) -> Dict:
         """
         Загрузка/обновление отчёта с оценками на сервер (UPSERT)
@@ -597,6 +598,8 @@ class MektepAPIClient:
                 payload["org_name"] = org_name
             if has_quarter_grade_header:
                 payload["has_quarter_grade_header"] = True
+            if academic_year is not None:
+                payload["academic_year"] = int(academic_year)
 
             response = self.session.post(
                 f"{self.base_url}/api/reports/upload",
@@ -833,7 +836,8 @@ class MektepAPIClient:
     def get_my_reports(
         self,
         period_type: Optional[str] = None,
-        period_number: Optional[int] = None
+        period_number: Optional[int] = None,
+        academic_year: Optional[int] = None,
     ) -> Dict:
         """
         Получение списка своих отчётов
@@ -873,6 +877,8 @@ class MektepAPIClient:
                 params["period_type"] = period_type
             if period_number:
                 params["period_number"] = period_number
+            if academic_year is not None:
+                params["academic_year"] = int(academic_year)
             
             response = self.session.get(
                 f"{self.base_url}/api/reports/my",
@@ -925,7 +931,7 @@ class MektepAPIClient:
                 "error": f"Ошибка: {str(e)}"
             }
     
-    def get_my_classes(self) -> Dict:
+    def get_my_classes(self, academic_year: Optional[int] = None) -> Dict:
         """
         Получение классов и предметов учителя
         
@@ -941,8 +947,12 @@ class MektepAPIClient:
         
         try:
             self._set_auth_header()
+            class_params = {}
+            if academic_year is not None:
+                class_params["academic_year"] = int(academic_year)
             response = self.session.get(
                 f"{self.base_url}/api/teacher/my-classes",
+                params=class_params,
                 timeout=15
             )
             if response.status_code == 200:
@@ -952,6 +962,7 @@ class MektepAPIClient:
                 if refresh_result.get("success"):
                     response = self.session.get(
                         f"{self.base_url}/api/teacher/my-classes",
+                        params=class_params,
                         timeout=15
                     )
                     if response.status_code == 200:
@@ -969,6 +980,7 @@ class MektepAPIClient:
     def get_subject_report(
         self,
         period_number: int = 2,
+        academic_year: Optional[int] = None,
         **_kwargs
     ) -> Dict:
         """
@@ -982,9 +994,12 @@ class MektepAPIClient:
         
         try:
             self._set_auth_header()
+            subject_params = {"period_number": period_number}
+            if academic_year is not None:
+                subject_params["academic_year"] = int(academic_year)
             response = self.session.get(
                 f"{self.base_url}/api/teacher/subject-report",
-                params={"period_number": period_number},
+                params=subject_params,
                 timeout=30
             )
             if response.status_code == 200:
@@ -994,7 +1009,7 @@ class MektepAPIClient:
                 if refresh_result.get("success"):
                     response = self.session.get(
                         f"{self.base_url}/api/teacher/subject-report",
-                        params={"period_number": period_number},
+                        params=subject_params,
                         timeout=30
                     )
                     if response.status_code == 200:
@@ -1012,6 +1027,7 @@ class MektepAPIClient:
     def get_class_teacher_report(
         self,
         period_number: int = 2,
+        academic_year: Optional[int] = None,
         **_kwargs
     ) -> Dict:
         """
@@ -1025,9 +1041,12 @@ class MektepAPIClient:
         
         try:
             self._set_auth_header()
+            class_teacher_params = {"period_number": period_number}
+            if academic_year is not None:
+                class_teacher_params["academic_year"] = int(academic_year)
             response = self.session.get(
                 f"{self.base_url}/api/teacher/class-teacher-report",
-                params={"period_number": period_number},
+                params=class_teacher_params,
                 timeout=30
             )
             if response.status_code == 200:
@@ -1037,7 +1056,7 @@ class MektepAPIClient:
                 if refresh_result.get("success"):
                     response = self.session.get(
                         f"{self.base_url}/api/teacher/class-teacher-report",
-                        params={"period_number": period_number},
+                        params=class_teacher_params,
                         timeout=30
                     )
                     if response.status_code == 200:
@@ -1056,6 +1075,7 @@ class MektepAPIClient:
         self,
         class_name: str,
         period_number: int = 2,
+        academic_year: Optional[int] = None,
         **_kwargs
     ) -> Dict:
         """
@@ -1091,9 +1111,12 @@ class MektepAPIClient:
             import urllib.parse
             encoded_class = urllib.parse.quote(class_name, safe='')
             
+            grade_params = {"period_number": period_number}
+            if academic_year is not None:
+                grade_params["academic_year"] = int(academic_year)
             response = self.session.get(
                 f"{self.base_url}/api/grades/class/{encoded_class}",
-                params={"period_number": period_number},
+                params=grade_params,
                 timeout=30
             )
             
@@ -1104,7 +1127,7 @@ class MektepAPIClient:
                 if refresh_result.get("success"):
                     response = self.session.get(
                         f"{self.base_url}/api/grades/class/{encoded_class}",
-                        params={"period_number": period_number},
+                        params=grade_params,
                         timeout=30
                     )
                     if response.status_code == 200:

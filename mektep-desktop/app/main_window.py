@@ -23,6 +23,11 @@ from .translator import get_translator
 from .grades_widget import GradesWidget
 from .subject_report_widget import SubjectReportWidget
 from .class_report_widget import ClassReportWidget
+from .period_ui import (
+    combo_academic_year,
+    populate_academic_year_combo,
+    remember_academic_year,
+)
 from .updater import (
     UpdateCheckWorker,
     UpdateDownloadWorker,
@@ -280,6 +285,12 @@ class MektepMainWindow(QMainWindow):
         lang_label = "Язык" if self.translator.get_language() == 'ru' else "Тіл"
         params_layout.addRow(f"{lang_label}:", self.lang_combo)
 
+        self.year_combo = QComboBox()
+        self.year_combo.setMinimumHeight(30)
+        self.year_combo.view().setStyleSheet("background-color: white; color: #212529;")
+        populate_academic_year_combo(self.year_combo)
+        params_layout.addRow(f"{self.translator.tr('academic_year_label')}:", self.year_combo)
+
         self.period_combo = QComboBox()
         if self.translator.get_language() == 'kk':
             _period_items = [
@@ -471,6 +482,9 @@ class MektepMainWindow(QMainWindow):
         if index >= 0:
             self.lang_combo.setCurrentIndex(index)
         
+        # Учебный год
+        populate_academic_year_combo(self.year_combo)
+
         # Период
         saved_period = int(self.settings.value("scraper/period", 1))
         if 0 <= saved_period < self.period_combo.count():
@@ -503,18 +517,29 @@ class MektepMainWindow(QMainWindow):
         
         # Period (UserRole = "1".."4" или "6" для итога)
         period = str(self.period_combo.currentData() or "2")
+        academic_year = combo_academic_year(self.year_combo)
         
         # Сохраняем настройки
         self.settings.setValue("scraper/lang", self.lang_combo.currentText())
         self.settings.setValue("scraper/period", self.period_combo.currentIndex())
         self.settings.setValue("storage/path", output_dir)
+        remember_academic_year(academic_year)
         
         self.start_btn.setEnabled(False)
         self.stop_btn.setVisible(True)
         self.log_text.append("Запуск скрапера...")
         
         # Запускаем без предустановленной школы - будет динамический выбор если нужно
-        self.scraper_thread = ScraperThread(login, password, period, lang, Path(output_dir), "", api_client=self.api_client)
+        self.scraper_thread = ScraperThread(
+            login,
+            password,
+            period,
+            lang,
+            Path(output_dir),
+            "",
+            api_client=self.api_client,
+            academic_year=academic_year,
+        )
         self.scraper_thread.progress.connect(self.on_progress)
         self.scraper_thread.report_created.connect(self.on_report_created)
         self.scraper_thread.finished.connect(self.on_finished)

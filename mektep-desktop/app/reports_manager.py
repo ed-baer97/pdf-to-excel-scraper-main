@@ -9,7 +9,26 @@ from typing import Optional, List, Dict
 from datetime import datetime
 import json
 
+from .academic_year import current_academic_year
 from .debug_log import debug_log
+
+_REPORTS_DDL = """
+CREATE TABLE reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL DEFAULT '',
+    class_name TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    period_code TEXT NOT NULL,
+    academic_year INTEGER NOT NULL DEFAULT 0,
+    lang TEXT DEFAULT 'ru',
+    excel_path TEXT,
+    word_path TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    synced_to_server BOOLEAN DEFAULT 0,
+    metadata TEXT,
+    UNIQUE(username, class_name, subject, period_code, academic_year)
+)
+"""
 
 
 class ReportsManager:
@@ -105,9 +124,46 @@ class ReportsManager:
             CREATE INDEX IF NOT EXISTS idx_username 
             ON reports(username)
         ''')
+
+        self._ensure_academic_year(cursor)
         
         conn.commit()
         conn.close()
+
+    def _ensure_academic_year(self, cursor):
+        """Добавляет учебный год и включает его в уникальность отчёта."""
+        cursor.execute("PRAGMA table_info(reports)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if columns and "academic_year" not in columns:
+            cursor.execute("ALTER TABLE reports ADD COLUMN academic_year INTEGER")
+        cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='reports'")
+        row = cursor.fetchone()
+        ddl = (row[0] if row else "") or ""
+        normalized = "".join(ddl.upper().split())
+        if "UNIQUE(USERNAME,CLASS_NAME,SUBJECT,PERIOD_CODE,ACADEMIC_YEAR)" not in normalized:
+            cursor.execute("DROP TABLE IF EXISTS reports_prev")
+            cursor.execute("ALTER TABLE reports RENAME TO reports_prev")
+            cursor.execute(_REPORTS_DDL)
+            cursor.execute("PRAGMA table_info(reports_prev)")
+            prev_cols = [col[1] for col in cursor.fetchall()]
+            year_expr = "COALESCE(academic_year, 0)" if "academic_year" in prev_cols else "0"
+            user_expr = "COALESCE(username, '')" if "username" in prev_cols else "''"
+            cursor.execute(
+                f"""
+                INSERT INTO reports (
+                    id, username, class_name, subject, period_code, academic_year,
+                    lang, excel_path, word_path, created_at, synced_to_server, metadata
+                )
+                SELECT id, {user_expr}, class_name, subject, period_code, {year_expr},
+                       lang, excel_path, word_path, created_at, synced_to_server, metadata
+                FROM reports_prev
+                """
+            )
+            cursor.execute("DROP TABLE reports_prev")
+        cursor.execute(
+            "UPDATE reports SET academic_year = ? WHERE academic_year IS NULL OR academic_year = 0",
+            (current_academic_year(),),
+        )
     
     def save_report(self, report: Dict) -> int:
         """
@@ -131,11 +187,18 @@ class ReportsManager:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
-        # Проверяем, существует ли уже такой отчет для этого пользователя
+        academic_year = int(report.get("academic_year") or current_academic_year())
+        # Проверяем, существует ли уже такой отчет для этого пользователя и года
         cursor.execute('''
             SELECT id FROM reports 
-            WHERE username = ? AND class_name = ? AND subject = ? AND period_code = ?
-        ''', (self.username, report['class_name'], report['subject'], report['period_code']))
+            WHERE username = ? AND class_name = ? AND subject = ? AND period_code = ? AND academic_year = ?
+        ''', (
+            self.username,
+            report['class_name'],
+            report['subject'],
+            report['period_code'],
+            academic_year,
+        ))
         
         existing = cursor.fetchone()
         metadata_json = json.dumps(report.get('metadata', {}), ensure_ascii=False)
@@ -159,13 +222,14 @@ class ReportsManager:
             # Создаем новый
             cursor.execute('''
                 INSERT INTO reports 
-                (username, class_name, subject, period_code, lang, excel_path, word_path, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (username, class_name, subject, period_code, academic_year, lang, excel_path, word_path, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 self.username,
                 report['class_name'],
                 report['subject'],
                 report['period_code'],
+                academic_year,
                 report.get('lang', 'ru'),
                 report.get('excel_path'),
                 report.get('word_path'),
@@ -226,6 +290,10 @@ class ReportsManager:
             if 'period_code' in filters:
                 query += " AND period_code = ?"
                 params.append(filters['period_code'])
+
+            if filters.get("academic_year") is not None:
+                query += " AND academic_year = ?"
+                params.append(int(filters["academic_year"]))
             
             if 'class_name' in filters:
                 query += " AND class_name = ?"

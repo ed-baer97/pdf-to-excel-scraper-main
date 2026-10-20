@@ -57,6 +57,7 @@ class ScraperThread(QThread):
         school_index: str = "",
         headless: bool = True,
         api_client: Optional["MektepAPIClient"] = None,
+        academic_year: int | None = None,
     ):
         """Настраивает поток: логин Mektep, период, язык, каталог вывода, headless и клиент сервера."""
         super().__init__()
@@ -68,6 +69,7 @@ class ScraperThread(QThread):
         self.school_index = school_index
         self.headless = headless
         self.api_client = api_client
+        self.academic_year = academic_year
 
         print(f"[DEBUG] ScraperThread создан с output_dir: {self.output_dir}")
         print(f"[DEBUG] output_dir существует: {self.output_dir.exists()}")
@@ -198,6 +200,7 @@ class ScraperThread(QThread):
                     self.output_dir,
                     self.temp_dir,
                     self.api_client,
+                    academic_year=self.academic_year,
                 )
                 reports = finalizer.finalize_reports()
                 reports_dir = self.output_dir / "reports"
