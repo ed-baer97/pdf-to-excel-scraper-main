@@ -10,9 +10,10 @@ from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QPushButton, QComboBox, QLabel, QMessageBox, QHeaderView
+    QPushButton, QComboBox, QLabel, QMessageBox, QHeaderView, QSizePolicy
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QSettings, QTimer
+from PyQt6.QtGui import QFont
 
 from .academic_year import academic_year_choices, format_academic_year
 from .period_ui import remember_academic_year, saved_academic_year
@@ -21,6 +22,18 @@ from .translator import get_translator
 
 if TYPE_CHECKING:
     from .api_client import MektepAPIClient
+
+
+def _compact_row_button(button: QPushButton) -> None:
+    """Фиксирует мелкий размер. Иначе общий стиль окна раздувает padding."""
+    font = QFont(button.font())
+    font.setPixelSize(10)
+    font.setWeight(QFont.Weight.DemiBold)
+    button.setFont(font)
+    button.setStyleSheet(
+        button.styleSheet()
+        + "\nQPushButton { padding: 0px 3px; font-size: 10px; }"
+    )
 
 
 class HistoryWidget(QWidget):
@@ -160,14 +173,14 @@ class HistoryWidget(QWidget):
         # предмет забирает остаток и сокращается многоточием.
         header = self.table.horizontalHeader()
         header.setStretchLastSection(False)
-        header.setMinimumSectionSize(48)
+        header.setMinimumSectionSize(36)
         for col in range(7):
             header.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
         
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.verticalHeader().setVisible(False)
-        self.table.verticalHeader().setDefaultSectionSize(40)
+        self.table.verticalHeader().setDefaultSectionSize(30)
         self.table.setShowGrid(False)
         self.table.setStyleSheet("""
             QTableWidget {
@@ -189,7 +202,7 @@ class HistoryWidget(QWidget):
                 font-size: 13px;
             }
             QTableWidget::item {
-                padding: 8px 12px;
+                padding: 2px 4px;
                 border-bottom: 1px solid #f3f4f6;
             }
             QTableWidget::item:selected {
@@ -201,11 +214,11 @@ class HistoryWidget(QWidget):
                 color: white;
                 border: none;
                 border-radius: 4px;
-                padding: 1px 8px;
+                padding: 0px 4px;
                 font-weight: 600;
-                font-size: 11px;
-                min-height: 22px;
-                max-height: 22px;
+                font-size: 10px;
+                min-height: 16px;
+                max-height: 16px;
             }
             QPushButton#excelButton:hover {
                 background-color: #16a34a;
@@ -219,11 +232,11 @@ class HistoryWidget(QWidget):
                 color: white;
                 border: none;
                 border-radius: 4px;
-                padding: 1px 8px;
+                padding: 0px 4px;
                 font-weight: 600;
-                font-size: 11px;
-                min-height: 22px;
-                max-height: 22px;
+                font-size: 10px;
+                min-height: 16px;
+                max-height: 16px;
             }
             QPushButton#wordButton:hover {
                 background-color: #2563eb;
@@ -237,10 +250,10 @@ class HistoryWidget(QWidget):
                 color: #374151;
                 border: 1px solid #d1d5db;
                 border-radius: 4px;
-                padding: 1px 6px;
-                font-size: 11px;
-                min-height: 22px;
-                max-height: 22px;
+                padding: 0px 4px;
+                font-size: 10px;
+                min-height: 16px;
+                max-height: 16px;
             }
             QPushButton#actionButton:hover {
                 background-color: #e5e7eb;
@@ -250,10 +263,10 @@ class HistoryWidget(QWidget):
                 color: #dc2626;
                 border: 1px solid #fecaca;
                 border-radius: 4px;
-                padding: 1px 6px;
-                font-size: 11px;
-                min-height: 22px;
-                max-height: 22px;
+                padding: 0px 4px;
+                font-size: 10px;
+                min-height: 16px;
+                max-height: 16px;
             }
             QPushButton#deleteButton:hover {
                 background-color: #fee2e2;
@@ -310,7 +323,7 @@ class HistoryWidget(QWidget):
         self.table.setRowCount(len(reports))
         
         for row, report in enumerate(reports):
-            self.table.setRowHeight(row, 40)
+            self.table.setRowHeight(row, 30)
             # Дата
             created_at = report.get("created_at", "")
             if created_at:
@@ -338,13 +351,14 @@ class HistoryWidget(QWidget):
             
             # Excel
             excel_container = QWidget()
+            excel_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
             excel_layout = QHBoxLayout(excel_container)
-            excel_layout.setContentsMargins(4, 0, 4, 0)
+            excel_layout.setContentsMargins(2, 0, 2, 0)
             excel_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
             excel_btn = QPushButton("Excel")
             excel_btn.setObjectName("excelButton")
-            excel_btn.setMinimumWidth(70)
-            excel_btn.setFixedHeight(22)
+            excel_btn.setFixedSize(48, 16)
+            _compact_row_button(excel_btn)
             if report.get("excel_path") and Path(report["excel_path"]).exists():
                 excel_btn.clicked.connect(lambda _, p=report["excel_path"]: self.open_file(p))
             else:
@@ -354,13 +368,14 @@ class HistoryWidget(QWidget):
             
             # Word
             word_container = QWidget()
+            word_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
             word_layout = QHBoxLayout(word_container)
-            word_layout.setContentsMargins(4, 0, 4, 0)
+            word_layout.setContentsMargins(2, 0, 2, 0)
             word_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
             word_btn = QPushButton("Word")
             word_btn.setObjectName("wordButton")
-            word_btn.setMinimumWidth(62)
-            word_btn.setFixedHeight(22)
+            word_btn.setFixedSize(42, 16)
+            _compact_row_button(word_btn)
             if report.get("word_path") and Path(report["word_path"]).exists():
                 word_btn.clicked.connect(lambda _, p=report["word_path"]: self.open_file(p))
             else:
@@ -382,7 +397,7 @@ class HistoryWidget(QWidget):
         view = self.table.viewport().width()
         if view < 80:
             return
-        excel, word, actions = 82, 74, 168
+        excel, word, actions = 64, 56, 124
         klass = 56
         rest = view - (excel + word + actions + klass)
         date, quarter = 200, 124
@@ -402,9 +417,10 @@ class HistoryWidget(QWidget):
     def create_actions_widget(self, report: dict) -> QWidget:
         """Создать виджет с кнопками действий"""
         widget = QWidget()
+        widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         layout = QHBoxLayout(widget)
-        layout.setContentsMargins(2, 0, 4, 0)
-        layout.setSpacing(4)
+        layout.setContentsMargins(2, 0, 2, 0)
+        layout.setSpacing(3)
         layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         
         report_id = report["id"]
@@ -412,8 +428,8 @@ class HistoryWidget(QWidget):
         # Кнопка открытия папки
         folder_btn = QPushButton("Папка")
         folder_btn.setObjectName("actionButton")
-        folder_btn.setMinimumWidth(68)
-        folder_btn.setFixedHeight(22)
+        folder_btn.setFixedSize(44, 16)
+        _compact_row_button(folder_btn)
         folder_btn.setToolTip("Открыть папку")
         folder_btn.clicked.connect(lambda: self.open_folder(report))
         layout.addWidget(folder_btn)
@@ -421,8 +437,8 @@ class HistoryWidget(QWidget):
         # Кнопка удаления
         delete_btn = QPushButton("Удалить")
         delete_btn.setObjectName("deleteButton")
-        delete_btn.setMinimumWidth(86)
-        delete_btn.setFixedHeight(22)
+        delete_btn.setFixedSize(58, 16)
+        _compact_row_button(delete_btn)
         delete_btn.setToolTip("Удалить")
         delete_btn.clicked.connect(lambda: self.delete_report(report_id))
         layout.addWidget(delete_btn)
