@@ -707,8 +707,11 @@ def _fill_existing_analysis_table(doc: Document, blocks: list[dict], lang: str =
     return False
 
 
-def _extract_names_from_excel_column(ws, col: str, start_row: int = 8, end_row: int = 39) -> list[str]:
-    """Собирает непустые ФИО из колонки листа (диапазон строк шаблона)."""
+def _extract_names_from_excel_column(ws, col: str, start_row: int = 8, end_row: int | None = None) -> list[str]:
+    """Собирает непустые ФИО из колонки листа до блока итогов, а не до фиксированной 39-й строки."""
+    if end_row is None:
+        from mektep_core.build_report import student_last_row
+        end_row = student_last_row(ws)
     names: list[str] = []
     for r in range(start_row, end_row + 1):
         v = ws[f"{col}{r}"].value
@@ -841,13 +844,17 @@ def _extract_sheet_block(ws) -> dict:
     # Max points (D8) if present
     max_points = ws["D8"].value
 
-    # Summary (as in template logic)
+    # Итоги ищутся по подписи «Всего "5"»: при другом числе учеников
+    # блок съезжает вниз или вверх и больше не стоит на строках 41–44.
+    from mektep_core.build_report import summary_rows
+
     quality = ws["J8"].value
     success = ws["K8"].value
-    c5 = ws["F41"].value
-    c4 = ws["G42"].value
-    c3 = ws["H43"].value
-    c2 = ws["I44"].value
+    totals = summary_rows(ws)
+    c5 = ws[f"F{totals.get('5', 41)}"].value
+    c4 = ws[f"G{totals.get('4', 42)}"].value
+    c3 = ws[f"H{totals.get('3', 43)}"].value
+    c2 = ws[f"I{totals.get('2', 44)}"].value
 
     return {
         "sheet": ws.title,

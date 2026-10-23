@@ -2,9 +2,11 @@
 import argparse
 import json
 import re
+from copy import copy
 from pathlib import Path
 
 from openpyxl import load_workbook
+from openpyxl.worksheet.cell_range import CellRange
 
 
 def _sanitize_filename(s: str) -> str:
@@ -86,6 +88,183 @@ def _clear_rows(ws, start_row: int, end_row: int, cols: list[str]):
             ws[f"{col}{r}"].value = None
 
 
+# Строка заголовка таблицы — 7, первая строка ученика — 8.
+# Ниже списка идёт строка-подвал (ссылки на итоги) и блок «Всего "5"…».
+_STUDENT_START = 8
+_STUDENT_COLS = tuple("ABCDEFGHIJKLMN")
+_CELL_REF = re.compile(r"(\$?[A-Z]{1,3})(\$?)(\d+)")
+
+
+def _summary_kind(value) -> str | None:
+    """Метка итогового блока: '5'/'4'/'3'/'2' или 'total' для «Всего учеников»."""
+    if not isinstance(value, str) or "всего" not in value.lower():
+        return None
+    text = value.replace("«", '"').replace("»", '"').replace("“", '"').replace("”", '"')
+    text = " ".join(text.split()).lower()
+    if "ученик" in text:
+        return "total"
+    for digit in ("5", "4", "3", "2"):
+        if digit in text:
+            return digit
+    return None
+
+
+def summary_rows(ws) -> dict[str, int]:
+    """Строки блока итогов по подписям в колонке D. Ключи: 5, 4, 3, 2, total."""
+    found: dict[str, int] = {}
+    for row in ws.iter_rows(min_row=1, max_col=9, max_row=ws.max_row or 1):
+        for cell in row:
+            kind = _summary_kind(cell.value)
+            if kind and kind not in found:
+                found[kind] = cell.row
+    return found
+
+
+def student_last_row(ws) -> int:
+    """Последняя строка ученика: на две выше «Всего "5"» (между ними строка-подвал)."""
+    anchor = summary_rows(ws).get("5")
+    if anchor and anchor - 2 >= _STUDENT_START:
+        return anchor - 2
+    return 39
+
+
+def _retarget_formula(formula: str, src_row: int, dst_row: int) -> str:
+    """В формуле заменяет ссылки на src_row ссылками на dst_row."""
+    def repl(match: re.Match) -> str:
+        col, absolute, row_s = match.group(1), match.group(2), match.group(3)
+        if int(row_s) == src_row:
+            return f"{col}{absolute}{dst_row}"
+        return match.group(0)
+
+    return _CELL_REF.sub(repl, formula)
+
+
+def _copy_student_row(ws, src: int, dst: int) -> None:
+    """Копирует оформление и формулы строки ученика, без ФИО и баллов."""
+    for col in _STUDENT_COLS:
+        src_cell = ws[f"{col}{src}"]
+        dst_cell = ws[f"{col}{dst}"]
+        if getattr(src_cell, "has_style", False):
+            dst_cell.font = copy(src_cell.font)
+            dst_cell.border = copy(src_cell.border)
+            dst_cell.fill = copy(src_cell.fill)
+            dst_cell.number_format = src_cell.number_format
+            dst_cell.alignment = copy(src_cell.alignment)
+        value = src_cell.value
+        if isinstance(value, str) and value.startswith("="):
+            dst_cell.value = _retarget_formula(value, src, dst)
+        else:
+            dst_cell.value = None
+    height = ws.row_dimensions[src].height
+    if height is not None:
+        ws.row_dimensions[dst].height = height
+
+
+def _unmerge_overlapping(ws, min_row: int, max_row: int) -> None:
+    """Снимает объединения, которые пересекают удаляемые строки."""
+    doomed = [
+        str(merged)
+        for merged in ws.merged_cells.ranges
+        if merged.max_row >= min_row and merged.min_row <= max_row
+    ]
+    for ref in doomed:
+        ws.unmerge_cells(ref)
+
+
+def _shift_merges(ws, pivot_row: int, offset: int) -> None:
+    """Сдвигает объединения ниже вставленных или удалённых строк.
+
+    openpyxl переносит ячейки, но диапазоны merge оставляет на старых номерах.
+    Снимать их через unmerge_cells нельзя: ячеек по старым координатам уже нет.
+    """
+    if offset == 0:
+        return
+    original = list(ws.merged_cells.ranges)
+    for merged in original:
+        ws.merged_cells.remove(merged)
+    for merged in original:
+        min_row, max_row = merged.min_row, merged.max_row
+        if max_row < pivot_row:
+            pass
+        elif min_row >= pivot_row:
+            min_row += offset
+            max_row += offset
+        else:
+            max_row += offset
+        if min_row < 1 or min_row > max_row:
+            continue
+        ws.merged_cells.add(CellRange(
+            min_col=merged.min_col,
+            min_row=min_row,
+            max_col=merged.max_col,
+            max_row=max_row,
+        ))
+
+
+def _refresh_summary_formulas(ws, last_row: int) -> dict[str, int]:
+    """Перенацеливает формулы итогов на фактический диапазон учеников."""
+    rows = summary_rows(ws)
+    r5, r4, r3, r2 = rows.get("5"), rows.get("4"), rows.get("3"), rows.get("2")
+    rtotal = rows.get("total")
+    if not all((r5, r4, r3, r2, rtotal)):
+        return rows
+    start = _STUDENT_START
+    ws[f"F{r5}"] = f"=SUM(F{start}:F{last_row})"
+    ws[f"G{r4}"] = f"=SUM(G{start}:G{last_row})"
+    ws[f"H{r3}"] = f"=SUM(H{start}:H{last_row})"
+    ws[f"I{r2}"] = f"=SUM(I{start}:I{last_row})"
+    ws[f"I{rtotal}"] = f"=F{r5}+G{r4}+H{r3}+I{r2}"
+    ws[f"C{r5}"] = f"=(F{r5}+G{r4})/I{rtotal}"
+    ws[f"C{r4}"] = f"=(F{r5}+G{r4}+H{r3})/I{rtotal}"
+    link = r5 - 1
+    ws[f"L{link}"] = f"=F{r5}"
+    ws[f"M{link}"] = f"=G{r4}+H{r3}"
+    ws[f"N{link}"] = f"=I{r2}"
+    ws["J8"] = f"=C{r5}*100"
+    ws["K8"] = f"=C{r4}*100"
+    return rows
+
+
+def resize_student_block(ws, count: int) -> int:
+    """Подгоняет число строк учеников под `count`, не трогая шапку и блок итогов.
+
+    Лишние строки удаляются, недостающие вставляются копией последней строки
+    ученика (границы и формулы). Блок «Всего» остаётся сразу под списком.
+    Возвращает номер последней строки ученика.
+    """
+    count = max(int(count or 0), 0)
+    rows = summary_rows(ws)
+    anchor = rows.get("5")
+    if not anchor or anchor - 2 < _STUDENT_START:
+        last = _STUDENT_START + max(count, 1) - 1
+        return last
+
+    link_row = anchor - 1
+    last = link_row - 1
+    capacity = last - _STUDENT_START + 1
+    if count > capacity:
+        extra = count - capacity
+        ws.insert_rows(link_row, extra)
+        _shift_merges(ws, link_row, extra)
+        for offset in range(extra):
+            _copy_student_row(ws, last, last + 1 + offset)
+        last += extra
+    elif count < capacity:
+        keep = max(count, 1)
+        first_delete = _STUDENT_START + keep
+        if first_delete <= last:
+            _unmerge_overlapping(ws, first_delete, last)
+            deleted = last - first_delete + 1
+            ws.delete_rows(first_delete, deleted)
+            _shift_merges(ws, first_delete, -deleted)
+            last = _STUDENT_START + keep - 1
+
+    _refresh_summary_formulas(ws, last)
+    for index, row in enumerate(range(_STUDENT_START, last + 1), start=1):
+        ws[f"A{row}"].value = index
+    return last
+
+
 def _fill_template_page(
     ws,
     *,
@@ -112,8 +291,8 @@ def _fill_template_page(
         ws["C5"].value = teacher_fio
     ws["C6"].value = page_title
 
-    start_row = 8
-    max_row = 39  # template is built for up to ~32 students; keep same cleanup window as example
+    start_row = _STUDENT_START
+    last_row = resize_student_block(ws, len(fio_list))
 
     # Ensure the template column header for max points is present (your note: D7 is the column name).
     if mode == "points":
@@ -121,16 +300,16 @@ def _fill_template_page(
 
     # Fill rows
     count_5 = count_4 = count_3 = count_2 = 0
-    # If you want max shown "under D7" regardless of row, prefill D8:D39 with the same max.
-    if mode == "points" and max_value not in (None, ""):
+    # If you want max shown "under D7" regardless of row, prefill the student block with the same max.
+    if mode == "points" and max_value not in (None, "") and fio_list:
         mv = _to_number(max_value)
         mv = int(mv) if mv.is_integer() else mv
-        for r in range(start_row, max_row + 1):
+        for r in range(start_row, last_row + 1):
             ws[f"D{r}"].value = mv
 
     for i, fio in enumerate(fio_list):
         r = start_row + i
-        if r > max_row:
+        if r > last_row:
             break
         ws[f"B{r}"].value = fio
 
@@ -211,16 +390,16 @@ def _fill_template_page(
             ws[f"M{r}"].value = ""
             ws[f"N{r}"].value = fio
 
-    # Clear remaining rows in template range
-    last_filled = min(max_row, start_row + len(fio_list) - 1)
-    if last_filled < max_row:
-        _clear_rows(ws, last_filled + 1, max_row, ["B", "C", "D", "E", "F", "G", "H", "I", "L", "M", "N"])
+    # Пустой класс: единственная оставленная строка не должна показывать формулы деления на ноль.
+    if not fio_list:
+        _clear_rows(ws, start_row, last_row, ["B", "C", "D", "E", "F", "G", "H", "I", "L", "M", "N"])
 
-    # Summary cells (following example positions)
-    ws["F41"].value = count_5
-    ws["G42"].value = count_4
-    ws["H43"].value = count_3
-    ws["I44"].value = count_2
+    # Итоги стоят сразу под списком, а не на фиксированных строках 41–44.
+    totals = summary_rows(ws)
+    ws[f"F{totals.get('5', 41)}"].value = count_5
+    ws[f"G{totals.get('4', 42)}"].value = count_4
+    ws[f"H{totals.get('3', 43)}"].value = count_3
+    ws[f"I{totals.get('2', 44)}"].value = count_2
 
     total_students = len(fio_list)
     if total_students > 0:
@@ -256,8 +435,8 @@ def _fill_grades_page(
     ws["C6"].value = "Оценки"
 
     header_row = 7
-    start_row = 8
-    max_row = 39
+    start_row = _STUDENT_START
+    last_row = resize_student_block(ws, len(fio_list))
 
     # Header
     ws[f"A{header_row}"].value = "№"
@@ -280,7 +459,7 @@ def _fill_grades_page(
 
     for i, fio in enumerate(fio_list):
         r = start_row + i
-        if r > max_row:
+        if r > last_row:
             break
         num = nums[i] if i < len(nums) else i + 1
         g = grades[i] if i < len(grades) else ""
@@ -313,16 +492,15 @@ def _fill_grades_page(
         for col in ["G", "H", "I", "L", "M", "N"]:
             ws[f"{col}{r}"].value = None
 
-    # Clear remaining rows
-    last_filled = min(max_row, start_row + len(fio_list) - 1)
-    if last_filled < max_row:
-        _clear_rows(ws, last_filled + 1, max_row, ["A", "B", "C", "D", "E", "F", "G", "H", "I", "L", "M", "N"])
+    if not fio_list:
+        _clear_rows(ws, start_row, last_row, ["A", "B", "C", "D", "E", "F", "G", "H", "I", "L", "M", "N"])
 
-    # Keep summary cells consistent with template example
-    ws["F41"].value = count_5
-    ws["G42"].value = count_4
-    ws["H43"].value = count_3
-    ws["I44"].value = count_2
+    # Итоги стоят сразу под списком, а не на фиксированных строках 41–44.
+    totals = summary_rows(ws)
+    ws[f"F{totals.get('5', 41)}"].value = count_5
+    ws[f"G{totals.get('4', 42)}"].value = count_4
+    ws[f"H{totals.get('3', 43)}"].value = count_3
+    ws[f"I{totals.get('2', 44)}"].value = count_2
 
     total = len(fio_list)
     quality = (sum(qual_flags) / total * 100.0) if total else 0.0
@@ -330,8 +508,9 @@ def _fill_grades_page(
     ws["J8"].value = round(quality, 2)
     ws["K8"].value = round(success_rate, 2)
 
-    # Also wipe any leftover "table tail" beyond N for the used range (best-effort).
-    for r in range(header_row, max_row + 1):
+    # Колонки «высокий/средний/низкий» на листе оценок не заполняются.
+    # Подвал под списком (ссылки на итоги) не трогаем.
+    for r in range(header_row, last_row + 1):
         for col in ["L", "M", "N"]:
             ws[f"{col}{r}"].value = None
 

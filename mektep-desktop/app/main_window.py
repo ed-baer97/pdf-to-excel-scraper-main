@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QComboBox, QProgressBar,
     QTextEdit, QGroupBox, QMessageBox, QFileDialog, QFrame,
-    QFormLayout, QScrollArea, QTabWidget, QProgressDialog
+    QFormLayout, QScrollArea, QSplitter, QTabWidget, QProgressDialog
 )
 from PyQt6.QtCore import Qt, QSettings, QTimer
 from PyQt6.QtGui import QFont, QIcon
@@ -114,7 +114,7 @@ class MektepMainWindow(QMainWindow):
         title = self.translator.tr('main_window_title', username)
         
         self.setWindowTitle(title)
-        self.setMinimumSize(1100, 700)
+        self.setMinimumSize(1200, 700)
         
         # Устанавливаем иконку окна
         icon_path = self._get_icon_path()
@@ -132,23 +132,47 @@ class MektepMainWindow(QMainWindow):
         # Информационная панель пользователя
         self.create_user_info_panel(main_layout)
         
-        # Две колонки: слева создание отчетов, справа история
-        columns_layout = QHBoxLayout()
-        columns_layout.setSpacing(15)
-        
-        # Левая колонка - Создание отчетов
+        # Две колонки: слева создание отчетов, справа история.
+        # Stretch у QHBoxLayout делит только свободное место после sizeHint,
+        # поэтому длинные пункты периода сжимали левую карточку. Сплиттер
+        # держит доли 40/60 от ширины окна.
+        self.columns_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.columns_splitter.setChildrenCollapsible(False)
+        self.columns_splitter.setHandleWidth(8)
+        self._columns_sized = False
+
         self.left_panel = self.create_reports_panel()
-        columns_layout.addWidget(self.left_panel, 4)  # 40% ширины
-        
-        # Правая колонка - Мои отчеты
+        self.left_panel.setMinimumWidth(400)
         right_panel = self.create_history_panel()
-        columns_layout.addWidget(right_panel, 6)  # 60% ширины
-        
-        main_layout.addLayout(columns_layout)
+        right_panel.setMinimumWidth(560)
+        self.columns_splitter.addWidget(self.left_panel)
+        self.columns_splitter.addWidget(right_panel)
+        self.columns_splitter.setStretchFactor(0, 4)
+        self.columns_splitter.setStretchFactor(1, 6)
+
+        main_layout.addWidget(self.columns_splitter)
         
         # Применение стилей
         self.apply_styles()
-    
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._columns_sized:
+            QTimer.singleShot(0, self._apply_column_ratio)
+
+    def _apply_column_ratio(self):
+        if self._columns_sized:
+            return
+        total = self.columns_splitter.width()
+        if total < 200:
+            return
+        left = max(self.left_panel.minimumWidth(), int(total * 0.4))
+        right_min = self.columns_splitter.widget(1).minimumWidth()
+        if left + right_min > total:
+            left = max(self.left_panel.minimumWidth(), total - right_min)
+        self.columns_splitter.setSizes([left, max(1, total - left)])
+        self._columns_sized = True
+
     def create_user_info_panel(self, parent_layout):
         """Создание информационной панели пользователя"""
         info_frame = QFrame()
@@ -234,6 +258,7 @@ class MektepMainWindow(QMainWindow):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         
         content = QWidget()
         content_layout = QVBoxLayout(content)
@@ -252,6 +277,7 @@ class MektepMainWindow(QMainWindow):
         auth_layout.addWidget(info_label)
 
         auth_form = QFormLayout()
+        auth_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         auth_form.setHorizontalSpacing(10)
         auth_form.setVerticalSpacing(8)
 
@@ -274,12 +300,14 @@ class MektepMainWindow(QMainWindow):
         report_settings = "Настройки отчета" if self.translator.get_language() == 'ru' else "Есеп баптаулары"
         params_group = QGroupBox(report_settings)
         params_layout = QFormLayout(params_group)
+        params_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         params_layout.setHorizontalSpacing(10)
         params_layout.setVerticalSpacing(8)
 
         self.lang_combo = QComboBox()
         self.lang_combo.addItems(["Русский", "Қазақша", "English"])
         self.lang_combo.setMinimumHeight(30)
+        self._fit_combo(self.lang_combo)
         # Явно устанавливаем стиль для view
         self.lang_combo.view().setStyleSheet("background-color: white; color: #212529;")
         lang_label = "Язык" if self.translator.get_language() == 'ru' else "Тіл"
@@ -287,6 +315,7 @@ class MektepMainWindow(QMainWindow):
 
         self.year_combo = QComboBox()
         self.year_combo.setMinimumHeight(30)
+        self._fit_combo(self.year_combo)
         self.year_combo.view().setStyleSheet("background-color: white; color: #212529;")
         populate_academic_year_combo(self.year_combo)
         params_layout.addRow(f"{self.translator.tr('academic_year_label')}:", self.year_combo)
@@ -312,6 +341,7 @@ class MektepMainWindow(QMainWindow):
             self.period_combo.addItem(label, code)
         self.period_combo.setCurrentIndex(1)
         self.period_combo.setMinimumHeight(30)
+        self._fit_combo(self.period_combo, 18)
         # Явно устанавливаем стиль для view
         self.period_combo.view().setStyleSheet("background-color: white; color: #212529;")
         period_label = "Период" if self.translator.get_language() == 'ru' else "Кезең"
@@ -324,6 +354,7 @@ class MektepMainWindow(QMainWindow):
 
         self.output_input = QLineEdit()
         self.output_input.setMinimumHeight(30)
+        self.output_input.setMinimumWidth(80)
         default_path = str(Path.home() / "Documents" / "Mektep Reports")
         self.output_input.setText(default_path)
         folder_layout.addWidget(self.output_input, 3)
@@ -390,7 +421,19 @@ class MektepMainWindow(QMainWindow):
         panel_layout.addWidget(scroll)
         
         return panel
-    
+
+    @staticmethod
+    def _fit_combo(combo: QComboBox, chars: int = 12) -> None:
+        """Ширина списка не должна равняться самой длинной подписи.
+
+        Иначе «4 четверть (2 полугодие)» раздувает форму внутри прокрутки,
+        и на экране остаётся обрезанное начало полей.
+        """
+        combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        combo.setMinimumContentsLength(chars)
+
     def create_history_panel(self) -> QWidget:
         """Правая колонка — вкладки: История | Оценки | Предметник | Кл. руководитель"""
         panel = QFrame()
