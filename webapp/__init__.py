@@ -286,22 +286,58 @@ def create_app(config_object=None) -> Flask:
             _migrate_academic_year_column("grade_reports")
             _migrate_academic_year_column("report_files")
 
-            # Пересоздать уникальный индекс grade_reports с academic_year (SQLite).
-            try:
-                db.session.execute(
-                    text(
-                        "DROP INDEX IF EXISTS uq_grade_report_teacher_class_subject_period"
-                    )
+            # Уникальность отчёта включает учебный год.
+            # На PostgreSQL это CONSTRAINT: DROP INDEX его не снимает, вставка
+            # второго года (например история Казахстана 5 класса) падает.
+            _uq_name = "uq_grade_report_teacher_class_subject_period"
+
+            def _grade_report_unique_includes_year() -> bool:
+                try:
+                    for idx in inspector.get_indexes("grade_reports"):
+                        if idx.get("name") == _uq_name:
+                            cols = [str(c).lower() for c in (idx.get("column_names") or [])]
+                            return "academic_year" in cols
+                    for uc in inspector.get_unique_constraints("grade_reports"):
+                        if uc.get("name") == _uq_name:
+                            cols = [str(c).lower() for c in (uc.get("column_names") or [])]
+                            return "academic_year" in cols
+                except Exception:
+                    return False
+                return False
+
+            def _exec_ignore(ddl: str) -> None:
+                try:
+                    db.session.execute(text(ddl))
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
+
+            if not _grade_report_unique_includes_year():
+                _exec_ignore(
+                    "ALTER TABLE grade_reports DROP CONSTRAINT IF EXISTS "
+                    f"{_uq_name}"
                 )
-                db.session.commit()
-            except Exception:
-                db.session.rollback()
-            _create_index_if_missing(
-                "uq_grade_report_teacher_class_subject_period",
-                "CREATE UNIQUE INDEX uq_grade_report_teacher_class_subject_period "
-                "ON grade_reports (teacher_id, school_id, class_name, subject_name, "
-                "period_type, period_number, academic_year)",
-            )
+                _exec_ignore(f"DROP INDEX IF EXISTS {_uq_name}")
+                _create_index_if_missing(
+                    _uq_name,
+                    "CREATE UNIQUE INDEX uq_grade_report_teacher_class_subject_period "
+                    "ON grade_reports (teacher_id, school_id, class_name, subject_name, "
+                    "period_type, period_number, academic_year)",
+                )
+                try:
+                    inspector.clear_cache()
+                except Exception:
+                    pass
+                if _grade_report_unique_includes_year():
+                    app.logger.info(
+                        "Rebuilt %s to include academic_year", _uq_name
+                    )
+                else:
+                    app.logger.warning(
+                        "Failed to rebuild %s with academic_year; "
+                        "uploads for a new year may be rejected",
+                        _uq_name,
+                    )
             try:
                 db.session.execute(text("DROP INDEX IF EXISTS ix_grade_report_school_period"))
                 db.session.commit()

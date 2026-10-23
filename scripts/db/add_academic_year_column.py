@@ -41,13 +41,25 @@ def main() -> None:
                 print(f"  ✗ {table}: {exc}")
                 db.session.rollback()
 
+        uq_name = "uq_grade_report_teacher_class_subject_period"
         try:
-            db.session.execute(
-                text("DROP INDEX IF EXISTS uq_grade_report_teacher_class_subject_period")
-            )
+            # PostgreSQL хранит уникальность как CONSTRAINT. DROP INDEX его не снимает.
             db.session.execute(
                 text(
-                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_grade_report_teacher_class_subject_period "
+                    "ALTER TABLE grade_reports DROP CONSTRAINT IF EXISTS "
+                    f"{uq_name}"
+                )
+            )
+            db.session.commit()
+        except Exception as exc:
+            print(f"  · drop constraint skipped: {exc}")
+            db.session.rollback()
+
+        try:
+            db.session.execute(text(f"DROP INDEX IF EXISTS {uq_name}"))
+            db.session.execute(
+                text(
+                    "CREATE UNIQUE INDEX uq_grade_report_teacher_class_subject_period "
                     "ON grade_reports (teacher_id, school_id, class_name, subject_name, "
                     "period_type, period_number, academic_year)"
                 )
