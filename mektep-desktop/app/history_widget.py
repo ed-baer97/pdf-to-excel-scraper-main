@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QPushButton, QComboBox, QLabel, QMessageBox, QHeaderView
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QSettings
+from PyQt6.QtCore import Qt, pyqtSignal, QSettings, QTimer
 
 from .academic_year import academic_year_choices, format_academic_year
 from .period_ui import remember_academic_year, saved_academic_year
@@ -156,18 +156,13 @@ class HistoryWidget(QWidget):
             "Дата", "Класс", "Предмет", "Четверть", "Excel", "Word", "Действия"
         ])
         
-        # Растягивание колонок
+        # Ширины задаёт _layout_report_columns: кнопки остаются на экране,
+        # предмет забирает остаток и сокращается многоточием.
         header = self.table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
-        header.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)
-        self.table.setColumnWidth(4, 120)
-        self.table.setColumnWidth(5, 110)
-        self.table.setColumnWidth(6, 240)
+        header.setStretchLastSection(False)
+        header.setMinimumSectionSize(48)
+        for col in range(7):
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
         
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -282,6 +277,7 @@ class HistoryWidget(QWidget):
         # Статистика
         self.stats_label = QLabel()
         layout.addWidget(self.stats_label)
+        QTimer.singleShot(0, self._layout_report_columns)
     
     def _on_year_filter_changed(self, _idx):
         year = self.year_filter.currentData()
@@ -373,13 +369,40 @@ class HistoryWidget(QWidget):
             # Действия
             actions_widget = self.create_actions_widget(report)
             self.table.setCellWidget(row, 6, actions_widget)
+        self._layout_report_columns()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._layout_report_columns()
+
+    def _layout_report_columns(self):
+        """Кнопки строки остаются на экране, предмет забирает оставшуюся ширину."""
+        view = self.table.viewport().width()
+        if view < 80:
+            return
+        excel, word, actions = 96, 84, 196
+        klass = 56
+        rest = view - (excel + word + actions + klass)
+        date, quarter = 200, 124
+        subject = rest - date - quarter
+        if subject < 80:
+            need = 80 - subject
+            take = min(need, date - 150)
+            date -= take
+            need -= take
+            take = min(max(need, 0), quarter - 100)
+            quarter -= take
+            subject = rest - date - quarter
+        widths = (date, klass, max(subject, 40), quarter, excel, word, actions)
+        for col, width in enumerate(widths):
+            self.table.setColumnWidth(col, int(width))
     
     def create_actions_widget(self, report: dict) -> QWidget:
         """Создать виджет с кнопками действий"""
         widget = QWidget()
         layout = QHBoxLayout(widget)
-        layout.setContentsMargins(4, 0, 8, 0)
-        layout.setSpacing(8)
+        layout.setContentsMargins(2, 0, 4, 0)
+        layout.setSpacing(4)
         layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         
         report_id = report["id"]
@@ -387,7 +410,7 @@ class HistoryWidget(QWidget):
         # Кнопка открытия папки
         folder_btn = QPushButton("Папка")
         folder_btn.setObjectName("actionButton")
-        folder_btn.setMinimumWidth(84)
+        folder_btn.setMinimumWidth(80)
         folder_btn.setToolTip("Открыть папку")
         folder_btn.clicked.connect(lambda: self.open_folder(report))
         layout.addWidget(folder_btn)
@@ -395,7 +418,7 @@ class HistoryWidget(QWidget):
         # Кнопка удаления
         delete_btn = QPushButton("Удалить")
         delete_btn.setObjectName("deleteButton")
-        delete_btn.setMinimumWidth(108)
+        delete_btn.setMinimumWidth(104)
         delete_btn.setToolTip("Удалить")
         delete_btn.clicked.connect(lambda: self.delete_report(report_id))
         layout.addWidget(delete_btn)

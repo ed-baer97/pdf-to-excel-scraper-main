@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QComboBox, QProgressBar,
     QTextEdit, QGroupBox, QMessageBox, QFileDialog, QFrame,
-    QFormLayout, QScrollArea, QSplitter, QTabWidget, QProgressDialog
+    QFormLayout, QScrollArea, QSizePolicy, QSplitter, QTabWidget, QProgressDialog
 )
 from PyQt6.QtCore import Qt, QSettings, QTimer
 from PyQt6.QtGui import QFont, QIcon
@@ -139,6 +139,9 @@ class MektepMainWindow(QMainWindow):
         self.columns_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.columns_splitter.setChildrenCollapsible(False)
         self.columns_splitter.setHandleWidth(8)
+        self.columns_splitter.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         self._columns_sized = False
 
         self.left_panel = self.create_reports_panel()
@@ -150,7 +153,7 @@ class MektepMainWindow(QMainWindow):
         self.columns_splitter.setStretchFactor(0, 4)
         self.columns_splitter.setStretchFactor(1, 6)
 
-        main_layout.addWidget(self.columns_splitter)
+        main_layout.addWidget(self.columns_splitter, 1)
         
         # Применение стилей
         self.apply_styles()
@@ -166,7 +169,7 @@ class MektepMainWindow(QMainWindow):
         total = self.columns_splitter.width()
         if total < 200:
             return
-        left = max(self.left_panel.minimumWidth(), int(total * 0.4))
+        left = max(self.left_panel.minimumWidth(), int(total * 0.36))
         right_min = self.columns_splitter.widget(1).minimumWidth()
         if left + right_min > total:
             left = max(self.left_panel.minimumWidth(), total - right_min)
@@ -177,7 +180,7 @@ class MektepMainWindow(QMainWindow):
         """Создание информационной панели пользователя"""
         info_frame = QFrame()
         info_frame.setObjectName("userInfoPanel")
-        info_frame.setMinimumHeight(56)
+        info_frame.setFixedHeight(60)
         
         info_layout = QHBoxLayout(info_frame)
         info_layout.setContentsMargins(15, 8, 15, 8)
@@ -353,7 +356,6 @@ class MektepMainWindow(QMainWindow):
 
         self.output_input = QLineEdit()
         self.output_input.setMinimumHeight(30)
-        self.output_input.setMinimumWidth(80)
         default_path = str(Path.home() / "Documents" / "Mektep Reports")
         self.output_input.setText(default_path)
         folder_layout.addWidget(self.output_input)
