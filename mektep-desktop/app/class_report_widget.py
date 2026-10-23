@@ -58,15 +58,17 @@ class ClassReportWidget(QWidget):
         layout.setSpacing(8)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # --- Фильтры ---
+        filters = QVBoxLayout()
+        filters.setSpacing(8)
         filter_bar = QHBoxLayout()
+        filter_bar.setSpacing(8)
         filter_bar.addWidget(QLabel(self.tr.tr('academic_year_label')))
         self.year_combo = QComboBox()
         populate_academic_year_combo(self.year_combo)
         self.year_combo.currentIndexChanged.connect(self._on_year_changed)
         filter_bar.addWidget(self.year_combo)
 
-        filter_bar.addSpacing(15)
+        filter_bar.addSpacing(12)
         filter_bar.addWidget(QLabel(self.tr.tr('period')))
         self.period_combo = QComboBox()
         for label, *_ in period_combo_items_grades_view(self.tr):
@@ -74,13 +76,17 @@ class ClassReportWidget(QWidget):
         self.period_combo.setCurrentIndex(1)
         self.period_combo.currentIndexChanged.connect(lambda _: self.load_data())
         filter_bar.addWidget(self.period_combo)
+        filter_bar.addStretch()
+        filters.addLayout(filter_bar)
 
-        filter_bar.addSpacing(15)
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
         self.refresh_btn = QPushButton(self.tr.tr('refresh'))
+        self.refresh_btn.setMinimumHeight(34)
+        self.refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.refresh_btn.clicked.connect(self.load_data)
-        filter_bar.addWidget(self.refresh_btn)
+        actions.addWidget(self.refresh_btn)
 
-        filter_bar.addSpacing(15)
         self.export_btn = QPushButton(self.tr.tr('export_excel'))
         self.export_btn.setEnabled(False)
         self.export_btn.setStyleSheet("""
@@ -100,11 +106,13 @@ class ClassReportWidget(QWidget):
                 color: #9ca3af;
             }
         """)
+        self.export_btn.setMinimumHeight(34)
+        self.export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.export_btn.clicked.connect(self._export_excel)
-        filter_bar.addWidget(self.export_btn)
-
-        filter_bar.addStretch()
-        layout.addLayout(filter_bar)
+        actions.addWidget(self.export_btn)
+        actions.addStretch()
+        filters.addLayout(actions)
+        layout.addLayout(filters)
 
         # --- Прокручиваемый контент ---
         self.scroll = QScrollArea()

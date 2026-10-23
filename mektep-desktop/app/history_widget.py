@@ -63,11 +63,14 @@ class HistoryWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
         
-        # Фильтры
-        filter_layout = QHBoxLayout()
+        # Фильтры отдельно от кнопок: длинные подписи не сжимают «Обновить» и «Удалить».
+        filters = QVBoxLayout()
+        filters.setSpacing(8)
+        filter_row = QHBoxLayout()
+        filter_row.setSpacing(8)
         
         year_label = "Год:" if self.translator.get_language() == 'ru' else "Жыл:"
-        filter_layout.addWidget(QLabel(year_label))
+        filter_row.addWidget(QLabel(year_label))
         self.year_filter = QComboBox()
         all_text = "Все" if self.translator.get_language() == 'ru' else "Барлығы"
         self.year_filter.addItem(all_text, None)
@@ -85,13 +88,12 @@ class HistoryWidget(QWidget):
         if saved_index >= 0:
             self.year_filter.setCurrentIndex(saved_index)
         self.year_filter.currentIndexChanged.connect(self._on_year_filter_changed)
-        filter_layout.addWidget(self.year_filter)
+        filter_row.addWidget(self.year_filter)
 
-        filter_layout.addSpacing(20)
+        filter_row.addSpacing(16)
 
-        # Фильтр по периоду
         quarter_label = "Четверть:" if self.translator.get_language() == 'ru' else "Тоқсан:"
-        filter_layout.addWidget(QLabel(quarter_label))
+        filter_row.addWidget(QLabel(quarter_label))
         self.period_filter = QComboBox()
         all_text = "Все" if self.translator.get_language() == 'ru' else "Барлығы"
         self.period_filter.addItem(all_text, None)
@@ -99,27 +101,31 @@ class HistoryWidget(QWidget):
         for code, label in period_map.items():
             self.period_filter.addItem(label, code)
         self.period_filter.currentIndexChanged.connect(self.apply_filters)
-        filter_layout.addWidget(self.period_filter)
-        
-        filter_layout.addSpacing(20)
-        
-        # Кнопка обновления
+        filter_row.addWidget(self.period_filter)
+        filter_row.addStretch()
+        filters.addLayout(filter_row)
+
+        actions_row = QHBoxLayout()
+        actions_row.setSpacing(8)
+
         refresh_text = "Обновить" if self.translator.get_language() == 'ru' else "Жаңарту"
         refresh_btn = QPushButton(refresh_text)
         refresh_btn.setObjectName("refreshButton")
+        refresh_btn.setMinimumHeight(34)
+        refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         refresh_btn.clicked.connect(self.refresh)
-        filter_layout.addWidget(refresh_btn)
-        
-        # Кнопка целей обучения
+        actions_row.addWidget(refresh_btn)
+
         goals_text = "Цели обучения" if self.translator.get_language() == 'ru' else "Оқыту мақсаттары"
         goals_btn = QPushButton(goals_text)
         goals_btn.setObjectName("goalsButton")
+        goals_btn.setMinimumHeight(34)
+        goals_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         goals_btn.clicked.connect(self.goals_requested.emit)
-        filter_layout.addWidget(goals_btn)
-        
-        filter_layout.addStretch()
-        
-        # Кнопка удаления всех отчетов (справа)
+        actions_row.addWidget(goals_btn)
+
+        actions_row.addStretch()
+
         delete_all_text = "Удалить все отчеты" if self.translator.get_language() == 'ru' else "Барлық есептерді жою"
         delete_all_btn = QPushButton(delete_all_text)
         delete_all_btn.setStyleSheet("""
@@ -135,10 +141,13 @@ class HistoryWidget(QWidget):
                 background-color: #b91c1c;
             }
         """)
+        delete_all_btn.setMinimumHeight(34)
+        delete_all_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         delete_all_btn.clicked.connect(self.delete_all_reports)
-        filter_layout.addWidget(delete_all_btn)
+        actions_row.addWidget(delete_all_btn)
+        filters.addLayout(actions_row)
         
-        layout.addLayout(filter_layout)
+        layout.addLayout(filters)
         
         # Таблица отчетов
         self.table = QTableWidget()
@@ -156,14 +165,14 @@ class HistoryWidget(QWidget):
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)
-        self.table.setColumnWidth(4, 90)
-        self.table.setColumnWidth(5, 90)
-        self.table.setColumnWidth(6, 200)
+        self.table.setColumnWidth(4, 120)
+        self.table.setColumnWidth(5, 110)
+        self.table.setColumnWidth(6, 240)
         
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.verticalHeader().setVisible(False)
-        self.table.verticalHeader().setDefaultSectionSize(48)  # Высота строк
+        self.table.verticalHeader().setDefaultSectionSize(52)
         self.table.setShowGrid(False)
         self.table.setStyleSheet("""
             QTableWidget {
@@ -197,11 +206,11 @@ class HistoryWidget(QWidget):
                 color: white;
                 border: none;
                 border-radius: 4px;
-                padding: 2px 12px;
+                padding: 4px 12px;
                 font-weight: 600;
-                font-size: 11px;
-                min-height: 20px;
-                max-height: 20px;
+                font-size: 12px;
+                min-height: 26px;
+                max-height: 28px;
             }
             QPushButton#excelButton:hover {
                 background-color: #16a34a;
@@ -215,11 +224,11 @@ class HistoryWidget(QWidget):
                 color: white;
                 border: none;
                 border-radius: 4px;
-                padding: 2px 12px;
+                padding: 4px 12px;
                 font-weight: 600;
-                font-size: 11px;
-                min-height: 20px;
-                max-height: 20px;
+                font-size: 12px;
+                min-height: 26px;
+                max-height: 28px;
             }
             QPushButton#wordButton:hover {
                 background-color: #2563eb;
@@ -233,10 +242,10 @@ class HistoryWidget(QWidget):
                 color: #374151;
                 border: 1px solid #d1d5db;
                 border-radius: 4px;
-                padding: 2px 10px;
-                font-size: 11px;
-                min-height: 20px;
-                max-height: 20px;
+                padding: 4px 10px;
+                font-size: 12px;
+                min-height: 26px;
+                max-height: 28px;
             }
             QPushButton#actionButton:hover {
                 background-color: #e5e7eb;
@@ -246,10 +255,10 @@ class HistoryWidget(QWidget):
                 color: #dc2626;
                 border: 1px solid #fecaca;
                 border-radius: 4px;
-                padding: 2px 10px;
-                font-size: 11px;
-                min-height: 20px;
-                max-height: 20px;
+                padding: 4px 10px;
+                font-size: 12px;
+                min-height: 26px;
+                max-height: 28px;
             }
             QPushButton#deleteButton:hover {
                 background-color: #fee2e2;
@@ -305,7 +314,7 @@ class HistoryWidget(QWidget):
         self.table.setRowCount(len(reports))
         
         for row, report in enumerate(reports):
-            self.table.setRowHeight(row, 48)
+            self.table.setRowHeight(row, 52)
             # Дата
             created_at = report.get("created_at", "")
             if created_at:
@@ -338,6 +347,7 @@ class HistoryWidget(QWidget):
             excel_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
             excel_btn = QPushButton("Excel")
             excel_btn.setObjectName("excelButton")
+            excel_btn.setMinimumWidth(88)
             if report.get("excel_path") and Path(report["excel_path"]).exists():
                 excel_btn.clicked.connect(lambda _, p=report["excel_path"]: self.open_file(p))
             else:
@@ -352,6 +362,7 @@ class HistoryWidget(QWidget):
             word_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
             word_btn = QPushButton("Word")
             word_btn.setObjectName("wordButton")
+            word_btn.setMinimumWidth(76)
             if report.get("word_path") and Path(report["word_path"]).exists():
                 word_btn.clicked.connect(lambda _, p=report["word_path"]: self.open_file(p))
             else:
@@ -376,6 +387,7 @@ class HistoryWidget(QWidget):
         # Кнопка открытия папки
         folder_btn = QPushButton("Папка")
         folder_btn.setObjectName("actionButton")
+        folder_btn.setMinimumWidth(84)
         folder_btn.setToolTip("Открыть папку")
         folder_btn.clicked.connect(lambda: self.open_folder(report))
         layout.addWidget(folder_btn)
@@ -383,6 +395,7 @@ class HistoryWidget(QWidget):
         # Кнопка удаления
         delete_btn = QPushButton("Удалить")
         delete_btn.setObjectName("deleteButton")
+        delete_btn.setMinimumWidth(108)
         delete_btn.setToolTip("Удалить")
         delete_btn.clicked.connect(lambda: self.delete_report(report_id))
         layout.addWidget(delete_btn)

@@ -177,10 +177,11 @@ class MektepMainWindow(QMainWindow):
         """Создание информационной панели пользователя"""
         info_frame = QFrame()
         info_frame.setObjectName("userInfoPanel")
-        info_frame.setMaximumHeight(60)
+        info_frame.setMinimumHeight(56)
         
         info_layout = QHBoxLayout(info_frame)
-        info_layout.setContentsMargins(15, 10, 15, 10)
+        info_layout.setContentsMargins(15, 8, 15, 8)
+        info_layout.setSpacing(8)
         
         # Информация о пользователе
         username = self.user_data.get("username", self.translator.tr('user'))
@@ -209,34 +210,32 @@ class MektepMainWindow(QMainWindow):
         
         info_layout.addStretch()
         
-        # Кнопка скрытия/показа панели создания отчетов
+        # Кнопки шапки шире текста, без фиксированной ширины — иначе
+        # «Проверить обновление» обрезается.
         toggle_text = "◀ Скрыть панель" if self.translator.get_language() == 'ru' else "◀ Панельді жасыру"
         self.toggle_btn = QPushButton(toggle_text)
-        self.toggle_btn.setFixedWidth(140)
-        self.toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.toggle_btn.setObjectName("togglePanelBtn")
         self.toggle_btn.clicked.connect(self.toggle_reports_panel)
         info_layout.addWidget(self.toggle_btn)
-        
-        # Кнопка настроек
+
         settings_btn = QPushButton(self.translator.tr('settings'))
-        settings_btn.setFixedWidth(100)
+        settings_btn.setObjectName("toolbarBtn")
         settings_btn.clicked.connect(self.open_settings)
         info_layout.addWidget(settings_btn)
 
-        # Кнопка проверки обновлений
         update_text = "Проверить обновление" if self.translator.get_language() == 'ru' else "Жаңартуды тексеру"
         self.update_btn = QPushButton(update_text)
-        self.update_btn.setFixedWidth(160)
-        self.update_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.update_btn.setObjectName("toolbarBtn")
         self.update_btn.clicked.connect(self.check_updates)
         info_layout.addWidget(self.update_btn)
-        
-        # Кнопка выхода
+
         logout_btn = QPushButton(self.translator.tr('logout'))
-        logout_btn.setFixedWidth(100)
+        logout_btn.setObjectName("toolbarBtn")
         logout_btn.clicked.connect(self.logout)
         info_layout.addWidget(logout_btn)
+        for btn in (self.toggle_btn, settings_btn, self.update_btn, logout_btn):
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setMinimumHeight(34)
         
         parent_layout.addWidget(info_frame)
     
@@ -348,23 +347,24 @@ class MektepMainWindow(QMainWindow):
         params_layout.addRow(f"{period_label}:", self.period_combo)
 
         folder_container = QWidget()
-        folder_layout = QHBoxLayout(folder_container)
+        folder_layout = QVBoxLayout(folder_container)
         folder_layout.setContentsMargins(0, 0, 0, 0)
-        folder_layout.setSpacing(5)
+        folder_layout.setSpacing(6)
 
         self.output_input = QLineEdit()
         self.output_input.setMinimumHeight(30)
         self.output_input.setMinimumWidth(80)
         default_path = str(Path.home() / "Documents" / "Mektep Reports")
         self.output_input.setText(default_path)
-        folder_layout.addWidget(self.output_input, 3)
+        folder_layout.addWidget(self.output_input)
 
         select_folder = "Выбрать папку" if self.translator.get_language() == 'ru' else "Қалтаны таңдау"
         self.browse_btn = QPushButton(select_folder)
-        self.browse_btn.setMinimumHeight(30)
-        self.browse_btn.setMinimumWidth(110)
+        self.browse_btn.setObjectName("toolbarBtn")
+        self.browse_btn.setMinimumHeight(34)
+        self.browse_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.browse_btn.clicked.connect(self.browse_folder)
-        folder_layout.addWidget(self.browse_btn, 2)
+        folder_layout.addWidget(self.browse_btn, 0, Qt.AlignmentFlag.AlignLeft)
 
         folder_label = "Папка" if self.translator.get_language() == 'ru' else "Қалта"
         params_layout.addRow(f"{folder_label}:", folder_container)
@@ -1124,11 +1124,13 @@ class MektepMainWindow(QMainWindow):
                 padding: 8px 16px;
                 font-weight: 500;
             }
+            QPushButton#toolbarBtn, QPushButton#togglePanelBtn {
+                padding: 6px 14px;
+                font-size: 13px;
+            }
             QPushButton#togglePanelBtn {
                 background-color: #6c757d;
                 border: 1px solid #6c757d;
-                font-size: 12px;
-                padding: 6px 12px;
             }
             QPushButton#togglePanelBtn:hover {
                 background-color: #5c636a;
