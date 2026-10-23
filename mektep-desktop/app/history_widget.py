@@ -167,7 +167,7 @@ class HistoryWidget(QWidget):
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.verticalHeader().setVisible(False)
-        self.table.verticalHeader().setDefaultSectionSize(52)
+        self.table.verticalHeader().setDefaultSectionSize(40)
         self.table.setShowGrid(False)
         self.table.setStyleSheet("""
             QTableWidget {
@@ -201,11 +201,11 @@ class HistoryWidget(QWidget):
                 color: white;
                 border: none;
                 border-radius: 4px;
-                padding: 4px 12px;
+                padding: 1px 8px;
                 font-weight: 600;
-                font-size: 12px;
-                min-height: 26px;
-                max-height: 28px;
+                font-size: 11px;
+                min-height: 22px;
+                max-height: 22px;
             }
             QPushButton#excelButton:hover {
                 background-color: #16a34a;
@@ -219,11 +219,11 @@ class HistoryWidget(QWidget):
                 color: white;
                 border: none;
                 border-radius: 4px;
-                padding: 4px 12px;
+                padding: 1px 8px;
                 font-weight: 600;
-                font-size: 12px;
-                min-height: 26px;
-                max-height: 28px;
+                font-size: 11px;
+                min-height: 22px;
+                max-height: 22px;
             }
             QPushButton#wordButton:hover {
                 background-color: #2563eb;
@@ -237,10 +237,10 @@ class HistoryWidget(QWidget):
                 color: #374151;
                 border: 1px solid #d1d5db;
                 border-radius: 4px;
-                padding: 4px 10px;
-                font-size: 12px;
-                min-height: 26px;
-                max-height: 28px;
+                padding: 1px 6px;
+                font-size: 11px;
+                min-height: 22px;
+                max-height: 22px;
             }
             QPushButton#actionButton:hover {
                 background-color: #e5e7eb;
@@ -250,10 +250,10 @@ class HistoryWidget(QWidget):
                 color: #dc2626;
                 border: 1px solid #fecaca;
                 border-radius: 4px;
-                padding: 4px 10px;
-                font-size: 12px;
-                min-height: 26px;
-                max-height: 28px;
+                padding: 1px 6px;
+                font-size: 11px;
+                min-height: 22px;
+                max-height: 22px;
             }
             QPushButton#deleteButton:hover {
                 background-color: #fee2e2;
@@ -310,7 +310,7 @@ class HistoryWidget(QWidget):
         self.table.setRowCount(len(reports))
         
         for row, report in enumerate(reports):
-            self.table.setRowHeight(row, 52)
+            self.table.setRowHeight(row, 40)
             # Дата
             created_at = report.get("created_at", "")
             if created_at:
@@ -343,7 +343,8 @@ class HistoryWidget(QWidget):
             excel_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
             excel_btn = QPushButton("Excel")
             excel_btn.setObjectName("excelButton")
-            excel_btn.setMinimumWidth(88)
+            excel_btn.setMinimumWidth(70)
+            excel_btn.setFixedHeight(22)
             if report.get("excel_path") and Path(report["excel_path"]).exists():
                 excel_btn.clicked.connect(lambda _, p=report["excel_path"]: self.open_file(p))
             else:
@@ -358,7 +359,8 @@ class HistoryWidget(QWidget):
             word_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
             word_btn = QPushButton("Word")
             word_btn.setObjectName("wordButton")
-            word_btn.setMinimumWidth(76)
+            word_btn.setMinimumWidth(62)
+            word_btn.setFixedHeight(22)
             if report.get("word_path") and Path(report["word_path"]).exists():
                 word_btn.clicked.connect(lambda _, p=report["word_path"]: self.open_file(p))
             else:
@@ -380,7 +382,7 @@ class HistoryWidget(QWidget):
         view = self.table.viewport().width()
         if view < 80:
             return
-        excel, word, actions = 96, 84, 196
+        excel, word, actions = 82, 74, 168
         klass = 56
         rest = view - (excel + word + actions + klass)
         date, quarter = 200, 124
@@ -410,7 +412,8 @@ class HistoryWidget(QWidget):
         # Кнопка открытия папки
         folder_btn = QPushButton("Папка")
         folder_btn.setObjectName("actionButton")
-        folder_btn.setMinimumWidth(80)
+        folder_btn.setMinimumWidth(68)
+        folder_btn.setFixedHeight(22)
         folder_btn.setToolTip("Открыть папку")
         folder_btn.clicked.connect(lambda: self.open_folder(report))
         layout.addWidget(folder_btn)
@@ -418,7 +421,8 @@ class HistoryWidget(QWidget):
         # Кнопка удаления
         delete_btn = QPushButton("Удалить")
         delete_btn.setObjectName("deleteButton")
-        delete_btn.setMinimumWidth(104)
+        delete_btn.setMinimumWidth(86)
+        delete_btn.setFixedHeight(22)
         delete_btn.setToolTip("Удалить")
         delete_btn.clicked.connect(lambda: self.delete_report(report_id))
         layout.addWidget(delete_btn)
