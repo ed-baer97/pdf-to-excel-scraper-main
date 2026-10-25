@@ -30,15 +30,27 @@ def sanitize_filename(s: str) -> str:
     return s or "report"
 
 
+# Литера класса — целое слово из одной буквы, а не первая буква длинного названия.
+_CLASS_LITER = r"[A-Za-zА-ЯЁӘҒҚҢӨҰҮҺа-яёәғқңөұүһ]"
+
+
 def parse_class_liter(class_text: str) -> str:
-    """Нормализация названия класса: '5 «В»' -> '5В'"""
-    s = (class_text or "").replace("«", " ").replace("»", " ").strip()
-    m = re.search(r"(\d+)\s*([A-Za-zА-ЯЁӘҒҚҢӨҰҮҺа-яёәғқңөұүһ])?", s)
+    """Нормализация названия класса.
+
+    Одна литера целиком: '5 «В»' -> '5В'.
+    Словесное название не режется по первой букве:
+    '6 «Дистанционное обучение»' -> '6 Дистанционное обучение'.
+    """
+    s = (class_text or "").replace("«", " ").replace("»", " ")
+    s = " ".join(s.split()).strip()
+    if not s:
+        return ""
+    m = re.fullmatch(rf"(\d+)\s*({_CLASS_LITER})?", s)
     if not m:
-        return (class_text or "").strip()
+        return s
     num = m.group(1)
     lit = (m.group(2) or "").upper()
-    return f"{num}{lit}".strip()
+    return f"{num}{lit}"
 
 
 def parse_number(val: Any) -> Optional[float]:
