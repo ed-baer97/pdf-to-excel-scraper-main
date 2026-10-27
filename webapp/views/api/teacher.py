@@ -32,7 +32,9 @@ def api_teacher_my_classes():
             "managed_classes": ["7А"]
         }
     """
-    overview = teacher_subjects_overview(request.current_user)
+    overview = teacher_subjects_overview(
+        request.current_user, request.args.get("academic_year")
+    )
     return jsonify({"success": True, **overview}), 200
 
 

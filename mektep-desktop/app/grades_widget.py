@@ -190,6 +190,12 @@ class GradesWidget(QWidget):
         if not self.api_client or not self.api_client.is_authenticated():
             return
 
+        self.class_combo.blockSignals(True)
+        self.class_combo.clear()
+        self.class_combo.blockSignals(False)
+        self.stack.setCurrentIndex(0)
+        self.export_btn.setEnabled(False)
+
         self.loading_overlay.show_overlay(self.tr.tr('loading_classes'))
         self.refresh_btn.setEnabled(False)
 
@@ -233,6 +239,8 @@ class GradesWidget(QWidget):
         if self.class_combo.count() > 0:
             self._load_class_grades()
         else:
+            self.stack.setCurrentIndex(0)
+            self.export_btn.setEnabled(False)
             self.loading_overlay.hide_overlay()
             self.refresh_btn.setEnabled(True)
 

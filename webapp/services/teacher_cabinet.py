@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ..constants import kazakh_sort_key, normalize_subject_name
 from ..extensions import db
-from ..models import Class, Subject, TeacherClass, TeacherSubject
+from ..models import GradeReport
 from .academic_year import resolve_academic_year
 from .class_homeroom import managed_classes
 from .api_helpers import get_period_reports_api
@@ -18,38 +18,64 @@ from .class_grades_matrix import (
 from .grade_reports.class_teacher import categorize_students
 
 
-def teacher_subjects_overview(user) -> dict:
-    """Предметы с классами (через TeacherSubject → TeacherClass) и классы классрука."""
-    teacher_subjects = TeacherSubject.query.filter_by(teacher_id=user.id).all()
+def _classes_with_reports(school_id: int, academic_year: int) -> set[str]:
+    """Имена классов школы, по которым в этом учебном году уже есть отчёты."""
+    rows = (
+        db.session.query(GradeReport.class_name)
+        .filter(
+            GradeReport.school_id == school_id,
+            GradeReport.academic_year == academic_year,
+        )
+        .distinct()
+        .all()
+    )
+    return {str(name).strip() for (name,) in rows if str(name or "").strip()}
+
+
+def teacher_subjects_overview(user, academic_year: int | None = None) -> dict:
+    """Классы учителя в выбранном году — только те, по которым уже есть отчёты.
+
+    Закрепления прошлых лет в список не попадают. Новый год без выгрузки пустой.
+    """
+    year = resolve_academic_year(academic_year)
+    rows = (
+        db.session.query(GradeReport.subject_name, GradeReport.class_name)
+        .filter(
+            GradeReport.teacher_id == user.id,
+            GradeReport.school_id == user.school_id,
+            GradeReport.academic_year == year,
+        )
+        .distinct()
+        .all()
+    )
+
+    by_subject: dict[str, set[str]] = {}
+    for subject_name, class_name in rows:
+        cls_name = str(class_name or "").strip()
+        subj_name = str(subject_name or "").strip()
+        if not cls_name or not subj_name:
+            continue
+        by_subject.setdefault(subj_name, set()).add(cls_name)
 
     subjects_data = []
-    for ts in teacher_subjects:
-        subject = db.session.get(Subject, ts.subject_id)
-        if not subject:
-            continue
+    for subj_name in sorted(by_subject, key=kazakh_sort_key):
+        subjects_data.append({
+            "subject_name": subj_name,
+            "classes": [
+                {"class_name": cls_name, "subgroup": None}
+                for cls_name in sorted(by_subject[subj_name], key=kazakh_sort_key)
+            ],
+        })
 
-        teacher_classes = TeacherClass.query.filter_by(teacher_subject_id=ts.id).all()
-        classes_list = []
-        for tc in teacher_classes:
-            cls = db.session.get(Class, tc.class_id)
-            if cls:
-                classes_list.append({
-                    "class_name": cls.name,
-                    "class_id": cls.id,
-                    "subgroup": tc.subgroup,
-                })
-
-        if classes_list:
-            subjects_data.append({
-                "subject_name": subject.name,
-                "subject_id": subject.id,
-                "classes": classes_list,
-            })
-
-    managed = managed_classes(user.school_id, user.id, resolve_academic_year())
+    reported = _classes_with_reports(user.school_id, year) if user.school_id else set()
+    managed_names = [
+        cls.name
+        for cls in managed_classes(user.school_id, user.id, year)
+        if cls.name in reported
+    ]
     return {
         "subjects": subjects_data,
-        "managed_classes": [c.name for c in managed],
+        "managed_classes": managed_names,
     }
 
 
