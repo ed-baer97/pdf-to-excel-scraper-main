@@ -1156,3 +1156,58 @@ class MektepAPIClient:
                 "success": False,
                 "error": f"Ошибка: {str(e)}"
             }
+
+    def generate_goals_analysis(self, achieved: str, difficulties: str) -> Dict:
+        """
+        Серверная генерация анализа СОР/СОЧ через ИИ (без передачи API-ключа на клиент).
+        """
+        if not self._is_token_valid():
+            return {
+                "success": False,
+                "error": "Токен недействителен. Требуется повторная авторизация.",
+                "needs_auth": True,
+            }
+
+        try:
+            self._set_auth_header()
+            payload = {"achieved": achieved, "difficulties": difficulties}
+            response = self.session.post(
+                f"{self.base_url}/api/teacher/goals/generate",
+                json=payload,
+                timeout=35,
+            )
+            if response.status_code == 200:
+                return response.json()
+            if response.status_code == 401:
+                refresh_result = self.refresh_token()
+                if refresh_result.get("success"):
+                    response = self.session.post(
+                        f"{self.base_url}/api/teacher/goals/generate",
+                        json=payload,
+                        timeout=35,
+                    )
+                    if response.status_code == 200:
+                        return response.json()
+                self.token = None
+                self.token_expires = None
+                return {
+                    "success": False,
+                    "error": "Токен истек. Требуется повторная авторизация.",
+                    "needs_auth": True,
+                }
+            return {
+                "success": False,
+                "error": response.json().get("error", "Ошибка генерации ИИ-анализа"),
+                "status_code": response.status_code,
+            }
+        except requests.exceptions.ConnectionError:
+            return {
+                "success": False,
+                "error": "Не удалось подключиться к серверу",
+                "offline": True,
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Ошибка: {str(e)}",
+            }

@@ -4,6 +4,7 @@ from flask import jsonify, request
 
 from ...constants import kazakh_sort_key
 from ...services.academic_year import resolve_academic_year
+from ...services.admin_dashboard import parse_ui_period_number
 from ...services.api_helpers import require_jwt
 from ...services.class_grades_matrix import build_class_grades_matrix, class_grades_summary
 from . import bp
@@ -47,7 +48,7 @@ def api_get_class_grades(class_name: str):
         }
     """
     user = request.current_user
-    period_number = int(request.args.get("period_number", 2))
+    period_number = parse_ui_period_number(request.args.get("period_number", 2))
     academic_year = resolve_academic_year(request.args.get("academic_year"))
     school_id = user.school_id
 

@@ -5,12 +5,29 @@ from flask_login import current_user
 from sqlalchemy import func
 
 from ..extensions import db
-from ..models import Role, School, User, Class, GradeReport, ReportFile, TeacherSubject, TeacherClass, Subject
+from ..models import (
+    Class,
+    ClassTeacherYear,
+    ExportJob,
+    FinalReportData,
+    GradeReport,
+    ReportFile,
+    Role,
+    School,
+    ScrapeJob,
+    Subject,
+    SubjectNameAlias,
+    TeacherClass,
+    TeacherSchool,
+    TeacherSubject,
+    User,
+)
 from ..security import decrypt_password, encrypt_password
 from ..constants import kazakh_sort_key
 from ..services.academic_year import resolve_academic_year
 from ..services.auth_guards import superadmin_required
 from ..services.class_homeroom import class_teacher_map, prepare_class_teachers
+from ..services.teacher_schools import remove_teacher_from_school, teachers_for_school
 
 bp = Blueprint("superadmin", __name__, url_prefix="/superadmin")
 
@@ -69,27 +86,84 @@ def delete_school(school_id: int):
 
     school_name = s.name
 
-    # Удаляем всех пользователей школы и их данные
+    # Отвязываем учителей, работающих в нескольких школах, чтобы не удалять их аккаунты
+    member_rows = TeacherSchool.query.filter_by(school_id=s.id).all()
+    for m in member_rows:
+        other_count = TeacherSchool.query.filter(
+            TeacherSchool.teacher_id == m.teacher_id,
+            TeacherSchool.school_id != s.id,
+        ).count()
+        if other_count > 0:
+            remove_teacher_from_school(m.teacher_id, s.id)
+
+    db.session.flush()
+
+    # Удаляем всех оставшихся пользователей школы и их данные
     users = User.query.filter_by(school_id=s.id).all()
     for u in users:
-        GradeReport.query.filter_by(teacher_id=u.id).delete()
-        ReportFile.query.filter_by(teacher_id=u.id).delete()
+        GradeReport.query.filter_by(teacher_id=u.id).delete(synchronize_session=False)
+        ReportFile.query.filter_by(teacher_id=u.id).delete(synchronize_session=False)
+        ScrapeJob.query.filter_by(teacher_id=u.id).delete(synchronize_session=False)
+        ExportJob.query.filter_by(user_id=u.id).delete(synchronize_session=False)
+        ClassTeacherYear.query.filter_by(teacher_id=u.id).update(
+            {"teacher_id": None}, synchronize_session=False
+        )
+        Class.query.filter_by(class_teacher_id=u.id).update(
+            {"class_teacher_id": None}, synchronize_session=False
+        )
         teacher_subjects = TeacherSubject.query.filter_by(teacher_id=u.id).all()
         for ts in teacher_subjects:
-            TeacherClass.query.filter_by(teacher_subject_id=ts.id).delete()
-        TeacherSubject.query.filter_by(teacher_id=u.id).delete()
+            TeacherClass.query.filter_by(teacher_subject_id=ts.id).delete(synchronize_session=False)
+        TeacherSubject.query.filter_by(teacher_id=u.id).delete(synchronize_session=False)
+        TeacherSchool.query.filter_by(teacher_id=u.id).delete(synchronize_session=False)
 
-    # Удаляем отчёты, привязанные к школе напрямую
-    GradeReport.query.filter_by(school_id=s.id).delete()
+    # Удаляем данные, привязанные к школе напрямую
+    ExportJob.query.filter_by(school_id=s.id).delete(synchronize_session=False)
+    ScrapeJob.query.filter_by(school_id=s.id).delete(synchronize_session=False)
+    FinalReportData.query.filter_by(school_id=s.id).delete(synchronize_session=False)
+    SubjectNameAlias.query.filter_by(school_id=s.id).delete(synchronize_session=False)
+    ReportFile.query.filter_by(school_id=s.id).delete(synchronize_session=False)
+    GradeReport.query.filter_by(school_id=s.id).delete(synchronize_session=False)
+    TeacherSchool.query.filter_by(school_id=s.id).delete(synchronize_session=False)
 
-    # Удаляем предметы школы
-    Subject.query.filter_by(school_id=s.id).delete()
+    # Удаляем связи классов и предметов школы
+    school_class_ids = [
+        cid for (cid,) in Class.query.filter_by(school_id=s.id).with_entities(Class.id).all()
+    ]
+    if school_class_ids:
+        ClassTeacherYear.query.filter(ClassTeacherYear.class_id.in_(school_class_ids)).delete(
+            synchronize_session=False
+        )
+        TeacherClass.query.filter(TeacherClass.class_id.in_(school_class_ids)).delete(
+            synchronize_session=False
+        )
 
-    # Удаляем классы школы
-    Class.query.filter_by(school_id=s.id).delete()
+    school_subject_ids = [
+        sid for (sid,) in Subject.query.filter_by(school_id=s.id).with_entities(Subject.id).all()
+    ]
+    if school_subject_ids:
+        ts_ids = [
+            tsid
+            for (tsid,) in TeacherSubject.query.filter(
+                TeacherSubject.subject_id.in_(school_subject_ids)
+            )
+            .with_entities(TeacherSubject.id)
+            .all()
+        ]
+        if ts_ids:
+            TeacherClass.query.filter(TeacherClass.teacher_subject_id.in_(ts_ids)).delete(
+                synchronize_session=False
+            )
+        TeacherSubject.query.filter(TeacherSubject.subject_id.in_(school_subject_ids)).delete(
+            synchronize_session=False
+        )
+
+    # Удаляем предметы и классы школы
+    Subject.query.filter_by(school_id=s.id).delete(synchronize_session=False)
+    Class.query.filter_by(school_id=s.id).delete(synchronize_session=False)
 
     # Удаляем пользователей школы
-    User.query.filter_by(school_id=s.id).delete()
+    User.query.filter_by(school_id=s.id).delete(synchronize_session=False)
 
     # Удаляем саму школу
     db.session.delete(s)
@@ -234,6 +308,7 @@ def delete_admin(user_id: int):
 
     school_id = u.school_id
     admin_name = u.full_name or u.username
+    ExportJob.query.filter_by(user_id=u.id).delete(synchronize_session=False)
     db.session.delete(u)
     db.session.commit()
     flash(f'Администратор "{admin_name}" удалён.', "success")
@@ -252,9 +327,7 @@ def school_detail(school_id: int):
     admins = User.query.filter_by(
         role=Role.SCHOOL_ADMIN.value, school_id=school_id
     ).all()
-    teachers = User.query.filter_by(
-        role=Role.TEACHER.value, school_id=school_id
-    ).all()
+    teachers = teachers_for_school(school_id)
     year = resolve_academic_year()
     index = prepare_class_teachers(school_id, year)
     class_teacher_by_id = class_teacher_map(school_id, year, index)
@@ -280,4 +353,3 @@ def school_detail(school_id: int):
         class_teacher_by_id=class_teacher_by_id,
         subjects=subjects,
     )
-

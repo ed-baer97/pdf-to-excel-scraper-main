@@ -127,96 +127,14 @@ def execute_export_job(job_id: int) -> None:
         elif kind == "grades_class":
             period_number = parse_ui_period_number(params.get("period_number", 2))
             class_name = params.get("class_name") or ""
-            from ..services.grade_reports.queries import get_period_reports
+            from ..services.class_grades_matrix import build_class_grades_table
 
-            reports = get_period_reports(
+            subjects_list, students_list, subject_stats, _ = build_class_grades_table(
                 school_id,
+                class_name,
                 period_number,
-                class_name=class_name,
                 academic_year=academic_year,
             )
-            subjects: set[str] = set()
-            students_data: dict[str, dict[str, dict]] = {}
-            for report in reports:
-                subj = normalize_subject_name(report.subject_name, school_id)
-                subjects.add(subj)
-                grades_data = report_grades_payload(report)
-                if not grades_data:
-                    continue
-                for student in grades_data.get("students", []) or []:
-                    name = (student.get("name") or "").strip()
-                    if not name:
-                        continue
-                    if name not in students_data:
-                        students_data[name] = {}
-                    existing = students_data[name].get(subj)
-                    new_grade = {
-                        "percent": student.get("percent"),
-                        "grade": student.get("grade"),
-                    }
-                    if existing is None or existing.get("grade") is None:
-                        students_data[name][subj] = new_grade
-                    elif new_grade.get("grade") is not None and new_grade[
-                        "grade"
-                    ] > (existing.get("grade") or 0):
-                        students_data[name][subj] = new_grade
-
-            subjects_list = sorted(subjects, key=kazakh_sort_key)
-            students_list = []
-            for name in sorted(students_data.keys(), key=kazakh_sort_key):
-                grades = students_data[name]
-                students_list.append(
-                    {
-                        "name": name,
-                        "grades": grades,
-                        "count_5": sum(
-                            1 for g in grades.values() if g.get("grade") == 5
-                        ),
-                        "count_4": sum(
-                            1 for g in grades.values() if g.get("grade") == 4
-                        ),
-                        "count_3": sum(
-                            1 for g in grades.values() if g.get("grade") == 3
-                        ),
-                        "count_2": sum(
-                            1 for g in grades.values() if g.get("grade") == 2
-                        ),
-                    }
-                )
-            subject_stats = {}
-            for subj in subjects_list:
-                s5 = s4 = s3 = s2 = 0
-                total_in_subj = 0
-                for student in students_list:
-                    gi = student["grades"].get(subj, {})
-                    g = gi.get("grade")
-                    if g is not None:
-                        total_in_subj += 1
-                        if g == 5:
-                            s5 += 1
-                        elif g == 4:
-                            s4 += 1
-                        elif g == 3:
-                            s3 += 1
-                        else:
-                            s2 += 1
-                subject_stats[subj] = {
-                    "count_5": s5,
-                    "count_4": s4,
-                    "count_3": s3,
-                    "count_2": s2,
-                    "total": total_in_subj,
-                    "quality_percent": round(
-                        (s5 + s4) / total_in_subj * 100, 1
-                    )
-                    if total_in_subj
-                    else 0,
-                    "success_percent": round(
-                        (s5 + s4 + s3) / total_in_subj * 100, 1
-                    )
-                    if total_in_subj
-                    else 0,
-                }
             period_name = _period_name(period_number, lang)
             output, filename = build_grades_class_workbook(
                 class_name,

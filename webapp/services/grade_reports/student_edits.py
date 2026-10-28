@@ -7,6 +7,7 @@ from typing import Any
 
 from ...extensions import db
 from ...models import GradeReport
+from ..academic_year import resolve_academic_year
 from ..criteria_grades import grade_distribution
 from ..year_grades import YEAR_UI_PERIOD
 from .aggregates import apply_grade_aggregates
@@ -119,6 +120,8 @@ def delete_student_from_class_reports(
     class_name: str,
     student_name: str,
     period_number: int,
+    *,
+    academic_year: int | None = None,
 ) -> int:
     """
     Удаляет ученика из grades_json всех отчётов класса за период UI.
@@ -130,10 +133,12 @@ def delete_student_from_class_reports(
     if not target:
         return 0
 
+    year = resolve_academic_year(academic_year)
     allowed = allowed_periods_for_ui(period_number)
     reports = GradeReport.query.filter_by(
         school_id=school_id,
         class_name=class_name,
+        academic_year=year,
     ).all()
 
     updated = 0

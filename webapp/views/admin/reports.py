@@ -1,71 +1,31 @@
-import json
-import secrets
-from io import BytesIO
-from pathlib import Path
 from urllib.parse import quote
 
 from flask import (
-    Blueprint,
-    abort,
-    current_app,
-    jsonify,
-    make_response,
+    flash,
     redirect,
     render_template,
     request,
+    send_file,
     session,
     url_for,
-    flash,
-    send_file,
 )
 from flask_login import current_user
-from sqlalchemy import func
-from openpyxl import Workbook, load_workbook
 
-from ...extensions import db
-from ...models import Role, User, GradeReport, Class, School, ReportFile, TeacherSubject, TeacherClass, SubjectNameAlias
-from ...security import decrypt_password, encrypt_password
 from ...constants import kazakh_sort_key, normalize_subject_name
+from ...extensions import db
+from ...models import Class, GradeReport, ReportFile, School
+from ...services.academic_year import resolve_academic_year
 from ...services.admin_common import apply_analytics_filters, redirect_back
-from ...services.report_teacher import get_report_teacher_name
 from ...services.admin_dashboard import (
     YEAR_UI_PERIOD,
-    aggregate_class_metrics,
-    aggregate_year_metrics,
-    chart_series_from_class_totals,
     class_accordion_group,
-    class_name_sort_key,
     get_period_reports,
-    get_quarter_reports,
-    parse_class_grade,
     parse_ui_period_number,
     student_class_summary_category,
-    teacher_accordion_group,
     ui_period_display_name,
 )
-from ...services.grade_reports.analytics import (
-    build_analytics_maps,
-    sort_analytics_subject_keys,
-)
-from ...services.grade_reports.context import load_school_period_context
-from ...services.grade_reports.overview import (
-    build_grades_overview,
-    sort_grades_overview_classes,
-)
-from ...services.grade_reports.payload import (
-    report_analytics_payload,
-    report_grades_payload,
-)
-from ...services.grade_reports.student_edits import delete_student_from_class_reports
-from ...services.grade_reports.class_teacher import build_class_teacher_categories_data
-from ...services.academic_year import resolve_academic_year
-from ...services.grade_reports.excel import (
-    build_analytics_workbook,
-    build_class_metrics_charts_workbook,
-    build_class_teacher_workbook,
-    build_grades_class_workbook,
-)
-from ...services.grade_reports.excel.summary_vedomost import export_class_summary_vedomost
+from ...services.auth_guards import admin_or_superadmin_required as admin_required
+from ...services.class_grades_matrix import build_class_grades_table
 from ...services.criteria_grades import (
     build_criteria_period_zip,
     build_criteria_subject_summary,
@@ -73,38 +33,40 @@ from ...services.criteria_grades import (
     build_final_table,
     build_simple_grades_table,
     collect_classes_with_criteria,
-    find_criteria_subject_entry,
-    list_criteria_subject_entries,
     criteria_from_grades_payload,
     criteria_period_path_slug,
     final_from_grades_payload,
+    find_criteria_subject_entry,
     has_criteria_data,
     has_final_data,
     is_final_period,
     is_year_period,
-    parse_grades_json,
-    report_has_criteria_block,
-    report_has_final_block,
+    list_criteria_subject_entries,
     safe_path_segment,
 )
-from ...services.auth_guards import admin_or_superadmin_required as admin_required
-from ...services.subject_aliases import ensure_default_aliases, restore_default_aliases
-from ...services.year_grades import (
-    build_year_student_subjects,
-    math_round_percent,
-    students_data_from_year_map,
+from ...services.grade_reports.analytics import (
+    build_analytics_maps,
+    sort_analytics_subject_keys,
 )
+from ...services.grade_reports.cache import bump_grade_reports_version
+from ...services.grade_reports.class_teacher import build_class_teacher_categories_data
+from ...services.grade_reports.context import load_school_period_context
+from ...services.grade_reports.excel import (
+    build_analytics_workbook,
+    build_class_teacher_workbook,
+    build_grades_class_workbook,
+)
+from ...services.grade_reports.excel.summary_vedomost import export_class_summary_vedomost
+from ...services.grade_reports.overview import (
+    build_grades_overview,
+    sort_grades_overview_classes,
+)
+from ...services.grade_reports.payload import report_grades_payload
+from ...services.grade_reports.student_edits import delete_student_from_class_reports
+from ...services.report_teacher import get_report_teacher_name
 from ...translator import gettext as translate_gettext
 
-from iin_utils import normalize_kz_iin
-
 from . import bp
-
-def _iin_taken_by_other_teacher(school_id: int, iin_norm: str, exclude_id: int | None = None) -> bool:
-    q = User.query.filter_by(role=Role.TEACHER.value, school_id=school_id, iin=iin_norm)
-    if exclude_id is not None:
-        q = q.filter(User.id != exclude_id)
-    return q.first() is not None
 
 
 def _redirect_back(fallback_url: str):
@@ -112,51 +74,10 @@ def _redirect_back(fallback_url: str):
     return redirect_back(fallback_url)
 
 
-def _management_list_context(school_id: int) -> dict:
-    """Teachers/classes lists and accordion buckets for the management page."""
-    teachers = User.query.filter_by(
-        role=Role.TEACHER.value, school_id=school_id
-    ).all()
-    classes = Class.query.filter_by(school_id=school_id).all()
-    teachers.sort(key=lambda t: kazakh_sort_key(t.full_name or t.username))
-    classes.sort(key=lambda c: kazakh_sort_key(c.name))
-    teachers_by_accordion = {
-        "1-4": [],
-        "5-9": [],
-        "10-11": [],
-        "no_leadership": [],
-    }
-    for t in teachers:
-        group = teacher_accordion_group(t, classes)
-        teachers_by_accordion[group].append(t)
-    classes_by_accordion = {
-        "1-4": [],
-        "5-9": [],
-        "10-11": [],
-    }
-    for cls in classes:
-        group = class_accordion_group(cls.name)
-        classes_by_accordion[group].append(cls)
-    ensure_default_aliases(school_id)
-    subject_aliases = (
-        SubjectNameAlias.query.filter_by(school_id=school_id)
-        .order_by(SubjectNameAlias.alias_name)
-        .all()
-    )
-    return {
-        "teachers": teachers,
-        "classes": classes,
-        "teachers_by_accordion": teachers_by_accordion,
-        "classes_by_accordion": classes_by_accordion,
-        "subject_aliases": subject_aliases,
-    }
-
 @bp.get("/grades")
 @admin_required
 def grades_overview():
     """Обзор оценок: список классов со сводкой"""
-    
-    # Параметры фильтрации (только четверти)
     period_number = parse_ui_period_number(request.args.get("period_number", 2))
 
     ctx = load_school_period_context(current_user.school_id, period_number)
@@ -167,7 +88,7 @@ def grades_overview():
         "admin/grades_overview.html",
         classes=sorted_classes,
         classes_by_accordion=classes_by_accordion,
-        period_number=period_number
+        period_number=period_number,
     )
 
 
@@ -175,8 +96,6 @@ def grades_overview():
 @admin_required
 def grades_class(class_name: str):
     """Сводная таблица оценок класса: ученик × предмет"""
-    
-    # Параметры (только четверти)
     period_number = parse_ui_period_number(request.args.get("period_number", 2))
 
     if not Class.query.filter_by(school_id=current_user.school_id, name=class_name).first():
@@ -186,100 +105,13 @@ def grades_class(class_name: str):
         )
         return redirect(url_for("admin.grades_overview", period_number=period_number))
 
-    school_id = current_user.school_id
+    subjects_list, students_list, subject_stats, students_data = build_class_grades_table(
+        current_user.school_id,
+        class_name,
+        period_number,
+        round_year_stats=True,
+    )
 
-    if period_number == YEAR_UI_PERIOD:
-        year_map = build_year_student_subjects(
-            school_id, class_name, get_quarter_reports
-        )
-        students_data = students_data_from_year_map(year_map)
-        subjects = {subj for subjs in students_data.values() for subj in subjs}
-    else:
-        reports = get_period_reports(school_id, period_number, class_name=class_name)
-        subjects = set()
-        students_data = {}
-
-        for report in reports:
-            subj = normalize_subject_name(report.subject_name, school_id)
-            subjects.add(subj)
-
-            if report.grades_json:
-                try:
-                    grades_data = report_grades_payload(report)
-                    for student in grades_data.get("students", []):
-                        name = student.get("name")
-                        if not name:
-                            continue
-                        if name not in students_data:
-                            students_data[name] = {}
-                        existing = students_data[name].get(subj)
-                        new_grade = {
-                            "percent": student.get("percent"),
-                            "grade": student.get("grade"),
-                        }
-                        if existing is None or existing.get("grade") is None:
-                            students_data[name][subj] = new_grade
-                        elif (
-                            new_grade.get("grade") is not None
-                            and new_grade["grade"] > existing.get("grade", 0)
-                        ):
-                            students_data[name][subj] = new_grade
-                except json.JSONDecodeError:
-                    pass
-
-    # Формируем списки для шаблона
-    subjects_list = sorted(subjects, key=kazakh_sort_key)
-    students_list = []
-    
-    for name in sorted(students_data.keys(), key=kazakh_sort_key):
-        grades = students_data[name]
-        
-        # Подсчёт 5, 4, 3 по строке (ученику)
-        row_count_5 = sum(1 for g in grades.values() if g.get("grade") == 5)
-        row_count_4 = sum(1 for g in grades.values() if g.get("grade") == 4)
-        row_count_3 = sum(1 for g in grades.values() if g.get("grade") == 3)
-        row_count_2 = sum(1 for g in grades.values() if g.get("grade") == 2)
-        
-        students_list.append({
-            "name": name,
-            "grades": grades,
-            "count_5": row_count_5,
-            "count_4": row_count_4,
-            "count_3": row_count_3,
-            "count_2": row_count_2,
-        })
-    
-    # Подсчёт по столбцам (предметам): кол-во 5,4,3 + качество + успеваемость
-    subject_stats = {}
-    for subj in subjects_list:
-        s5 = s4 = s3 = s2 = 0
-        total_in_subj = 0
-        for student in students_list:
-            gi = student["grades"].get(subj, {})
-            g = gi.get("grade")
-            if g is not None:
-                total_in_subj += 1
-                if g == 5:
-                    s5 += 1
-                elif g == 4:
-                    s4 += 1
-                elif g == 3:
-                    s3 += 1
-                else:
-                    s2 += 1
-        if period_number == YEAR_UI_PERIOD:
-            quality = math_round_percent(s5 + s4, total_in_subj) if total_in_subj else 0
-            success = math_round_percent(s5 + s4 + s3, total_in_subj) if total_in_subj else 0
-        else:
-            quality = round((s5 + s4) / total_in_subj * 100, 1) if total_in_subj else 0
-            success = round((s5 + s4 + s3) / total_in_subj * 100, 1) if total_in_subj else 0
-        subject_stats[subj] = {
-            "count_5": s5, "count_4": s4, "count_3": s3, "count_2": s2,
-            "total": total_in_subj,
-            "quality_percent": quality,
-            "success_percent": success
-        }
-    
     # Карточки сверху: по ученикам (отличники / хорошисты / троишники с двойками), не по ячейкам таблицы
     total_students = len(students_data)
     grades_count = {"5": 0, "4": 0, "3": 0, "2": 0}
@@ -321,8 +153,8 @@ def grades_class(class_name: str):
             "total_students": total_students,
             "quality_percent": quality_percent,
             "success_percent": success_percent,
-            "grades_count": grades_count
-        }
+            "grades_count": grades_count,
+        },
     )
 
 
@@ -367,7 +199,7 @@ def download_criteria_period_excel():
     """ZIP: все классы за период — {орг}/{период}/{класс}/предметы.xlsx."""
     period_number = parse_ui_period_number(request.args.get("period_number", 2))
 
-    school = School.query.get(current_user.school_id)
+    school = db.session.get(School, current_user.school_id)
     if not school:
         flash("Школа не найдена.", "danger")
         return redirect(url_for("admin.criteria_overview", period_number=period_number))
@@ -529,7 +361,6 @@ def criteria_subject(class_name: str, subject_name: str):
 @admin_required
 def delete_subject_from_class(class_name: str):
     """Удаление предмета из отчетов указанного класса за выбранную четверть."""
-
     subject_name = (request.form.get("subject_name") or "").strip()
     period_raw = request.form.get("period_number", "2")
     period_number = parse_ui_period_number(period_raw)
@@ -539,12 +370,12 @@ def delete_subject_from_class(class_name: str):
         return _redirect_back(url_for("admin.grades_class", class_name=class_name, period_number=period_number))
 
     target_subject = normalize_subject_name(subject_name, current_user.school_id)
+    academic_year = resolve_academic_year()
 
-    # Удаляем GradeReport по текущему классу и предмету ТОЛЬКО за выбранную четверть.
-    # Для 2 и 4 четвертей дополнительно удаляем соответствующее полугодие.
     reports = GradeReport.query.filter_by(
         school_id=current_user.school_id,
         class_name=class_name,
+        academic_year=academic_year,
     ).all()
 
     if period_number == YEAR_UI_PERIOD:
@@ -569,10 +400,10 @@ def delete_subject_from_class(class_name: str):
         and (r.period_type, r.period_number) in allowed_periods
     ]
 
-    # ReportFile: код четверти 1..4; при удалении «учебного года» — все четверти.
     report_files = ReportFile.query.filter_by(
         school_id=current_user.school_id,
         class_name=class_name,
+        academic_year=academic_year,
     ).all()
     if period_number == YEAR_UI_PERIOD:
         period_codes = {"1", "2", "3", "4"}
@@ -593,6 +424,7 @@ def delete_subject_from_class(class_name: str):
     for rf in files_to_delete:
         db.session.delete(rf)
     db.session.commit()
+    bump_grade_reports_version(current_user.school_id)
 
     flash(
         f'Предмет "{target_subject}" удалён: отчётов оценок — {len(reports_to_delete)}, файлов отчётов — {len(files_to_delete)}.',
@@ -605,7 +437,6 @@ def delete_subject_from_class(class_name: str):
 @admin_required
 def delete_student_from_class(class_name: str):
     """Удаление ученика из отчётов класса за выбранный период (сводная таблица)."""
-
     student_name = (request.form.get("student_name") or "").strip()
     period_raw = request.form.get("period_number", "2")
     period_number = parse_ui_period_number(period_raw)
@@ -645,10 +476,7 @@ def analytics_home():
     """
     Аналитика: 3 вкладки — СОР / СОЧ / Оценки.
     По каждому предмету — карточка с таблицей по классам.
-    Структура копирует reference проект.
     """
-    
-    # Параметры (только четверти)
     period_number = parse_ui_period_number(request.args.get("period_number", 2))
     segment = request.args.get("segment")  # '1-4' или '5-11' или None
 
@@ -666,12 +494,18 @@ def analytics_home():
         subjects_data_soch=subjects_data_soch,
         subjects_data_grades=subjects_data_grades,
         period_number=period_number,
-        segment=segment
+        segment=segment,
     )
 
 
-def _apply_analytics_filters(subjects_data_sor, subjects_data_soch, subjects_data_grades,
-                             filter_subject, filter_class, filter_teacher):
+def _apply_analytics_filters(
+    subjects_data_sor,
+    subjects_data_soch,
+    subjects_data_grades,
+    filter_subject,
+    filter_class,
+    filter_teacher,
+):
     """Backward-compatible wrapper around shared analytics filters."""
     return apply_analytics_filters(
         subjects_data_sor,
@@ -687,24 +521,26 @@ def _apply_analytics_filters(subjects_data_sor, subjects_data_soch, subjects_dat
 @admin_required
 def download_analytics_excel():
     """Скачать аналитику СОР/СОЧ/Оценки в Excel (с учётом фильтров subject/class/teacher)"""
-    
     period_number = parse_ui_period_number(request.args.get("period_number", 2))
     filter_subject = request.args.get("subject", "").strip() or None
     filter_class = request.args.get("class", "").strip() or None
     filter_teacher = request.args.get("teacher", "").strip() or None
     lang = session.get("language", "ru")
     period_name = ui_period_display_name(period_number, lambda k: translate_gettext(k, lang))
-    
+
     ctx = load_school_period_context(current_user.school_id, period_number)
     subjects_data_sor, subjects_data_soch, subjects_data_grades = build_analytics_maps(ctx)
 
-    # Применяем фильтры (subject, class, teacher)
     if filter_subject or filter_class or filter_teacher:
         subjects_data_sor, subjects_data_soch, subjects_data_grades = _apply_analytics_filters(
-            subjects_data_sor, subjects_data_soch, subjects_data_grades,
-            filter_subject, filter_class, filter_teacher
+            subjects_data_sor,
+            subjects_data_soch,
+            subjects_data_grades,
+            filter_subject,
+            filter_class,
+            filter_teacher,
         )
-    
+
     output = build_analytics_workbook(
         period_name,
         subjects_data_sor,
@@ -714,7 +550,7 @@ def download_analytics_excel():
     filename = f"Аналитика_СОР_СОЧ_{period_name.replace(' ', '_')}.xlsx"
     return send_file(
         output,
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         as_attachment=True,
         download_name=filename,
     )
@@ -743,86 +579,19 @@ def class_teacher_report():
 # Excel Export Routes
 # ==============================================================================
 
+
 @bp.get("/grades/class/<class_name>/download-excel")
 @admin_required
 def download_grades_class_excel(class_name: str):
     """Скачать сводную таблицу оценок класса в Excel"""
-    
-    # Параметры (только четверти)
     period_number = parse_ui_period_number(request.args.get("period_number", 2))
-    
-    # Получаем все отчёты для этого класса (включая полугодовые для 2/4)
-    reports = get_period_reports(current_user.school_id, period_number, class_name=class_name)
-    
-    # Собираем данные
-    subjects = set()
-    students_data = {}  # name -> {subject -> {percent, grade}}
-    
-    for report in reports:
-        subj = normalize_subject_name(report.subject_name, current_user.school_id)
-        subjects.add(subj)
-        
-        if report.grades_json:
-            try:
-                grades_data = report_grades_payload(report)
-                students_list = grades_data.get("students", [])
-                
-                for student in students_list:
-                    name = student.get("name")
-                    if not name:
-                        continue
-                    
-                    if name not in students_data:
-                        students_data[name] = {}
-                    
-                    existing = students_data[name].get(subj)
-                    new_grade = {"percent": student.get("percent"), "grade": student.get("grade")}
-                    if existing is None or existing.get("grade") is None:
-                        students_data[name][subj] = new_grade
-                    elif new_grade.get("grade") is not None and new_grade["grade"] > existing.get("grade", 0):
-                        students_data[name][subj] = new_grade
-            except json.JSONDecodeError:
-                pass
-    
-    # Формируем списки
-    subjects_list = sorted(subjects, key=kazakh_sort_key)
-    students_list = []
-    
-    for name in sorted(students_data.keys(), key=kazakh_sort_key):
-        grades = students_data[name]
-        row_count_5 = sum(1 for g in grades.values() if g.get("grade") == 5)
-        row_count_4 = sum(1 for g in grades.values() if g.get("grade") == 4)
-        row_count_3 = sum(1 for g in grades.values() if g.get("grade") == 3)
-        row_count_2 = sum(1 for g in grades.values() if g.get("grade") == 2)
-        
-        students_list.append({
-            "name": name,
-            "grades": grades,
-            "count_5": row_count_5,
-            "count_4": row_count_4,
-            "count_3": row_count_3,
-            "count_2": row_count_2,
-        })
-    
-    # Статистика по предметам (столбцам)
-    subject_stats = {}
-    for subj in subjects_list:
-        s5 = s4 = s3 = s2 = 0
-        total_in_subj = 0
-        for student in students_list:
-            gi = student["grades"].get(subj, {})
-            g = gi.get("grade")
-            if g is not None:
-                total_in_subj += 1
-                if g == 5: s5 += 1
-                elif g == 4: s4 += 1
-                elif g == 3: s3 += 1
-                else: s2 += 1
-        quality = round((s5 + s4) / total_in_subj * 100, 1) if total_in_subj else 0
-        success = round((s5 + s4 + s3) / total_in_subj * 100, 1) if total_in_subj else 0
-        subject_stats[subj] = {"count_5": s5, "count_4": s4, "count_3": s3, "count_2": s2,
-                                "total": total_in_subj, "quality_percent": quality, "success_percent": success}
-    
+
+    subjects_list, students_list, subject_stats, _ = build_class_grades_table(
+        current_user.school_id,
+        class_name,
+        period_number,
+    )
+
     lang = session.get("language", "ru")
     period_name = ui_period_display_name(period_number, lambda k: translate_gettext(k, lang))
     output, filename = build_grades_class_workbook(
@@ -835,7 +604,7 @@ def download_grades_class_excel(class_name: str):
     )
     return send_file(
         output,
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         as_attachment=True,
         download_name=filename,
     )
@@ -885,5 +654,3 @@ def download_class_teacher_report_excel():
         as_attachment=True,
         download_name=filename,
     )
-
-

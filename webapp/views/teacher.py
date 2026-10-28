@@ -1,23 +1,28 @@
+import io
 import os
 import shutil
 import threading
 import time
 import zipfile
-import io
 from datetime import datetime, timedelta
-
-from flask import Blueprint, current_app, jsonify, redirect, render_template, request, url_for, flash, send_file
-from flask_login import current_user, login_required
 from pathlib import Path
+
+from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, send_file, url_for
+from flask_login import current_user, login_required
 from sqlalchemy import func
 
-from ..extensions import db
-from ..models import Role, ReportFile, ScrapeJob, ScrapeJobStatus, School, User
 from iin_utils import normalize_kz_iin
 
-from ..scraper_runner import run_scrape_job
 from ..constants import PERIOD_MAP
+from ..extensions import db
+from ..models import ReportFile, Role, School, ScrapeJob, ScrapeJobStatus, User
 from ..redis_utils import ai_rate_limiter
+from ..scraper_runner import run_scrape_job
+from ..services.ai_analysis import (
+    call_ai_api_with_retry,
+    generate_fallback_analysis_dict,
+    generate_goals_analysis_for_user,
+)
 from ..services.auth_guards import can_access_report_file, teacher_required
 
 
@@ -42,6 +47,7 @@ def _get_rate_limit_reset_time(user_id: int) -> int:
     """Возвращает секунды до сброса rate limit."""
     allowed, reset_in = ai_rate_limiter.is_allowed(str(user_id))
     return reset_in if not allowed else 0
+
 
 bp = Blueprint("teacher", __name__, url_prefix="/teacher")
 
@@ -195,8 +201,8 @@ def start_scrape():
     
     if use_celery:
         try:
-            from ..tasks import run_scrape_task
             from ..scraper_runner import _resolve_upload_root
+            from ..tasks import run_scrape_task
             
             base_upload_dir = _resolve_upload_root(app_obj)
             job_dir = base_upload_dir / f"school_{school.id}" / f"teacher_{current_user.fs_teacher_seq or current_user.id}" / f"job_{job.fs_job_seq}"
@@ -238,7 +244,7 @@ def start_scrape():
                 "period_code": period_code,
                 "lang": lang,
                 "school_index": school_index,
-                "limit": 0,  # квота считает успешные скрапы, лимит отчётов за запуск не задаём  # “первые N отчетов”
+                "limit": 0,  # квота считает успешные скрапы, лимит отчётов за запуск не задаём
                 "headless": True,
             },
             daemon=True,
@@ -356,7 +362,6 @@ def download_all_files():
                 if rf.excel_path:
                     excel_path = Path(rf.excel_path)
                     if excel_path.exists():
-                        # Create a safe filename
                         safe_name = f"{rf.class_name}_{rf.subject}".replace("/", "_").replace("\\", "_")
                         excel_name = f"{safe_name}.xlsx"
                         zip_file.write(str(excel_path), excel_name)
@@ -366,7 +371,6 @@ def download_all_files():
                 if rf.word_path:
                     word_path = Path(rf.word_path)
                     if word_path.exists():
-                        # Create a safe filename
                         safe_name = f"{rf.class_name}_{rf.subject}".replace("/", "_").replace("\\", "_")
                         word_name = f"{safe_name}.docx"
                         zip_file.write(str(word_path), word_name)
@@ -458,7 +462,6 @@ def select_school_for_job(job_id: int):
         
         # Write school selection to file for scraper to pick up
         if job.output_dir:
-            from pathlib import Path
             choice_file = Path(job.output_dir) / "school_choice.txt"
             choice_file.write_text(str(school_index), encoding="utf-8")
             current_app.logger.info(f"School selection {school_index} written for job {job_id}")
@@ -570,28 +573,19 @@ def apply_goals():
                 continue
             
             try:
-                # Import here to avoid circular imports
                 import sys
-                from pathlib import Path as PathLib
-                # Add project root to path if needed
-                project_root = PathLib(__file__).parent.parent.parent
+                project_root = Path(__file__).parent.parent.parent
                 if str(project_root) not in sys.path:
                     sys.path.insert(0, str(project_root))
                 
-                from build_word_report import _fill_goals_table, _fill_difficulties_table
-                
-                # Open Word document
+                from build_word_report import _fill_difficulties_table, _fill_goals_table
                 from docx import Document
+
                 doc = Document(str(word_path))
-                
-                # Fill goals table (first table)
                 goals_filled = _fill_goals_table(doc, goals_data)
-                
-                # Fill difficulties table (third table)
                 difficulties_filled = _fill_difficulties_table(doc, goals_data)
                 
                 if goals_filled or difficulties_filled:
-                    # Save document
                     doc.save(str(word_path))
                     updated_count += 1
                     current_app.logger.info(
@@ -599,7 +593,6 @@ def apply_goals():
                         f"(goals: {goals_filled}, difficulties: {difficulties_filled})"
                     )
                 else:
-                    # Log table structure for debugging
                     if current_app.debug:
                         table_info = []
                         for idx, tbl in enumerate(doc.tables):
@@ -635,8 +628,6 @@ def apply_goals():
 @teacher_required
 def generate_goals_analysis():
     """Generate analysis text using Qwen AI based on achieved goals and difficulties."""
-    
-    # Rate Limiting проверка
     allowed, remaining = _check_rate_limit(current_user.id)
     if not allowed:
         reset_time = _get_rate_limit_reset_time(current_user.id)
@@ -647,48 +638,25 @@ def generate_goals_analysis():
             "success": False,
             "error": f"Превышен лимит запросов. Попробуйте через {reset_time} сек.",
             "rate_limited": True,
-            "reset_in": reset_time
+            "reset_in": reset_time,
         }), 429
-    
+
     try:
         data = request.get_json()
         if not data:
             return jsonify({"success": False, "error": "Нет данных"}), 400
-        
+
         achieved = data.get("achieved", "").strip()
         difficulties = data.get("difficulties", "").strip()
-        
+
         if not difficulties:
             return jsonify({"success": False, "error": "Заполните поле 'Цели, вызвавшие затруднения'"}), 400
-        
-        # Ключ и модель из школы (выбор супер-админа); fallback только на env
-        school = current_user.school
-        api_key = None
-        ai_model = "qwen-flash-character"
-        if school and school.ai_api_key:
-            api_key = school.ai_api_key
-            if school.ai_model:
-                ai_model = school.ai_model
-        if not api_key or api_key == "sk-xxx":
-            api_key = os.getenv("DASHSCOPE_API_KEY")
-        
-        if not api_key or api_key == "sk-xxx":
-            return _generate_fallback_analysis(achieved, difficulties)
-        
-        result = _call_ai_api_with_retry(api_key, achieved, difficulties, model=ai_model)
-        
-        if result:
-            return jsonify({
-                "success": True,
-                "difficulties_list": result.get("difficulties_list", ""),
-                "reasons": result.get("reasons", ""),
-                "correction": result.get("correction", ""),
-                "remaining_requests": remaining,
-            })
-        else:
-            # Fallback если все retry не удались
-            return _generate_fallback_analysis(achieved, difficulties)
-    
+
+        payload = generate_goals_analysis_for_user(current_user, achieved, difficulties)
+        if not payload.get("fallback"):
+            payload["remaining_requests"] = remaining
+        return jsonify(payload)
+
     except Exception as e:
         current_app.logger.error(f"Error generating goals analysis: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
@@ -702,149 +670,17 @@ def _call_ai_api_with_retry(
     max_retries: int = 3,
     base_delay: float = 1.0,
 ) -> dict | None:
-    """
-    Вызов Qwen API с retry логикой (экспоненциальная задержка).
-    Модель задаётся супер-админом в кабинете школы.
-    
-    Args:
-        api_key: API ключ
-        achieved: Достигнутые цели
-        difficulties: Цели с затруднениями
-        model: Модель AI (qwen-flash-character, qwen-plus и т.д.)
-        max_retries: Максимум попыток (default: 3)
-        base_delay: Базовая задержка в секундах (default: 1.0)
-    
-    Returns:
-        dict с результатами или None при неудаче
-    """
-    import json
-    
-    try:
-        from openai import OpenAI, APIError, APIConnectionError, RateLimitError
-    except ImportError:
-        current_app.logger.warning("OpenAI library not installed")
-        return None
-    
-    client = OpenAI(
+    """Backward-compatible wrapper around shared AI analysis service."""
+    return call_ai_api_with_retry(
         api_key=api_key,
-        base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-        timeout=30.0,  # Таймаут 30 секунд
+        achieved=achieved,
+        difficulties=difficulties,
+        model=model,
+        max_retries=max_retries,
+        base_delay=base_delay,
     )
-    
-    system_prompt = """Ты помощник учителя в Казахстане. Генерируй анализ суммативного оценивания (15-30 слов на поле).
-
-СТРОГО РАЗЛИЧАЙ три поля:
-
-"difficulties_list" = ЧТО НЕ ПОЛУЧИЛОСЬ (какие темы/задания вызвали трудности)
-Пример: "Учащиеся допускали ошибки при решении уравнений с дробями и построении графиков линейных функций."
-
-"reasons" = ПОЧЕМУ НЕ ПОЛУЧИЛОСЬ (причины затруднений)
-Пример: "Слабо усвоены правила работы с дробями, недостаточно практики в построении координатных систем."
-
-"correction" = ЧТО ДЕЛАТЬ (план коррекционной работы)
-Пример: "Провести повторение темы 'Дроби', выполнить тренировочные упражнения по построению графиков."
-
-JSON формат: {"difficulties_list": "...", "reasons": "...", "correction": "..."}"""
-
-    user_prompt = f"""Цели обучения:
-
-Достигнутые: {achieved or 'Не указаны'}
-
-С затруднениями: {difficulties}
-
-Заполни JSON:
-- difficulties_list: перечисли ЧТО не получилось
-- reasons: объясни ПОЧЕМУ не получилось  
-- correction: напиши ЧТО ДЕЛАТЬ для исправления"""
-
-    last_error = None
-    
-    for attempt in range(max_retries):
-        try:
-            current_app.logger.info(f"AI API attempt {attempt + 1}/{max_retries}")
-            
-            completion = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.7,
-                max_tokens=500,
-            )
-            
-            response_text = completion.choices[0].message.content
-            current_app.logger.info(f"Qwen API response (attempt {attempt + 1}): {response_text}")
-            
-            result = json.loads(response_text)
-            return result
-            
-        except RateLimitError as e:
-            # Rate limit от API провайдера - ждем дольше
-            last_error = e
-            delay = base_delay * (2 ** attempt) * 2  # Удвоенная задержка
-            current_app.logger.warning(
-                f"API rate limit (attempt {attempt + 1}): {e}. Waiting {delay}s..."
-            )
-            if attempt < max_retries - 1:
-                time.sleep(delay)
-                
-        except APIConnectionError as e:
-            # Ошибка соединения - retry с задержкой
-            last_error = e
-            delay = base_delay * (2 ** attempt)
-            current_app.logger.warning(
-                f"API connection error (attempt {attempt + 1}): {e}. Waiting {delay}s..."
-            )
-            if attempt < max_retries - 1:
-                time.sleep(delay)
-                
-        except APIError as e:
-            # Общая ошибка API
-            last_error = e
-            delay = base_delay * (2 ** attempt)
-            current_app.logger.warning(
-                f"API error (attempt {attempt + 1}): {e}. Waiting {delay}s..."
-            )
-            if attempt < max_retries - 1:
-                time.sleep(delay)
-                
-        except json.JSONDecodeError as e:
-            # Ошибка парсинга JSON - не retry, сразу fallback
-            current_app.logger.error(f"JSON decode error: {e}")
-            return None
-            
-        except Exception as e:
-            # Неизвестная ошибка
-            last_error = e
-            current_app.logger.error(f"Unexpected error (attempt {attempt + 1}): {e}")
-            if attempt < max_retries - 1:
-                time.sleep(base_delay)
-    
-    current_app.logger.error(f"All {max_retries} API attempts failed. Last error: {last_error}")
-    return None
 
 
-def _generate_fallback_analysis(achieved: str, difficulties: str) -> dict:
+def _generate_fallback_analysis(achieved: str, difficulties: str):
     """Fallback template-based generation when API is not available."""
-    # Extract key points from difficulties
-    diff_lines = [l.strip() for l in difficulties.split('\n') if l.strip()][:3]
-    diff_summary = '; '.join([l.lstrip('0123456789.-* ') for l in diff_lines]).lower()
-    
-    difficulties_list = ""
-    if diff_summary:
-        difficulties_list = f"Обучающиеся испытывали затруднения при выполнении заданий по темам: {diff_summary}."
-    
-    reasons = "Недостаточно сформированы навыки применения теоретических знаний на практике. Требуется дополнительная работа над закреплением материала."
-    
-    correction = "Провести индивидуальные консультации для устранения пробелов в знаниях. Повторить теоретический материал и выполнить практические упражнения."
-    
-    return jsonify({
-        "success": True,
-        "difficulties_list": difficulties_list,
-        "reasons": reasons,
-        "correction": correction,
-        "fallback": True,  # Indicator that fallback was used
-    })
-
+    return jsonify(generate_fallback_analysis_dict(achieved, difficulties))

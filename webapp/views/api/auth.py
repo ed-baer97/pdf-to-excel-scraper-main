@@ -70,12 +70,12 @@ def api_login():
 
     token = generate_jwt_token(user, TOKEN_EXPIRES_IN)
 
-    # AI настройки школы (ключ и модель — выбор супер-админа)
-    ai_api_key = None
+    # AI настройки школы (модель и флаг доступности — без передачи сырого API-ключа клиенту)
+    ai_enabled = False
     ai_model = "qwen-flash-character"
     if user.school:
-        if user.school.ai_api_key:
-            ai_api_key = user.school.ai_api_key
+        if user.school.ai_api_key and user.school.ai_api_key != "sk-xxx":
+            ai_enabled = True
         if user.school.ai_model:
             ai_model = user.school.ai_model
 
@@ -88,7 +88,7 @@ def api_login():
             "username": user.username,
             "role": user.role,
             "school_id": user.school_id,
-            "ai_api_key": ai_api_key,
+            "ai_enabled": ai_enabled,
             "ai_model": ai_model,
         }
     }), 200

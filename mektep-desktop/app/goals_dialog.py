@@ -417,11 +417,12 @@ class GoalsDialog(QDialog):
     
     def generate_analysis(self):
         """Генерация анализа через AI для текущей вкладки"""
-        # Получаем AI API ключ и модель из данных пользователя (модель выбирает супер-админ)
         api_key = self.user_data.get("ai_api_key")
+        ai_enabled = bool(self.user_data.get("ai_enabled") or api_key)
         ai_model = self.user_data.get("ai_model") or "qwen-flash-character"
-        
-        if not api_key:
+        parent_api_client = getattr(self.parent(), "api_client", None) if self.parent() else None
+
+        if not ai_enabled and not (parent_api_client and parent_api_client.is_authenticated()):
             QMessageBox.warning(
                 self,
                 "AI недоступен",
@@ -452,13 +453,18 @@ class GoalsDialog(QDialog):
         QApplication.setOverrideCursor(QCursor(Qt.CursorShape.WaitCursor))
         
         try:
-            from ai.text_generator import AITextGenerator
-            generator = AITextGenerator(api_key, model=ai_model)
-            result = generator.generate_analysis(achieved, difficulties)
-            
+            result = None
+            if parent_api_client and parent_api_client.is_authenticated():
+                result = parent_api_client.generate_goals_analysis(achieved, difficulties)
+
+            if (not result or not result.get("success")) and api_key:
+                from ai.text_generator import AITextGenerator
+                generator = AITextGenerator(api_key, model=ai_model)
+                result = generator.generate_analysis(achieved, difficulties)
+
             QApplication.restoreOverrideCursor()
             
-            if result.get("success"):
+            if result and result.get("success"):
                 # Заполняем соответствующие ячейки в таблице анализа
                 self.analysis_widgets[("difficulties_list", sor_type)].setText(
                     result.get("difficulties_list", "")

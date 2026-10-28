@@ -14,6 +14,7 @@ from .report_teacher import get_report_teacher_name
 from .year_grades import (
     YEAR_UI_PERIOD,
     build_year_student_subjects,
+    math_round_percent,
     students_data_from_year_map,
 )
 
@@ -151,6 +152,8 @@ def build_class_grades_matrix(
 def subject_column_stats(
     students_data: dict[str, dict[str, dict]],
     subject_name: str,
+    *,
+    period_number: int | None = None,
 ) -> dict[str, Any]:
     """Счётчики 5/4/3/2 и качество/успеваемость по столбцу предмета (как футер сводки)."""
     class_data: dict[str, Any] = {
@@ -179,13 +182,60 @@ def subject_column_stats(
 
     total = class_data["total"]
     if total > 0:
-        class_data["quality_percent"] = round(
-            (class_data["count_5"] + class_data["count_4"]) / total * 100, 1
-        )
-        class_data["success_percent"] = round(
-            (total - class_data["count_2"]) / total * 100, 1
-        )
+        if period_number == YEAR_UI_PERIOD:
+            class_data["quality_percent"] = math_round_percent(
+                class_data["count_5"] + class_data["count_4"], total
+            )
+            class_data["success_percent"] = math_round_percent(
+                total - class_data["count_2"], total
+            )
+        else:
+            class_data["quality_percent"] = round(
+                (class_data["count_5"] + class_data["count_4"]) / total * 100, 1
+            )
+            class_data["success_percent"] = round(
+                (total - class_data["count_2"]) / total * 100, 1
+            )
     return class_data
+
+
+def build_class_grades_table(
+    school_id: int,
+    class_name: str,
+    period_number: int,
+    *,
+    academic_year: int | None = None,
+    round_year_stats: bool = False,
+) -> tuple[list[str], list[dict[str, Any]], dict[str, dict[str, Any]], dict[str, dict[str, dict]]]:
+    """
+    Формирует (subjects_list, students_list, subject_stats, students_data) для сводной таблицы класса.
+    """
+    matrix = build_class_grades_matrix(
+        school_id, class_name, period_number, academic_year=academic_year
+    )
+    subjects_list = matrix["subjects"]
+    students_data = matrix["students"]
+    students_list: list[dict[str, Any]] = []
+
+    for name in sorted(students_data.keys(), key=kazakh_sort_key):
+        grades = students_data[name]
+        students_list.append(
+            {
+                "name": name,
+                "grades": grades,
+                "count_5": sum(1 for g in grades.values() if _parse_grade(g.get("grade")) == 5),
+                "count_4": sum(1 for g in grades.values() if _parse_grade(g.get("grade")) == 4),
+                "count_3": sum(1 for g in grades.values() if _parse_grade(g.get("grade")) == 3),
+                "count_2": sum(1 for g in grades.values() if _parse_grade(g.get("grade")) == 2),
+            }
+        )
+
+    stats_period = period_number if round_year_stats else None
+    subject_stats = {
+        subj: subject_column_stats(students_data, subj, period_number=stats_period)
+        for subj in subjects_list
+    }
+    return subjects_list, students_list, subject_stats, students_data
 
 
 def students_with_grades_count(students_data: dict[str, dict[str, dict]]) -> int:

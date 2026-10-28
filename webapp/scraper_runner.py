@@ -881,11 +881,16 @@ def _run_scrape_job_internal(
                     )
                 
                 # Check if report already exists to avoid duplicates
+                from .services.academic_year import current_academic_year
+
+                job_year = getattr(job, "academic_year", None) or current_academic_year()
                 existing = ReportFile.query.filter_by(
+                    school_id=job.school_id,
                     teacher_id=job.teacher_id,
                     class_name=class_name,
                     subject=subject,
-                    period_code=period_code
+                    period_code=period_code,
+                    academic_year=job_year,
                 ).first()
                 
                 if existing:
@@ -911,6 +916,7 @@ def _run_scrape_job_internal(
                         school_id=job.school_id,
                         teacher_id=job.teacher_id,
                         period_code=period_code,
+                        academic_year=job_year,
                         class_name=class_name,
                         subject=subject,
                         excel_path=excel_abs,

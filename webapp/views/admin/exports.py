@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import threading
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from flask import current_app, jsonify, request, send_file, session, url_for
 from flask_login import current_user
@@ -128,9 +129,11 @@ def export_download(job_id: int):
     if not job or job.status != ExportJobStatus.DONE.value or not job.file_path:
         return jsonify({"success": False, "error": "not ready"}), 404
 
-    path = job.file_path
+    path = Path(job.file_path)
+    if not path.is_file():
+        return jsonify({"success": False, "error": "file not found"}), 404
     return send_file(
         path,
         as_attachment=True,
-        download_name=path.rsplit("/", 1)[-1].rsplit("\\", 1)[-1],
+        download_name=path.name,
     )

@@ -185,74 +185,85 @@ def run_scrape_task(
             str(out_path),
         ]
         
-        process = subprocess.Popen(
-            cmd,
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            cwd=str(project_root),
-        )
+        out_path.mkdir(parents=True, exist_ok=True)
+        stdout_log_path = out_path / "scraper_stdout.log"
+        stdout_file = stdout_log_path.open("w", encoding="utf-8", errors="replace")
+        try:
+            process = subprocess.Popen(
+                cmd,
+                env=env,
+                stdout=stdout_file,
+                stderr=subprocess.STDOUT,
+                text=True,
+                cwd=str(project_root),
+            )
 
-        # PID в БД — для диагностики и аварийной остановки из веб-процесса
-        job.worker_pid = process.pid
-        db.session.commit()
+            # PID в БД — для диагностики и аварийной остановки из веб-процесса
+            job.worker_pid = process.pid
+            db.session.commit()
 
-        # Monitor progress
-        progress_file = Path(output_dir) / "progress.json"
-        last_progress = 0
-        
-        while process.poll() is None:
-            time.sleep(1)
+            # Monitor progress
+            progress_file = Path(output_dir) / "progress.json"
+            last_progress = 0
 
-            # Кооперативная отмена: флаг/статус ставит веб-процесс через БД
-            db.session.refresh(job)
-            if job.cancel_requested or job.status == ScrapeJobStatus.CANCELLED.value:
-                logger.info(f"Job {job_id} cancelled, terminating subprocess {process.pid}")
-                try:
-                    process.terminate()
-                    time.sleep(2)
-                    if process.poll() is None:
-                        process.kill()
-                except Exception:
-                    pass
-                job.status = ScrapeJobStatus.CANCELLED.value
-                job.worker_pid = None
-                if not job.finished_at:
-                    job.finished_at = datetime.utcnow()
-                db.session.commit()
-                return {"success": False, "cancelled": True}
+            while process.poll() is None:
+                time.sleep(1)
 
-            # Read progress
-            if progress_file.exists():
-                try:
-                    data = json.loads(progress_file.read_text(encoding="utf-8"))
-                    pct = data.get("percent", 0)
-                    msg = data.get("message", "")
-                    
-                    if pct != last_progress:
-                        job.progress_percent = pct
-                        job.progress_message = msg
-                        db.session.commit()
-                        last_progress = pct
-                        
-                        # Update Celery task state
-                        self.update_state(
-                            state="PROGRESS",
-                            meta={"percent": pct, "message": msg}
-                        )
-                except Exception:
-                    pass
-        
-        # Get return code
-        return_code = process.returncode
+                # Кооперативная отмена: флаг/статус ставит веб-процесс через БД
+                db.session.refresh(job)
+                if job.cancel_requested or job.status == ScrapeJobStatus.CANCELLED.value:
+                    logger.info(f"Job {job_id} cancelled, terminating subprocess {process.pid}")
+                    try:
+                        process.terminate()
+                        time.sleep(2)
+                        if process.poll() is None:
+                            process.kill()
+                    except Exception:
+                        pass
+                    job.status = ScrapeJobStatus.CANCELLED.value
+                    job.worker_pid = None
+                    if not job.finished_at:
+                        job.finished_at = datetime.utcnow()
+                    db.session.commit()
+                    return {"success": False, "cancelled": True}
+
+                # Read progress
+                if progress_file.exists():
+                    try:
+                        data = json.loads(progress_file.read_text(encoding="utf-8"))
+                        pct = data.get("percent", 0)
+                        msg = data.get("message", "")
+
+                        if pct != last_progress:
+                            job.progress_percent = pct
+                            job.progress_message = msg
+                            db.session.commit()
+                            last_progress = pct
+
+                            # Update Celery task state
+                            self.update_state(
+                                state="PROGRESS",
+                                meta={"percent": pct, "message": msg}
+                            )
+                    except Exception:
+                        pass
+
+            return_code = process.returncode
+        finally:
+            try:
+                stdout_file.close()
+            except Exception:
+                pass
+
         job.worker_pid = None
         db.session.commit()
         logger.info(f"Scraper finished with code {return_code}")
-        
+
         if return_code != 0:
-            # Read stderr for error message
-            stdout, _ = process.communicate()
+            try:
+                stdout = stdout_log_path.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                stdout = ""
             error_msg = stdout[-500:] if stdout else f"Exit code: {return_code}"
             
             job.status = ScrapeJobStatus.FAILED.value
@@ -284,6 +295,9 @@ def run_scrape_task(
             db.session.commit()
             return {"success": False, "error": "No reports directory"}
         
+        from .services.academic_year import current_academic_year
+
+        job_year = getattr(job, "academic_year", None) or current_academic_year()
         reports = _collect_reports(reports_dir)
         created_count = 0
         
@@ -296,10 +310,12 @@ def run_scrape_task(
             
             # Check for existing report
             existing = ReportFile.query.filter_by(
+                school_id=job.school_id,
                 teacher_id=job.teacher_id,
                 class_name=class_name,
                 subject=subject,
                 period_code=job.period_code,
+                academic_year=job_year,
             ).first()
             
             if existing:
@@ -312,6 +328,7 @@ def run_scrape_task(
                     school_id=job.school_id,
                     teacher_id=job.teacher_id,
                     period_code=job.period_code,
+                    academic_year=job_year,
                     class_name=class_name,
                     subject=subject,
                     excel_path=excel_abs,
@@ -365,77 +382,21 @@ def generate_ai_text(
     Returns:
         dict with difficulties_list, reasons, correction
     """
-    from openai import OpenAI
-    
-    api_key = os.getenv("DASHSCOPE_API_KEY")
-    if not api_key:
-        return {"success": False, "error": "API key not configured"}
-    
-    client = OpenAI(
-        api_key=api_key,
-        base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-    )
-    
-    system_prompt = """Ты помощник учителя в Казахстане. Генерируй анализ суммативного оценивания (15-30 слов на поле).
+    from .services.ai_analysis import call_ai_api_with_retry, generate_fallback_analysis_dict
 
-СТРОГО РАЗЛИЧАЙ три поля:
+    api_key = os.getenv("DASHSCOPE_API_KEY", "").strip()
+    if not api_key or api_key == "sk-xxx":
+        return generate_fallback_analysis_dict(achieved, difficulties, error="API key not configured")
 
-"difficulties_list" = ЧТО НЕ ПОЛУЧИЛОСЬ (какие темы/задания вызвали трудности)
-Пример: "Учащиеся допускали ошибки при решении уравнений с дробями и построении графиков линейных функций."
-
-"reasons" = ПОЧЕМУ НЕ ПОЛУЧИЛОСЬ (причины затруднений)
-Пример: "Слабо усвоены правила работы с дробями, недостаточно практики в построении координатных систем."
-
-"correction" = ЧТО ДЕЛАТЬ (план коррекционной работы)
-Пример: "Провести повторение темы 'Дроби', выполнить тренировочные упражнения по построению графиков."
-
-JSON формат: {"difficulties_list": "...", "reasons": "...", "correction": "..."}"""
-
-    user_prompt = f"""Цели обучения:
-
-Достигнутые: {achieved or 'Не указаны'}
-
-С затруднениями: {difficulties}
-
-Заполни JSON:
-- difficulties_list: перечисли ЧТО не получилось
-- reasons: объясни ПОЧЕМУ не получилось  
-- correction: напиши ЧТО ДЕЛАТЬ для исправления"""
-
-    try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.7,
-            max_tokens=500,
-        )
-        
-        content = response.choices[0].message.content.strip()
-        
-        # Parse JSON from response
-        import re
-        json_match = re.search(r'\{[^{}]*\}', content, re.DOTALL)
-        if json_match:
-            result = json.loads(json_match.group())
-            return {
-                "success": True,
-                "difficulties_list": result.get("difficulties_list", ""),
-                "reasons": result.get("reasons", ""),
-                "correction": result.get("correction", ""),
-            }
-        else:
-            return {"success": False, "error": "Invalid JSON response"}
-            
-    except Exception as e:
-        logger.exception("AI generation failed")
-        
-        if self.request.retries < self.max_retries:
-            raise self.retry(exc=e)
-        
-        return {"success": False, "error": str(e)}
+    result = call_ai_api_with_retry(api_key, achieved, difficulties, model=model, max_retries=1)
+    if result:
+        return {
+            "success": True,
+            "difficulties_list": result.get("difficulties_list", ""),
+            "reasons": result.get("reasons", ""),
+            "correction": result.get("correction", ""),
+        }
+    return generate_fallback_analysis_dict(achieved, difficulties, error="AI generation failed")
 
 
 @shared_task

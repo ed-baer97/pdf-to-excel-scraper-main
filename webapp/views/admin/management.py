@@ -1,127 +1,77 @@
-import json
 import secrets
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import quote
 
 from flask import (
-    Blueprint,
     abort,
     current_app,
+    flash,
     jsonify,
     make_response,
     redirect,
     render_template,
     request,
+     send_file,
     session,
     url_for,
-    flash,
-    send_file,
 )
 from flask_login import current_user
 from openpyxl import Workbook, load_workbook
 
+from ...constants import kazakh_sort_key
 from ...extensions import db
 from ...models import (
-    Role,
-    User,
-    GradeReport,
     Class,
-    School,
+    ClassTeacherYear,
+    ExportJob,
+    GradeReport,
     ReportFile,
-    TeacherSubject,
-    TeacherClass,
+    Role,
+    ScrapeJob,
     SubjectNameAlias,
+    TeacherClass,
     TeacherSchool,
+    TeacherSubject,
+    User,
 )
+from ...security import decrypt_password, encrypt_password
 from ...services.academic_year import resolve_academic_year
+from ...services.admin_common import redirect_back
+from ...services.grade_reports.cache import bump_grade_reports_version
+from ...services.admin_dashboard import (
+    aggregate_class_metrics,
+    aggregate_year_metrics,
+    chart_series_from_class_totals,
+    class_accordion_group,
+    parse_ui_period_number,
+    teacher_accordion_group,
+)
+from ...services.auth_guards import admin_or_superadmin_required as admin_required
 from ...services.class_homeroom import (
     assign_class_teacher,
     class_teacher_map,
     clear_homeroom_teacher,
     prepare_class_teachers,
 )
+from ...services.grade_reports.excel import build_class_metrics_charts_workbook
+from ...services.subject_aliases import ensure_default_aliases, restore_default_aliases
 from ...services.teacher_schools import (
     ensure_membership,
     find_teacher_by_iin,
     iin_taken_in_school,
+    next_fs_teacher_seq,
     remove_teacher_from_school,
     teacher_in_school,
     teachers_count_for_school,
     teachers_for_school,
-    next_fs_teacher_seq,
-)
-from ...security import decrypt_password, encrypt_password
-from ...constants import kazakh_sort_key, normalize_subject_name
-from ...services.admin_common import apply_analytics_filters, redirect_back
-from ...services.report_teacher import get_report_teacher_name
-from ...services.admin_dashboard import (
-    YEAR_UI_PERIOD,
-    aggregate_class_metrics,
-    aggregate_year_metrics,
-    chart_series_from_class_totals,
-    class_accordion_group,
-    class_name_sort_key,
-    get_period_reports,
-    get_quarter_reports,
-    parse_class_grade,
-    parse_ui_period_number,
-    student_class_summary_category,
-    teacher_accordion_group,
-    ui_period_display_name,
-)
-from ...services.grade_reports.analytics import (
-    build_analytics_maps,
-    sort_analytics_subject_keys,
-)
-from ...services.grade_reports.context import load_school_period_context
-from ...services.grade_reports.overview import (
-    build_grades_overview,
-    sort_grades_overview_classes,
-)
-from ...services.grade_reports.payload import (
-    report_analytics_payload,
-    report_grades_payload,
-)
-from ...services.grade_reports.excel import (
-    build_analytics_workbook,
-    build_class_metrics_charts_workbook,
-    build_class_teacher_workbook,
-    build_grades_class_workbook,
-)
-from ...services.criteria_grades import (
-    build_criteria_period_zip,
-    build_criteria_subject_summary,
-    build_criteria_table,
-    build_final_table,
-    build_simple_grades_table,
-    collect_classes_with_criteria,
-    find_criteria_subject_entry,
-    list_criteria_subject_entries,
-    criteria_from_grades_payload,
-    criteria_period_path_slug,
-    final_from_grades_payload,
-    has_criteria_data,
-    has_final_data,
-    is_final_period,
-    is_year_period,
-    parse_grades_json,
-    report_has_criteria_block,
-    report_has_final_block,
-    safe_path_segment,
-)
-from ...services.auth_guards import admin_or_superadmin_required as admin_required
-from ...services.subject_aliases import ensure_default_aliases, restore_default_aliases
-from ...services.year_grades import (
-    build_year_student_subjects,
-    math_round_percent,
-    students_data_from_year_map,
 )
 from ...translator import gettext as translate_gettext
 
 from iin_utils import normalize_kz_iin
 
 from . import bp
+
 
 def _redirect_back(fallback_url: str):
     """Backward-compatible wrapper around shared redirect helper."""
@@ -171,6 +121,7 @@ def _management_list_context(school_id: int) -> dict:
         "class_teacher_by_id": class_teacher_by_id,
         "subject_aliases": subject_aliases,
     }
+
 
 @bp.get("/")
 @admin_required
@@ -230,6 +181,7 @@ def create_subject_alias():
         )
         flash(f'Добавлено: «{alias_name}» → «{canonical_name}».', "success")
     db.session.commit()
+    bump_grade_reports_version(school_id)
     return _redirect_back(url_for("admin.management") + "#subjects-dict-tab")
 
 
@@ -258,6 +210,7 @@ def update_subject_alias(alias_id: int):
     row.alias_name = alias_name
     row.canonical_name = canonical_name
     db.session.commit()
+    bump_grade_reports_version(current_user.school_id)
     flash(f'Запись «{alias_name}» обновлена.', "success")
     return _redirect_back(url_for("admin.management") + "#subjects-dict-tab")
 
@@ -272,6 +225,7 @@ def delete_subject_alias(alias_id: int):
     alias_label = row.alias_name
     db.session.delete(row)
     db.session.commit()
+    bump_grade_reports_version(current_user.school_id)
     flash(f'Запись «{alias_label}» удалена из словаря.', "success")
     return _redirect_back(url_for("admin.management") + "#subjects-dict-tab")
 
@@ -281,6 +235,7 @@ def delete_subject_alias(alias_id: int):
 def restore_subject_alias_defaults():
     """Добавить недостающие стандартные пары словаря."""
     restore_default_aliases(current_user.school_id)
+    bump_grade_reports_version(current_user.school_id)
     flash("Стандартные записи словаря добавлены (существующие не изменены).", "success")
     return _redirect_back(url_for("admin.management") + "#subjects-dict-tab")
 
@@ -688,16 +643,19 @@ def delete_teacher(user_id: int):
         )
         return _redirect_back(url_for("admin.management") + "#teachers-tab")
 
-    GradeReport.query.filter_by(teacher_id=u.id).delete()
-    ReportFile.query.filter_by(teacher_id=u.id).delete()
+    GradeReport.query.filter_by(teacher_id=u.id).delete(synchronize_session=False)
+    ReportFile.query.filter_by(teacher_id=u.id).delete(synchronize_session=False)
+    ScrapeJob.query.filter_by(teacher_id=u.id).delete(synchronize_session=False)
+    ExportJob.query.filter_by(user_id=u.id).delete(synchronize_session=False)
     teacher_subjects = TeacherSubject.query.filter_by(teacher_id=u.id).all()
     for ts in teacher_subjects:
-        TeacherClass.query.filter_by(teacher_subject_id=ts.id).delete()
-    TeacherSubject.query.filter_by(teacher_id=u.id).delete()
+        TeacherClass.query.filter_by(teacher_subject_id=ts.id).delete(synchronize_session=False)
+    TeacherSubject.query.filter_by(teacher_id=u.id).delete(synchronize_session=False)
     clear_homeroom_teacher(u.id, current_user.school_id)
-    TeacherSchool.query.filter_by(teacher_id=u.id).delete()
+    TeacherSchool.query.filter_by(teacher_id=u.id).delete(synchronize_session=False)
     db.session.delete(u)
     db.session.commit()
+    bump_grade_reports_version(current_user.school_id)
     flash(f'Учитель "{teacher_name}" удалён.', "success")
     return _redirect_back(url_for("admin.management") + "#teachers-tab")
 
@@ -723,7 +681,7 @@ def create_class():
     cls = Class(name=name, school_id=current_user.school_id)
     db.session.add(cls)
     db.session.flush()
-    if class_teacher_id:
+    if class_teacher_id and str(class_teacher_id).isdigit():
         assign_class_teacher(cls, int(class_teacher_id), resolve_academic_year())
     db.session.commit()
     flash(f'Класс "{name}" создан.', "success")
@@ -749,7 +707,7 @@ def edit_class(class_id: int):
     class_teacher_id = request.form.get("class_teacher_id")
     assign_class_teacher(
         cls,
-        int(class_teacher_id) if class_teacher_id else None,
+        int(class_teacher_id) if class_teacher_id and str(class_teacher_id).isdigit() else None,
         resolve_academic_year(),
     )
     db.session.commit()
@@ -782,19 +740,15 @@ def delete_class(class_id: int):
         synchronize_session=False
     )
 
-    # Явно удаляем связи учитель-предмет-класс, чтобы ORM не пытался
-    # проставлять class_id = NULL (поле NOT NULL в teacher_classes).
+    # Явно удаляем записи классного руководства по годам и связи учитель-предмет-класс,
+    # чтобы ORM не пытался проставлять class_id = NULL (поле NOT NULL).
+    ClassTeacherYear.query.filter_by(class_id=class_id).delete(synchronize_session=False)
     TeacherClass.query.filter_by(class_id=class_id).delete(synchronize_session=False)
     db.session.delete(cls)
     db.session.commit()
+    bump_grade_reports_version(school_id)
     flash(
         f'Класс «{name}» удалён. Удалено записей оценок: {grades_n}, файлов отчётов: {len(report_files)}.',
         "success",
     )
     return _redirect_back(url_for("admin.management") + "#classes-tab")
-
-
-# ==============================================================================
-# Grades Overview Routes
-# ==============================================================================
-

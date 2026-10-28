@@ -77,6 +77,8 @@ class ScraperThread(QThread):
         self.temp_dir = None
         self.progress_file = None
         self._stop_requested = False
+        self._scraper_result = None
+        self._scraper_error_detail = ""
 
     def stop(self):
         """Просит остановить скрапинг; основной цикл проверяет флаг и выходит."""

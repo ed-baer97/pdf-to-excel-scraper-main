@@ -6,6 +6,7 @@ from ...extensions import db
 from ...models import GradeReport, ReportFile
 from ...services.academic_year import resolve_academic_year
 from ...services.api_helpers import require_jwt
+from ...services.grade_reports.cache import bump_grade_reports_version
 from ...services.report_upload import (
     ReportUploadError,
     log_report_metadata,
@@ -118,9 +119,20 @@ def api_delete_all_reports():
     """
     user = request.current_user
 
+    affected_school_ids = {
+        sid
+        for (sid,) in GradeReport.query.filter_by(teacher_id=user.id)
+        .with_entities(GradeReport.school_id)
+        .distinct()
+        .all()
+        if sid is not None
+    }
     grade_reports_count = GradeReport.query.filter_by(teacher_id=user.id).delete()
     report_files_count = ReportFile.query.filter_by(teacher_id=user.id).delete()
     db.session.commit()
+
+    for sid in affected_school_ids:
+        bump_grade_reports_version(sid)
 
     return jsonify({
         "success": True,
@@ -150,8 +162,10 @@ def api_delete_report(report_id: int):
     if report.teacher_id != user.id:
         return jsonify({"error": "Нет прав для удаления этого отчёта"}), 403
 
+    school_id = report.school_id
     db.session.delete(report)
     db.session.commit()
+    bump_grade_reports_version(school_id)
 
     return jsonify({
         "success": True
@@ -198,8 +212,11 @@ def api_get_my_reports():
         query = query.filter_by(period_type=period_type)
 
     period_number = request.args.get("period_number")
-    if period_number:
-        query = query.filter_by(period_number=int(period_number))
+    if period_number is not None and str(period_number).strip() != "":
+        try:
+            query = query.filter_by(period_number=int(period_number))
+        except (TypeError, ValueError):
+            return jsonify({"error": "Некорректный параметр period_number"}), 400
 
     reports = query.order_by(GradeReport.updated_at.desc()).all()
 

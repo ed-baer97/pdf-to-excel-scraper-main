@@ -32,7 +32,10 @@ class ReportUploadError(Exception):
 
 def _validate_period(data: dict) -> tuple[str, int]:
     period_type = data["period_type"]
-    period_number = int(data["period_number"])
+    try:
+        period_number = int(data["period_number"])
+    except (TypeError, ValueError):
+        raise ReportUploadError("period_number должен быть целым числом")
 
     if period_type == "year":
         raise ReportUploadError(
@@ -211,23 +214,45 @@ def log_report_metadata(user, reports: list) -> int:
     """Сохраняет метаданные созданных отчётов (без файлов). Возвращает число записей."""
     created_count = 0
     for report_data in reports:
+        if not isinstance(report_data, dict):
+            continue
         try:
+            org_name = (report_data.get("org_name") or "").strip()
+            school = find_school_by_org_name(org_name) if org_name else None
+            school_id = school.id if school else user.school_id
+            if not school_id:
+                continue
+
             academic_year = resolve_academic_year(report_data.get("academic_year"))
-            report = ReportFile(
-                school_id=user.school_id,
+            period_code = str(report_data.get("period", "2"))
+            class_name = report_data.get("class", "")
+            subject = report_data.get("subject", "")
+            ts_raw = report_data.get("timestamp", datetime.utcnow().isoformat())
+            created_at = datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00"))
+
+            existing = ReportFile.query.filter_by(
+                school_id=school_id,
                 teacher_id=user.id,
-                period_code=report_data.get("period", "2"),
+                period_code=period_code,
                 academic_year=academic_year,
-                class_name=report_data.get("class", ""),
-                subject=report_data.get("subject", ""),
-                excel_path=None,  # Файлы не хранятся на сервере
-                word_path=None,   # Только метаданные
-                created_at=datetime.fromisoformat(
-                    report_data.get("timestamp", datetime.utcnow().isoformat())
-                    .replace("Z", "+00:00")
-                ),
-            )
-            db.session.add(report)
+                class_name=class_name,
+                subject=subject,
+            ).first()
+            if existing:
+                existing.created_at = created_at
+            else:
+                report = ReportFile(
+                    school_id=school_id,
+                    teacher_id=user.id,
+                    period_code=period_code,
+                    academic_year=academic_year,
+                    class_name=class_name,
+                    subject=subject,
+                    excel_path=None,  # Файлы не хранятся на сервере
+                    word_path=None,   # Только метаданные
+                    created_at=created_at,
+                )
+                db.session.add(report)
             created_count += 1
         except Exception as e:
             current_app.logger.error(f"Error logging report: {e}")

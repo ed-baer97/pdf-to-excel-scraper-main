@@ -10,6 +10,7 @@ from webapp import create_app
 from webapp.config import TestingConfig
 from webapp.extensions import db
 from webapp.models import GradeReport, Role, School, User
+from webapp.services.academic_year import current_academic_year
 from webapp.services.grade_reports.queries import get_period_reports, get_quarter_reports
 from webapp.services.year_grades import YEAR_UI_PERIOD
 
@@ -32,8 +33,10 @@ def _add_report(
     subject_name: str,
     period_type: str,
     period_number: int,
-    academic_year: int = 2025,
+    academic_year: int | None = None,
 ) -> GradeReport:
+    if academic_year is None:
+        academic_year = current_academic_year()
     report = GradeReport(
         teacher_id=teacher_id,
         school_id=school_id,

@@ -519,13 +519,14 @@ def _recover_interrupted_jobs(app):
                 word_abs = str(docx.resolve()) if docx and docx.exists() else None
                 
                 # Check if report already exists
+                job_year = getattr(job, "academic_year", None) or current_academic_year()
                 existing = ReportFile.query.filter_by(
+                    school_id=job.school_id,
                     teacher_id=job.teacher_id,
                     class_name=class_name,
                     subject=subject,
                     period_code=job.period_code,
-                    academic_year=getattr(job, "academic_year", None)
-                    or current_academic_year(),
+                    academic_year=job_year,
                 ).first()
                 
                 if existing:
@@ -539,8 +540,7 @@ def _recover_interrupted_jobs(app):
                         school_id=job.school_id,
                         teacher_id=job.teacher_id,
                         period_code=job.period_code,
-                        academic_year=getattr(job, "academic_year", None)
-                        or current_academic_year(),
+                        academic_year=job_year,
                         class_name=class_name,
                         subject=subject,
                         excel_path=excel_abs,

@@ -1,17 +1,22 @@
 """
 Единый JSON-лог для отладки десктопа (гипотезы, UI, API, финализация отчётов).
 
-Файл в корне репозитория: mektep-debug.log
+По умолчанию отключён, чтобы не создавать mektep-debug.log в рабочей директории.
+Для включения задайте переменную окружения MEKTEP_DEBUG_LOG=1.
 """
 import json
+import os
 import time
 from pathlib import Path
 from uuid import uuid4
 
-# mektep-desktop/app/debug_log.py -> parents[2] = repo root
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _LOG_PATH = _REPO_ROOT / "mektep-debug.log"
 _SESSION_ID = "mektep-desktop"
+
+
+def _is_enabled() -> bool:
+    return os.getenv("MEKTEP_DEBUG_LOG", "").strip().lower() in ("1", "true", "yes")
 
 
 def debug_log(
@@ -21,7 +26,9 @@ def debug_log(
     data: dict,
     run_id: str = "initial",
 ) -> None:
-    """Развёрнутая запись (id, runId) — для main_window, goals_dialog, reports_manager."""
+    """Развёрнутая запись (id, runId) — активна только при MEKTEP_DEBUG_LOG=1."""
+    if not _is_enabled():
+        return
     try:
         payload = {
             "sessionId": _SESSION_ID,
@@ -40,7 +47,9 @@ def debug_log(
 
 
 def dbg_log(loc: str, msg: str, data: dict, hid: str) -> None:
-    """Короткая запись для report_finalization и api_client (совместимость с прежним agent_log)."""
+    """Короткая запись — активна только при MEKTEP_DEBUG_LOG=1."""
+    if not _is_enabled():
+        return
     try:
         payload = {
             "sessionId": _SESSION_ID,

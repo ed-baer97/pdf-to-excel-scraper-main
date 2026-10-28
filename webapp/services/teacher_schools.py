@@ -188,8 +188,10 @@ def backfill_memberships_from_users() -> int:
 def remove_teacher_from_school(teacher_id: int, school_id: int) -> None:
     """Удаляет учителя из школы: членство и данные, привязанные к этой школе."""
     from ..models import (
+        ExportJob,
         GradeReport,
         ReportFile,
+        ScrapeJob,
         TeacherClass,
         TeacherSubject,
     )
@@ -201,25 +203,47 @@ def remove_teacher_from_school(teacher_id: int, school_id: int) -> None:
         .all()
     ]
 
-    teacher_subjects = TeacherSubject.query.filter(
-        TeacherSubject.teacher_id == teacher_id,
-        TeacherSubject.subject_id.in_(school_subject_ids),
-    ).all()
-    for ts in teacher_subjects:
-        TeacherClass.query.filter_by(teacher_subject_id=ts.id).delete()
-    TeacherSubject.query.filter(
-        TeacherSubject.teacher_id == teacher_id,
-        TeacherSubject.subject_id.in_(school_subject_ids),
-    ).delete(synchronize_session=False)
+    if school_subject_ids:
+        teacher_subjects = TeacherSubject.query.filter(
+            TeacherSubject.teacher_id == teacher_id,
+            TeacherSubject.subject_id.in_(school_subject_ids),
+        ).all()
+        for ts in teacher_subjects:
+            TeacherClass.query.filter_by(teacher_subject_id=ts.id).delete(synchronize_session=False)
+        TeacherSubject.query.filter(
+            TeacherSubject.teacher_id == teacher_id,
+            TeacherSubject.subject_id.in_(school_subject_ids),
+        ).delete(synchronize_session=False)
 
     from .class_homeroom import clear_homeroom_teacher
+    from .grade_reports.cache import bump_grade_reports_version
 
     clear_homeroom_teacher(teacher_id, school_id)
 
-    GradeReport.query.filter_by(teacher_id=teacher_id, school_id=school_id).delete()
-    ReportFile.query.filter_by(teacher_id=teacher_id, school_id=school_id).delete()
+    GradeReport.query.filter_by(teacher_id=teacher_id, school_id=school_id).delete(synchronize_session=False)
+    ReportFile.query.filter_by(teacher_id=teacher_id, school_id=school_id).delete(synchronize_session=False)
+    ScrapeJob.query.filter_by(teacher_id=teacher_id, school_id=school_id).delete(synchronize_session=False)
+    ExportJob.query.filter_by(user_id=teacher_id, school_id=school_id).delete(synchronize_session=False)
+    bump_grade_reports_version(school_id)
 
     TeacherSchool.query.filter_by(
         teacher_id=teacher_id,
         school_id=school_id,
-    ).delete()
+    ).delete(synchronize_session=False)
+
+    teacher = db.session.get(User, teacher_id)
+    if teacher and teacher.school_id == school_id:
+        remaining = (
+            TeacherSchool.query.filter(
+                TeacherSchool.teacher_id == teacher_id,
+                TeacherSchool.school_id != school_id,
+            )
+            .order_by(TeacherSchool.id.asc())
+            .first()
+        )
+        if remaining:
+            teacher.school_id = remaining.school_id
+            teacher.fs_teacher_seq = remaining.fs_teacher_seq
+        else:
+            teacher.school_id = None
+            teacher.fs_teacher_seq = None
