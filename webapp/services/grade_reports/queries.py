@@ -6,7 +6,7 @@ from ...constants import normalize_subject_name
 from ...extensions import db
 from ...models import GradeReport
 from ..academic_year import resolve_academic_year
-from ..criteria_grades import FINAL_UI_PERIOD
+from ..criteria_grades.periods import FINAL_UI_PERIOD
 from ..year_grades import YEAR_UI_PERIOD, build_synthetic_year_reports
 
 
